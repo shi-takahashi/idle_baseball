@@ -38,22 +38,30 @@ class _GameScreenState extends State<GameScreen> {
   }
 
   void _simulateGame() {
+    // タイガースの投手は速球派（平均155km）
     final teamA = Team(
       id: 'team_a',
       name: 'タイガース',
-      players: List.generate(
-        9,
-        (i) => Player(id: 'a_$i', name: '選手A${i + 1}', number: i + 1),
-      ),
+      players: [
+        const Player(id: 'a_0', name: '剛速球太郎', number: 18, averageSpeed: 155),
+        ...List.generate(
+          8,
+          (i) => Player(id: 'a_${i + 1}', name: '選手A${i + 2}', number: i + 2),
+        ),
+      ],
     );
 
+    // ジャイアンツの投手は技巧派（平均138km）
     final teamB = Team(
       id: 'team_b',
       name: 'ジャイアンツ',
-      players: List.generate(
-        9,
-        (i) => Player(id: 'b_$i', name: '選手B${i + 1}', number: i + 1),
-      ),
+      players: [
+        const Player(id: 'b_0', name: '技巧派次郎', number: 11, averageSpeed: 138),
+        ...List.generate(
+          8,
+          (i) => Player(id: 'b_${i + 1}', name: '選手B${i + 2}', number: i + 2),
+        ),
+      ],
     );
 
     final simulator = GameSimulator();
@@ -231,19 +239,20 @@ class ScoreBoard extends StatelessWidget {
   }
 
   Widget _buildAtBatRow(int index, AtBatResult atBat) {
-    // 投球経過を文字列に
+    // 投球経過を文字列に（球速付き）
     final pitchLog = atBat.pitches.map((p) {
+      final speedStr = '${p.speed}km';
       switch (p.type) {
         case PitchResultType.ball:
-          return 'B';
+          return 'B($speedStr)';
         case PitchResultType.strikeLooking:
-          return 'S見';
+          return 'S見($speedStr)';
         case PitchResultType.strikeSwinging:
-          return 'S空';
+          return 'S空($speedStr)';
         case PitchResultType.foul:
-          return 'F';
+          return 'F($speedStr)';
         case PitchResultType.inPlay:
-          return '打';
+          return '打($speedStr)';
       }
     }).join(' → ');
 

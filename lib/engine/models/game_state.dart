@@ -5,10 +5,12 @@ import 'player.dart';
 class PitchResult {
   final PitchResultType type;
   final BattedBallType? battedBallType; // インプレー時のみ
+  final int speed; // 球速（km/h）
 
   const PitchResult({
     required this.type,
     this.battedBallType,
+    required this.speed,
   });
 }
 

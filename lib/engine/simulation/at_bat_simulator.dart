@@ -5,57 +5,84 @@ import '../models/models.dart';
 class AtBatSimulator {
   final Random _random;
 
-  // Phase 1a: 全員同じ確率（プロ野球平均）
-  // 1球の結果確率
-  static const double _probBall = 0.35;
-  static const double _probStrikeLooking = 0.15;
-  static const double _probStrikeSwinging = 0.10;
-  static const double _probFoul = 0.20;
-  static const double _probInPlay = 0.20;
+  // 基準球速（この球速で基本確率になる）
+  static const int _baseSpeed = 145;
 
-  // インプレー時の結果確率
-  static const double _probOut = 0.70;
-  static const double _probSingle = 0.20;
-  static const double _probDouble = 0.05;
-  static const double _probTriple = 0.01;
-  static const double _probHomeRun = 0.04;
+  // 球速1kmあたりの補正率
+  static const double _speedModifierPerKm = 0.005;
+
+  // 基本確率（球速145km基準）
+  static const double _baseProbBall = 0.35;
+  static const double _baseProbStrikeLooking = 0.15;
+  static const double _baseProbStrikeSwinging = 0.10;
+  static const double _baseProbFoul = 0.20;
+  // インプレー確率は残り
+
+  // インプレー時の結果確率（球速145km基準）
+  static const double _baseProbOut = 0.70;
+  static const double _baseProbSingle = 0.20;
+  static const double _baseProbDouble = 0.05;
+  static const double _baseProbTriple = 0.01;
+  // 本塁打確率は残り
 
   AtBatSimulator({Random? random}) : _random = random ?? Random();
 
-  /// 1球をシミュレート
-  PitchResult simulatePitch(int balls, int strikes) {
-    final roll = _random.nextDouble();
+  /// 球速を生成（正規分布的、中央付近が出やすい）
+  int generateSpeed(int averageSpeed) {
+    // 2つの一様乱数の平均を使って中央寄りの分布を作る
+    // これで±5の範囲で中央付近が出やすくなる
+    final r1 = _random.nextDouble() * 10 - 5; // -5 to +5
+    final r2 = _random.nextDouble() * 10 - 5; // -5 to +5
+    final offset = ((r1 + r2) / 2).round(); // 平均を取ると中央寄りに
+    return averageSpeed + offset;
+  }
 
+  /// 1球をシミュレート
+  PitchResult simulatePitch(int balls, int strikes, int speed) {
+    // 球速による補正（速いほど空振り増、ヒット減）
+    final speedDiff = speed - _baseSpeed;
+    final modifier = speedDiff * _speedModifierPerKm;
+
+    // 確率を調整
+    final probBall = _baseProbBall; // ボールは球速に影響されない
+    final probStrikeLooking = _baseProbStrikeLooking;
+    final probStrikeSwinging = (_baseProbStrikeSwinging + modifier).clamp(0.05, 0.25);
+    final probFoul = _baseProbFoul;
+    // インプレー確率は残り（球速が速いほど減る）
+    final probInPlay = (1.0 - probBall - probStrikeLooking - probStrikeSwinging - probFoul).clamp(0.10, 0.30);
+
+    final roll = _random.nextDouble();
     double cumulative = 0;
 
     // ボール
-    cumulative += _probBall;
+    cumulative += probBall;
     if (roll < cumulative) {
-      return const PitchResult(type: PitchResultType.ball);
+      return PitchResult(type: PitchResultType.ball, speed: speed);
     }
 
     // 見逃しストライク
-    cumulative += _probStrikeLooking;
+    cumulative += probStrikeLooking;
     if (roll < cumulative) {
-      return const PitchResult(type: PitchResultType.strikeLooking);
+      return PitchResult(type: PitchResultType.strikeLooking, speed: speed);
     }
 
     // 空振りストライク
-    cumulative += _probStrikeSwinging;
+    cumulative += probStrikeSwinging;
     if (roll < cumulative) {
-      return const PitchResult(type: PitchResultType.strikeSwinging);
+      return PitchResult(type: PitchResultType.strikeSwinging, speed: speed);
     }
 
     // ファウル
-    cumulative += _probFoul;
+    cumulative += probFoul;
     if (roll < cumulative) {
-      return const PitchResult(type: PitchResultType.foul);
+      return PitchResult(type: PitchResultType.foul, speed: speed);
     }
 
     // インプレー
     return PitchResult(
       type: PitchResultType.inPlay,
       battedBallType: _randomBattedBallType(),
+      speed: speed,
     );
   }
 
@@ -67,14 +94,24 @@ class AtBatSimulator {
     return BattedBallType.lineDrive;
   }
 
-  /// インプレー時の打席結果を決定
-  AtBatResultType simulateInPlayResult(BattedBallType battedBallType) {
-    final roll = _random.nextDouble();
+  /// インプレー時の打席結果を決定（球速考慮）
+  AtBatResultType simulateInPlayResult(BattedBallType battedBallType, int speed) {
+    // 球速による補正（速いほどヒットが減る）
+    final speedDiff = speed - _baseSpeed;
+    final modifier = speedDiff * _speedModifierPerKm;
 
+    // 確率を調整（速いほどアウト増、ヒット減）
+    final probOut = (_baseProbOut + modifier).clamp(0.60, 0.85);
+    final probSingle = (_baseProbSingle - modifier * 0.5).clamp(0.10, 0.25);
+    final probDouble = (_baseProbDouble - modifier * 0.3).clamp(0.02, 0.08);
+    final probTriple = _baseProbTriple;
+    // 本塁打は残り
+
+    final roll = _random.nextDouble();
     double cumulative = 0;
 
     // アウト
-    cumulative += _probOut;
+    cumulative += probOut;
     if (roll < cumulative) {
       switch (battedBallType) {
         case BattedBallType.groundBall:
@@ -87,19 +124,19 @@ class AtBatSimulator {
     }
 
     // 単打
-    cumulative += _probSingle;
+    cumulative += probSingle;
     if (roll < cumulative) {
       return AtBatResultType.single;
     }
 
     // 二塁打
-    cumulative += _probDouble;
+    cumulative += probDouble;
     if (roll < cumulative) {
       return AtBatResultType.double_;
     }
 
     // 三塁打
-    cumulative += _probTriple;
+    cumulative += probTriple;
     if (roll < cumulative) {
       return AtBatResultType.triple;
     }
@@ -110,13 +147,18 @@ class AtBatSimulator {
 
   /// 1打席をシミュレート
   /// 戻り値: (打席結果タイプ, 投球リスト)
-  (AtBatResultType, List<PitchResult>) simulateAtBat() {
+  (AtBatResultType, List<PitchResult>) simulateAtBat(Player pitcher) {
+    // 投手の平均球速（設定されていなければ145km）
+    final avgSpeed = pitcher.averageSpeed ?? 145;
+
     int balls = 0;
     int strikes = 0;
     final pitches = <PitchResult>[];
 
     while (true) {
-      final pitch = simulatePitch(balls, strikes);
+      // 毎球、球速を生成
+      final speed = generateSpeed(avgSpeed);
+      final pitch = simulatePitch(balls, strikes, speed);
       pitches.add(pitch);
 
       switch (pitch.type) {
@@ -143,7 +185,7 @@ class AtBatSimulator {
           break;
 
         case PitchResultType.inPlay:
-          final result = simulateInPlayResult(pitch.battedBallType!);
+          final result = simulateInPlayResult(pitch.battedBallType!, speed);
           return (result, pitches);
       }
     }
