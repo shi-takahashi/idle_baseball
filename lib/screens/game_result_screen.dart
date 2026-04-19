@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import '../engine/engine.dart';
 import '../widgets/score_board.dart';
+import '../widgets/batting_stats.dart';
+import '../widgets/pitching_stats.dart';
 
 /// 試合結果画面
 class GameResultScreen extends StatefulWidget {
@@ -10,13 +12,22 @@ class GameResultScreen extends StatefulWidget {
   State<GameResultScreen> createState() => _GameResultScreenState();
 }
 
-class _GameResultScreenState extends State<GameResultScreen> {
+class _GameResultScreenState extends State<GameResultScreen>
+    with SingleTickerProviderStateMixin {
   GameResult? _gameResult;
+  late TabController _tabController;
 
   @override
   void initState() {
     super.initState();
+    _tabController = TabController(length: 3, vsync: this);
     _simulateGame();
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
   }
 
   void _simulateGame() {
@@ -58,25 +69,49 @@ class _GameResultScreenState extends State<GameResultScreen> {
       appBar: AppBar(
         title: const Text('試合結果'),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
+        bottom: TabBar(
+          controller: _tabController,
+          tabs: const [
+            Tab(text: 'スコア'),
+            Tab(text: '打撃成績'),
+            Tab(text: '投手成績'),
+          ],
+        ),
       ),
       body: _gameResult == null
           ? const Center(child: CircularProgressIndicator())
-          : SingleChildScrollView(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  ScoreBoard(gameResult: _gameResult!),
-                  const SizedBox(height: 24),
-                  Text(
-                    _gameResult!.winner != null
-                        ? '勝者: ${_gameResult!.winner}'
-                        : '引き分け',
-                    style: Theme.of(context).textTheme.headlineSmall,
-                    textAlign: TextAlign.center,
+          : TabBarView(
+              controller: _tabController,
+              children: [
+                // スコアボードタブ
+                SingleChildScrollView(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      ScoreBoard(gameResult: _gameResult!),
+                      const SizedBox(height: 24),
+                      Text(
+                        _gameResult!.winner != null
+                            ? '勝者: ${_gameResult!.winner}'
+                            : '引き分け',
+                        style: Theme.of(context).textTheme.headlineSmall,
+                        textAlign: TextAlign.center,
+                      ),
+                    ],
                   ),
-                ],
-              ),
+                ),
+                // 打撃成績タブ
+                Padding(
+                  padding: const EdgeInsets.all(8),
+                  child: BattingStats(gameResult: _gameResult!),
+                ),
+                // 投手成績タブ
+                Padding(
+                  padding: const EdgeInsets.all(8),
+                  child: PitchingStats(gameResult: _gameResult!),
+                ),
+              ],
             ),
       floatingActionButton: FloatingActionButton(
         onPressed: _simulateGame,
