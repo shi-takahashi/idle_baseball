@@ -7,6 +7,40 @@ enum PitchResultType {
   inPlay,         // インプレー（打球が飛んだ）
 }
 
+extension PitchResultTypeExtension on PitchResultType {
+  /// 表示用の日本語名
+  String get displayName {
+    switch (this) {
+      case PitchResultType.ball:
+        return 'ボール';
+      case PitchResultType.strikeLooking:
+        return '見逃し';
+      case PitchResultType.strikeSwinging:
+        return '空振り';
+      case PitchResultType.foul:
+        return 'ファウル';
+      case PitchResultType.inPlay:
+        return '打球';
+    }
+  }
+
+  /// 短い表示名（省スペース用）
+  String get shortName {
+    switch (this) {
+      case PitchResultType.ball:
+        return 'B';
+      case PitchResultType.strikeLooking:
+        return 'S見';
+      case PitchResultType.strikeSwinging:
+        return 'S空';
+      case PitchResultType.foul:
+        return 'F';
+      case PitchResultType.inPlay:
+        return '打';
+    }
+  }
+}
+
 /// 打球の種類
 enum BattedBallType {
   groundBall,  // ゴロ
