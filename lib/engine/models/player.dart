@@ -10,6 +10,7 @@ class Player {
 
   // 野手能力
   final int? meet; // ミート力（1〜10）
+  final int? power; // 長打力（1〜10）
 
   const Player({
     required this.id,
@@ -18,6 +19,7 @@ class Player {
     this.averageSpeed,
     this.control,
     this.meet,
+    this.power,
   });
 
   /// 投手かどうか

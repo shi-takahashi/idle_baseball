@@ -25,7 +25,16 @@ class AtBatSimulator {
   static const double _meetSwingModifier = 0.01; // 空振り確率補正
   static const double _meetHitModifier = 0.01; // ヒット確率補正（アウト率への影響）
 
-  // 基本確率（球速145km、制球力5、ミート力5基準）
+  // 基準長打力（この長打力で基本確率になる）
+  static const int _basePower = 5;
+
+  // 長打力1あたりの補正率
+  static const double _powerHomeRunModifier = 0.015; // ホームラン確率補正（大きく影響）
+  static const double _powerDoubleModifier = 0.005; // 二塁打確率補正
+  static const double _powerTripleModifier = 0.002; // 三塁打確率補正
+  static const double _powerSingleModifier = 0.003; // 単打確率補正（打球速度で少し増）
+
+  // 基本確率（球速145km、制球力5、ミート力5、長打力5基準）
   static const double _baseProbBall = 0.35;
   static const double _baseProbStrikeLooking = 0.15;
   static const double _baseProbStrikeSwinging = 0.10;
@@ -118,8 +127,8 @@ class AtBatSimulator {
     return BattedBallType.lineDrive;
   }
 
-  /// インプレー時の打席結果を決定（球速・制球力・ミート力考慮）
-  AtBatResultType simulateInPlayResult(BattedBallType battedBallType, int speed, int control, int meet) {
+  /// インプレー時の打席結果を決定（球速・制球力・ミート力・長打力考慮）
+  AtBatResultType simulateInPlayResult(BattedBallType battedBallType, int speed, int control, int meet, int power) {
     // 球速による補正（速いほどヒットが減る）
     final speedDiff = speed - _baseSpeed;
     final speedModifier = speedDiff * _speedModifierPerKm;
@@ -132,13 +141,26 @@ class AtBatSimulator {
     final meetDiff = meet - _baseMeet;
     final meetModifier = meetDiff * _meetHitModifier;
 
-    // 確率を調整（球速が速いほど、制球力が高いほどアウト増、ミート力が高いほどアウト減）
-    final totalModifier = speedModifier + controlModifier - meetModifier;
-    final probOut = (_baseProbOut + totalModifier).clamp(0.55, 0.85);
-    final probSingle = (_baseProbSingle - totalModifier * 0.5).clamp(0.10, 0.30);
-    final probDouble = (_baseProbDouble - totalModifier * 0.3).clamp(0.02, 0.10);
-    final probTriple = _baseProbTriple;
-    // 本塁打は残り
+    // 長打力による補正（高いほど長打が増える）
+    final powerDiff = power - _basePower;
+    final homeRunModifier = powerDiff * _powerHomeRunModifier;
+    final doubleModifier = powerDiff * _powerDoubleModifier;
+    final tripleModifier = powerDiff * _powerTripleModifier;
+    final singleModifier = powerDiff * _powerSingleModifier;
+
+    // アウト率（球速が速いほど、制球力が高いほど増、ミート力・長打力が高いほど減）
+    final outModifier = speedModifier + controlModifier - meetModifier;
+    final probOut = (_baseProbOut + outModifier).clamp(0.50, 0.85);
+
+    // 長打確率（長打力で大きく変動）
+    // ホームラン: 長打力1で約1%、長打力10で約11%
+    final probHomeRun = (0.04 + homeRunModifier).clamp(0.005, 0.15);
+    // 三塁打: 長打力でわずかに増加
+    final probTriple = (_baseProbTriple + tripleModifier).clamp(0.005, 0.03);
+    // 二塁打: 長打力で増加
+    final probDouble = (_baseProbDouble + doubleModifier).clamp(0.02, 0.12);
+    // 単打: ミート力メイン、長打力で少し増加
+    final probSingle = (_baseProbSingle - outModifier * 0.5 + singleModifier).clamp(0.10, 0.35);
 
     final roll = _random.nextDouble();
     double cumulative = 0;
@@ -174,8 +196,13 @@ class AtBatSimulator {
       return AtBatResultType.triple;
     }
 
-    // 本塁打
-    return AtBatResultType.homeRun;
+    // 本塁打（残り）
+    // ただし長打力で確率を直接使う
+    if (_random.nextDouble() < probHomeRun / (probHomeRun + 0.01)) {
+      return AtBatResultType.homeRun;
+    }
+    // 本塁打にならなかった場合は二塁打
+    return AtBatResultType.double_;
   }
 
   /// 1打席をシミュレート
@@ -187,6 +214,8 @@ class AtBatSimulator {
     final control = pitcher.control ?? 5;
     // 打者のミート力（設定されていなければ5）
     final meet = batter.meet ?? 5;
+    // 打者の長打力（設定されていなければ5）
+    final power = batter.power ?? 5;
 
     int balls = 0;
     int strikes = 0;
@@ -222,7 +251,7 @@ class AtBatSimulator {
           break;
 
         case PitchResultType.inPlay:
-          final result = simulateInPlayResult(pitch.battedBallType!, speed, control, meet);
+          final result = simulateInPlayResult(pitch.battedBallType!, speed, control, meet, power);
           return (result, pitches);
       }
     }
