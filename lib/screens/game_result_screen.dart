@@ -31,12 +31,12 @@ class _GameResultScreenState extends State<GameResultScreen>
   }
 
   void _simulateGame() {
-    // タイガースの投手は速球派（平均155km）
+    // タイガースの投手は速球派（平均155km、制球力4）
     final teamA = Team(
       id: 'team_a',
       name: 'タイガース',
       players: [
-        const Player(id: 'a_0', name: '剛速球太郎', number: 18, averageSpeed: 155),
+        const Player(id: 'a_0', name: '剛速球太郎', number: 18, averageSpeed: 155, control: 4),
         ...List.generate(
           8,
           (i) => Player(id: 'a_${i + 1}', name: '選手A${i + 2}', number: i + 2),
@@ -44,12 +44,12 @@ class _GameResultScreenState extends State<GameResultScreen>
       ],
     );
 
-    // ジャイアンツの投手は技巧派（平均138km）
+    // ジャイアンツの投手は技巧派（平均138km、制球力8）
     final teamB = Team(
       id: 'team_b',
       name: 'ジャイアンツ',
       players: [
-        const Player(id: 'b_0', name: '技巧派次郎', number: 11, averageSpeed: 138),
+        const Player(id: 'b_0', name: '技巧派次郎', number: 11, averageSpeed: 138, control: 8),
         ...List.generate(
           8,
           (i) => Player(id: 'b_${i + 1}', name: '選手B${i + 2}', number: i + 2),
