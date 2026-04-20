@@ -83,7 +83,7 @@ class GameSimulator {
       final runnersBefore = runners;
 
       // 打席シミュレーション
-      final (resultType, pitches) = _atBatSimulator.simulateAtBat(pitcher);
+      final (resultType, pitches) = _atBatSimulator.simulateAtBat(pitcher, batter);
 
       // 走塁処理（アウトカウントを渡す）
       final advanceResult = _advanceRunners(runners, resultType, batter, outs);

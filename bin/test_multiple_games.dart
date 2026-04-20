@@ -2,29 +2,37 @@ import 'package:idle_baseball/engine/engine.dart';
 
 void main() {
   // テスト用チームを作成
-  // タイガース: 速球派投手（155km、制球力4）
+  // タイガース: 速球派投手 + 強打者ライナップ
   final teamA = Team(
     id: 'team_a',
     name: 'タイガース',
     players: [
       const Player(id: 'a_0', name: '剛速球太郎', number: 18, averageSpeed: 155, control: 4),
-      ...List.generate(
-        8,
-        (i) => Player(id: 'a_${i + 1}', name: '選手A${i + 2}', number: i + 2),
-      ),
+      const Player(id: 'a_1', name: '首位打者', number: 1, meet: 8),
+      const Player(id: 'a_2', name: '巧打者', number: 2, meet: 7),
+      const Player(id: 'a_3', name: '強打者', number: 3, meet: 6),
+      const Player(id: 'a_4', name: '四番打者', number: 4, meet: 7),
+      const Player(id: 'a_5', name: '中堅打者', number: 5, meet: 6),
+      const Player(id: 'a_6', name: '堅実打者', number: 6, meet: 6),
+      const Player(id: 'a_7', name: '下位打者', number: 7, meet: 5),
+      const Player(id: 'a_8', name: '守備職人', number: 8, meet: 4),
     ],
   );
 
-  // ジャイアンツ: 技巧派投手（138km、制球力8）
+  // ジャイアンツ: 技巧派投手 + 平均的ライナップ
   final teamB = Team(
     id: 'team_b',
     name: 'ジャイアンツ',
     players: [
       const Player(id: 'b_0', name: '技巧派次郎', number: 11, averageSpeed: 138, control: 8),
-      ...List.generate(
-        8,
-        (i) => Player(id: 'b_${i + 1}', name: '選手B${i + 2}', number: i + 2),
-      ),
+      const Player(id: 'b_1', name: '一番打者', number: 1, meet: 6),
+      const Player(id: 'b_2', name: '二番打者', number: 2, meet: 5),
+      const Player(id: 'b_3', name: '三番打者', number: 3, meet: 6),
+      const Player(id: 'b_4', name: '四番打者', number: 4, meet: 5),
+      const Player(id: 'b_5', name: '五番打者', number: 5, meet: 5),
+      const Player(id: 'b_6', name: '六番打者', number: 6, meet: 4),
+      const Player(id: 'b_7', name: '七番打者', number: 7, meet: 4),
+      const Player(id: 'b_8', name: '八番打者', number: 8, meet: 3),
     ],
   );
 

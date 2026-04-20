@@ -18,7 +18,14 @@ class AtBatSimulator {
   static const double _controlBallModifier = 0.015; // ボール確率補正
   static const double _controlHitModifier = 0.01; // 被打率補正（アウト率への影響）
 
-  // 基本確率（球速145km、制球力5基準）
+  // 基準ミート力（このミート力で基本確率になる）
+  static const int _baseMeet = 5;
+
+  // ミート力1あたりの補正率
+  static const double _meetSwingModifier = 0.01; // 空振り確率補正
+  static const double _meetHitModifier = 0.01; // ヒット確率補正（アウト率への影響）
+
+  // 基本確率（球速145km、制球力5、ミート力5基準）
   static const double _baseProbBall = 0.35;
   static const double _baseProbStrikeLooking = 0.15;
   static const double _baseProbStrikeSwinging = 0.10;
@@ -45,7 +52,7 @@ class AtBatSimulator {
   }
 
   /// 1球をシミュレート
-  PitchResult simulatePitch(int balls, int strikes, int speed, int control) {
+  PitchResult simulatePitch(int balls, int strikes, int speed, int control, int meet) {
     // 球速による補正（速いほど空振り増、ヒット減）
     final speedDiff = speed - _baseSpeed;
     final speedModifier = speedDiff * _speedModifierPerKm;
@@ -54,13 +61,18 @@ class AtBatSimulator {
     final controlDiff = control - _baseControl;
     final ballModifier = controlDiff * _controlBallModifier;
 
+    // ミート力による補正（高いほど空振り減）
+    final meetDiff = meet - _baseMeet;
+    final swingModifier = meetDiff * _meetSwingModifier;
+
     // 確率を調整
     // 制球力が高いほどボール確率が下がる（ただし最低25%、最高45%）
     final probBall = (_baseProbBall - ballModifier).clamp(0.25, 0.45);
     final probStrikeLooking = _baseProbStrikeLooking;
-    final probStrikeSwinging = (_baseProbStrikeSwinging + speedModifier).clamp(0.05, 0.25);
+    // 球速が速いほど空振り増、ミート力が高いほど空振り減
+    final probStrikeSwinging = (_baseProbStrikeSwinging + speedModifier - swingModifier).clamp(0.03, 0.25);
     final probFoul = _baseProbFoul;
-    // インプレー確率は残り（球速が速いほど減る）
+    // インプレー確率は残り
     final probInPlay = (1.0 - probBall - probStrikeLooking - probStrikeSwinging - probFoul).clamp(0.10, 0.30);
 
     final roll = _random.nextDouble();
@@ -106,8 +118,8 @@ class AtBatSimulator {
     return BattedBallType.lineDrive;
   }
 
-  /// インプレー時の打席結果を決定（球速・制球力考慮）
-  AtBatResultType simulateInPlayResult(BattedBallType battedBallType, int speed, int control) {
+  /// インプレー時の打席結果を決定（球速・制球力・ミート力考慮）
+  AtBatResultType simulateInPlayResult(BattedBallType battedBallType, int speed, int control, int meet) {
     // 球速による補正（速いほどヒットが減る）
     final speedDiff = speed - _baseSpeed;
     final speedModifier = speedDiff * _speedModifierPerKm;
@@ -116,11 +128,15 @@ class AtBatSimulator {
     final controlDiff = control - _baseControl;
     final controlModifier = controlDiff * _controlHitModifier;
 
-    // 確率を調整（球速が速いほど、制球力が高いほどアウト増、ヒット減）
-    final totalModifier = speedModifier + controlModifier;
-    final probOut = (_baseProbOut + totalModifier).clamp(0.60, 0.85);
-    final probSingle = (_baseProbSingle - totalModifier * 0.5).clamp(0.10, 0.25);
-    final probDouble = (_baseProbDouble - totalModifier * 0.3).clamp(0.02, 0.08);
+    // ミート力による補正（高いほどヒットが増える = アウトが減る）
+    final meetDiff = meet - _baseMeet;
+    final meetModifier = meetDiff * _meetHitModifier;
+
+    // 確率を調整（球速が速いほど、制球力が高いほどアウト増、ミート力が高いほどアウト減）
+    final totalModifier = speedModifier + controlModifier - meetModifier;
+    final probOut = (_baseProbOut + totalModifier).clamp(0.55, 0.85);
+    final probSingle = (_baseProbSingle - totalModifier * 0.5).clamp(0.10, 0.30);
+    final probDouble = (_baseProbDouble - totalModifier * 0.3).clamp(0.02, 0.10);
     final probTriple = _baseProbTriple;
     // 本塁打は残り
 
@@ -164,11 +180,13 @@ class AtBatSimulator {
 
   /// 1打席をシミュレート
   /// 戻り値: (打席結果タイプ, 投球リスト)
-  (AtBatResultType, List<PitchResult>) simulateAtBat(Player pitcher) {
+  (AtBatResultType, List<PitchResult>) simulateAtBat(Player pitcher, Player batter) {
     // 投手の平均球速（設定されていなければ145km）
     final avgSpeed = pitcher.averageSpeed ?? 145;
     // 投手の制球力（設定されていなければ5）
     final control = pitcher.control ?? 5;
+    // 打者のミート力（設定されていなければ5）
+    final meet = batter.meet ?? 5;
 
     int balls = 0;
     int strikes = 0;
@@ -177,7 +195,7 @@ class AtBatSimulator {
     while (true) {
       // 毎球、球速を生成
       final speed = generateSpeed(avgSpeed);
-      final pitch = simulatePitch(balls, strikes, speed, control);
+      final pitch = simulatePitch(balls, strikes, speed, control, meet);
       pitches.add(pitch);
 
       switch (pitch.type) {
@@ -204,7 +222,7 @@ class AtBatSimulator {
           break;
 
         case PitchResultType.inPlay:
-          final result = simulateInPlayResult(pitch.battedBallType!, speed, control);
+          final result = simulateInPlayResult(pitch.battedBallType!, speed, control, meet);
           return (result, pitches);
       }
     }

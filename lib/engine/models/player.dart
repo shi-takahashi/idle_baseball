@@ -8,12 +8,16 @@ class Player {
   final int? averageSpeed; // 平均球速（km/h）、野手はnull
   final int? control; // 制球力（1〜10）、野手はnull
 
+  // 野手能力
+  final int? meet; // ミート力（1〜10）
+
   const Player({
     required this.id,
     required this.name,
     required this.number,
     this.averageSpeed,
     this.control,
+    this.meet,
   });
 
   /// 投手かどうか
