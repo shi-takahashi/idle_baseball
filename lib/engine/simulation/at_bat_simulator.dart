@@ -21,9 +21,8 @@ class AtBatSimulator {
   // 基準ミート力（このミート力で基本確率になる）
   static const int _baseMeet = 5;
 
-  // ミート力1あたりの補正率
-  static const double _meetSwingModifier = 0.01; // 空振り確率補正
-  static const double _meetHitModifier = 0.01; // ヒット確率補正（アウト率への影響）
+  // ミート力1あたりの補正率（インプレーになる確率に影響）
+  static const double _meetSwingModifier = 0.015; // 空振り確率補正（高いほど空振り減→インプレー増）
 
   // 基準長打力（この長打力で基本確率になる）
   static const int _basePower = 5;
@@ -127,8 +126,9 @@ class AtBatSimulator {
     return BattedBallType.lineDrive;
   }
 
-  /// インプレー時の打席結果を決定（球速・制球力・ミート力・長打力考慮）
-  AtBatResultType simulateInPlayResult(BattedBallType battedBallType, int speed, int control, int meet, int power) {
+  /// インプレー時の打席結果を決定（球速・制球力・長打力考慮）
+  /// ミート力はインプレーになる確率に影響し、インプレー後の結果には影響しない
+  AtBatResultType simulateInPlayResult(BattedBallType battedBallType, int speed, int control, int power) {
     // 球速による補正（速いほどヒットが減る）
     final speedDiff = speed - _baseSpeed;
     final speedModifier = speedDiff * _speedModifierPerKm;
@@ -137,10 +137,6 @@ class AtBatSimulator {
     final controlDiff = control - _baseControl;
     final controlModifier = controlDiff * _controlHitModifier;
 
-    // ミート力による補正（高いほどヒットが増える = アウトが減る）
-    final meetDiff = meet - _baseMeet;
-    final meetModifier = meetDiff * _meetHitModifier;
-
     // 長打力による補正（高いほど長打が増える）
     final powerDiff = power - _basePower;
     final homeRunModifier = powerDiff * _powerHomeRunModifier;
@@ -148,8 +144,8 @@ class AtBatSimulator {
     final tripleModifier = powerDiff * _powerTripleModifier;
     final singleModifier = powerDiff * _powerSingleModifier;
 
-    // アウト率（球速が速いほど、制球力が高いほど増、ミート力・長打力が高いほど減）
-    final outModifier = speedModifier + controlModifier - meetModifier;
+    // アウト率（球速が速いほど、制球力が高いほど増える）
+    final outModifier = speedModifier + controlModifier;
     final probOut = (_baseProbOut + outModifier).clamp(0.50, 0.85);
 
     // 長打確率（長打力で大きく変動）
@@ -159,7 +155,7 @@ class AtBatSimulator {
     final probTriple = (_baseProbTriple + tripleModifier).clamp(0.005, 0.03);
     // 二塁打: 長打力で増加
     final probDouble = (_baseProbDouble + doubleModifier).clamp(0.02, 0.12);
-    // 単打: ミート力メイン、長打力で少し増加
+    // 単打: 長打力で少し増加
     final probSingle = (_baseProbSingle - outModifier * 0.5 + singleModifier).clamp(0.10, 0.35);
 
     final roll = _random.nextDouble();
@@ -251,7 +247,7 @@ class AtBatSimulator {
           break;
 
         case PitchResultType.inPlay:
-          final result = simulateInPlayResult(pitch.battedBallType!, speed, control, meet, power);
+          final result = simulateInPlayResult(pitch.battedBallType!, speed, control, power);
           return (result, pitches);
       }
     }
