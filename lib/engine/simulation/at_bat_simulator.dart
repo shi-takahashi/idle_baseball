@@ -111,9 +111,12 @@ class AtBatSimulator {
     }
 
     // インプレー
+    final battedBallType = _randomBattedBallType();
+    final fieldPosition = _randomFieldPosition(battedBallType);
     return PitchResult(
       type: PitchResultType.inPlay,
-      battedBallType: _randomBattedBallType(),
+      battedBallType: battedBallType,
+      fieldPosition: fieldPosition,
       speed: speed,
     );
   }
@@ -124,6 +127,45 @@ class AtBatSimulator {
     if (roll < 0.45) return BattedBallType.groundBall;
     if (roll < 0.85) return BattedBallType.flyBall;
     return BattedBallType.lineDrive;
+  }
+
+  /// 打球方向をランダムに決定（打球の種類によって確率が変わる）
+  FieldPosition _randomFieldPosition(BattedBallType battedBallType) {
+    final roll = _random.nextDouble();
+
+    switch (battedBallType) {
+      case BattedBallType.groundBall:
+        // ゴロは内野に飛ぶ（投手5%, 一塁25%, 二塁25%, 三塁20%, 遊撃25%）
+        if (roll < 0.05) return FieldPosition.pitcher;
+        if (roll < 0.30) return FieldPosition.first;
+        if (roll < 0.55) return FieldPosition.second;
+        if (roll < 0.75) return FieldPosition.third;
+        return FieldPosition.shortstop;
+
+      case BattedBallType.flyBall:
+        // フライは外野メイン、内野フライもある
+        // 捕手5%, 一塁5%, 二塁5%, 三塁5%, 遊撃5%, 左翼25%, 中堅30%, 右翼20%
+        if (roll < 0.05) return FieldPosition.catcher;
+        if (roll < 0.10) return FieldPosition.first;
+        if (roll < 0.15) return FieldPosition.second;
+        if (roll < 0.20) return FieldPosition.third;
+        if (roll < 0.25) return FieldPosition.shortstop;
+        if (roll < 0.50) return FieldPosition.left;
+        if (roll < 0.80) return FieldPosition.center;
+        return FieldPosition.right;
+
+      case BattedBallType.lineDrive:
+        // ライナーは全方向に分散
+        // 投手10%, 一塁10%, 二塁15%, 三塁10%, 遊撃15%, 左翼15%, 中堅15%, 右翼10%
+        if (roll < 0.10) return FieldPosition.pitcher;
+        if (roll < 0.20) return FieldPosition.first;
+        if (roll < 0.35) return FieldPosition.second;
+        if (roll < 0.45) return FieldPosition.third;
+        if (roll < 0.60) return FieldPosition.shortstop;
+        if (roll < 0.75) return FieldPosition.left;
+        if (roll < 0.90) return FieldPosition.center;
+        return FieldPosition.right;
+    }
   }
 
   /// インプレー時の打席結果を決定（球速・制球力・長打力考慮）

@@ -41,8 +41,11 @@ void main() {
     final topBottom = halfInning.isTop ? '表' : '裏';
     print('--- ${halfInning.inning}回$topBottom (${halfInning.runs}点) ---');
     for (final atBat in halfInning.atBats) {
+      final fieldPosStr = atBat.fieldPosition != null
+          ? ' [${atBat.fieldPosition!.displayName}]'
+          : '';
       print(
-        '  ${atBat.batter.name}: ${atBat.result.displayName} '
+        '  ${atBat.batter.name}: ${atBat.result.displayName}$fieldPosStr '
         '(${atBat.pitchCount}球, 打点${atBat.rbiCount})',
       );
     }

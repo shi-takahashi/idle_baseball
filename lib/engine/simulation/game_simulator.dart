@@ -85,6 +85,12 @@ class GameSimulator {
       // 打席シミュレーション
       final (resultType, pitches) = _atBatSimulator.simulateAtBat(pitcher, batter);
 
+      // インプレー時の打球方向を取得（最後の投球結果から）
+      FieldPosition? fieldPosition;
+      if (pitches.isNotEmpty && pitches.last.type == PitchResultType.inPlay) {
+        fieldPosition = pitches.last.fieldPosition;
+      }
+
       // 走塁処理（アウトカウントを渡す）
       final advanceResult = _advanceRunners(runners, resultType, batter, outs);
       final rbiCount = advanceResult.runsScored;
@@ -103,6 +109,7 @@ class GameSimulator {
         isTop: isTop,
         pitches: pitches,
         result: resultType,
+        fieldPosition: fieldPosition,
         rbiCount: rbiCount,
         outsBefore: outsBefore,
         runnersBefore: runnersBefore,

@@ -5,11 +5,13 @@ import 'player.dart';
 class PitchResult {
   final PitchResultType type;
   final BattedBallType? battedBallType; // インプレー時のみ
+  final FieldPosition? fieldPosition; // インプレー時の打球方向
   final int speed; // 球速（km/h）
 
   const PitchResult({
     required this.type,
     this.battedBallType,
+    this.fieldPosition,
     required this.speed,
   });
 }
@@ -22,6 +24,7 @@ class AtBatResult {
   final bool isTop; // 表かどうか
   final List<PitchResult> pitches; // 全投球
   final AtBatResultType result;
+  final FieldPosition? fieldPosition; // 打球方向（インプレー時のみ）
   final int rbiCount; // 打点
   final int outsBefore; // 打席前のアウトカウント
   final BaseRunners runnersBefore; // 打席前のランナー状況
@@ -33,6 +36,7 @@ class AtBatResult {
     required this.isTop,
     required this.pitches,
     required this.result,
+    this.fieldPosition,
     required this.rbiCount,
     required this.outsBefore,
     required this.runnersBefore,

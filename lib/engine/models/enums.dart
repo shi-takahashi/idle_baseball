@@ -69,6 +69,86 @@ enum Base {
   home,
 }
 
+/// 守備位置 / 打球方向
+enum FieldPosition {
+  pitcher,    // 投手
+  catcher,    // 捕手
+  first,      // 一塁手
+  second,     // 二塁手
+  third,      // 三塁手
+  shortstop,  // 遊撃手
+  left,       // 左翼手
+  center,     // 中堅手
+  right,      // 右翼手
+}
+
+extension FieldPositionExtension on FieldPosition {
+  /// 表示用の日本語名
+  String get displayName {
+    switch (this) {
+      case FieldPosition.pitcher:
+        return '投手';
+      case FieldPosition.catcher:
+        return '捕手';
+      case FieldPosition.first:
+        return '一塁';
+      case FieldPosition.second:
+        return '二塁';
+      case FieldPosition.third:
+        return '三塁';
+      case FieldPosition.shortstop:
+        return '遊撃';
+      case FieldPosition.left:
+        return '左翼';
+      case FieldPosition.center:
+        return '中堅';
+      case FieldPosition.right:
+        return '右翼';
+    }
+  }
+
+  /// 短い表示名
+  String get shortName {
+    switch (this) {
+      case FieldPosition.pitcher:
+        return '投';
+      case FieldPosition.catcher:
+        return '捕';
+      case FieldPosition.first:
+        return '一';
+      case FieldPosition.second:
+        return '二';
+      case FieldPosition.third:
+        return '三';
+      case FieldPosition.shortstop:
+        return '遊';
+      case FieldPosition.left:
+        return '左';
+      case FieldPosition.center:
+        return '中';
+      case FieldPosition.right:
+        return '右';
+    }
+  }
+
+  /// 内野かどうか
+  bool get isInfield {
+    return this == FieldPosition.pitcher ||
+        this == FieldPosition.catcher ||
+        this == FieldPosition.first ||
+        this == FieldPosition.second ||
+        this == FieldPosition.third ||
+        this == FieldPosition.shortstop;
+  }
+
+  /// 外野かどうか
+  bool get isOutfield {
+    return this == FieldPosition.left ||
+        this == FieldPosition.center ||
+        this == FieldPosition.right;
+  }
+}
+
 extension AtBatResultTypeExtension on AtBatResultType {
   /// ヒットかどうか
   bool get isHit {
