@@ -274,7 +274,7 @@ class ScoreBoard extends StatelessWidget {
                     borderRadius: BorderRadius.circular(4),
                   ),
                   child: Text(
-                    atBat.result.displayName,
+                    _getResultDisplayName(atBat),
                     style: TextStyle(
                       fontWeight: FontWeight.bold,
                       color: atBat.result.isHit
@@ -317,6 +317,38 @@ class ScoreBoard extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  /// 打席結果の表示名を取得（打球方向を含む）
+  String _getResultDisplayName(AtBatResult atBat) {
+    final fieldPos = atBat.fieldPosition;
+
+    // 打球方向がある場合（インプレー結果）
+    if (fieldPos != null) {
+      final posName = fieldPos.shortName; // 「遊」「右」「中」など
+
+      switch (atBat.result) {
+        case AtBatResultType.groundOut:
+          return '$posNameゴロ';
+        case AtBatResultType.flyOut:
+          return '$posNameフライ';
+        case AtBatResultType.lineOut:
+          return '$posNameライナー';
+        case AtBatResultType.single:
+          return '${fieldPos.displayName}安'; // 「遊撃安」「右翼安」
+        case AtBatResultType.double_:
+          return '${fieldPos.displayName}二';
+        case AtBatResultType.triple:
+          return '${fieldPos.displayName}三';
+        case AtBatResultType.homeRun:
+          return '本塁打';
+        default:
+          return atBat.result.displayName;
+      }
+    }
+
+    // 打球方向がない場合（三振、四球など）
+    return atBat.result.displayName;
   }
 
   /// 1球の表示チップ
