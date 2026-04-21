@@ -69,7 +69,7 @@ enum Base {
   home,
 }
 
-/// 守備位置 / 打球方向
+/// 守備位置 / 打球方向（9方向）
 enum FieldPosition {
   pitcher,    // 投手
   catcher,    // 捕手
@@ -80,6 +80,55 @@ enum FieldPosition {
   left,       // 左翼手
   center,     // 中堅手
   right,      // 右翼手
+}
+
+/// 守備能力の種類（6種類 + 投手向けに飛んだ場合は一律扱い）
+/// 外野は左翼・中堅・右翼をまとめて1つ
+enum DefensePosition {
+  catcher,    // 捕手
+  first,      // 一塁手
+  second,     // 二塁手
+  third,      // 三塁手
+  shortstop,  // 遊撃手
+  outfield,   // 外野手（左翼・中堅・右翼共通）
+}
+
+extension DefensePositionExtension on DefensePosition {
+  /// 表示用の日本語名
+  String get displayName {
+    switch (this) {
+      case DefensePosition.catcher:
+        return '捕手';
+      case DefensePosition.first:
+        return '一塁';
+      case DefensePosition.second:
+        return '二塁';
+      case DefensePosition.third:
+        return '三塁';
+      case DefensePosition.shortstop:
+        return '遊撃';
+      case DefensePosition.outfield:
+        return '外野';
+    }
+  }
+
+  /// 短い表示名
+  String get shortName {
+    switch (this) {
+      case DefensePosition.catcher:
+        return '捕';
+      case DefensePosition.first:
+        return '一';
+      case DefensePosition.second:
+        return '二';
+      case DefensePosition.third:
+        return '三';
+      case DefensePosition.shortstop:
+        return '遊';
+      case DefensePosition.outfield:
+        return '外';
+    }
+  }
 }
 
 extension FieldPositionExtension on FieldPosition {
@@ -146,6 +195,29 @@ extension FieldPositionExtension on FieldPosition {
     return this == FieldPosition.left ||
         this == FieldPosition.center ||
         this == FieldPosition.right;
+  }
+
+  /// 対応する守備能力の種類を取得
+  /// 投手方向は null（一律扱い）
+  DefensePosition? get defensePosition {
+    switch (this) {
+      case FieldPosition.pitcher:
+        return null; // 投手方向は守備力考慮しない
+      case FieldPosition.catcher:
+        return DefensePosition.catcher;
+      case FieldPosition.first:
+        return DefensePosition.first;
+      case FieldPosition.second:
+        return DefensePosition.second;
+      case FieldPosition.third:
+        return DefensePosition.third;
+      case FieldPosition.shortstop:
+        return DefensePosition.shortstop;
+      case FieldPosition.left:
+      case FieldPosition.center:
+      case FieldPosition.right:
+        return DefensePosition.outfield;
+    }
   }
 }
 

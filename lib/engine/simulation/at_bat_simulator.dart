@@ -33,6 +33,12 @@ class AtBatSimulator {
   static const double _powerTripleModifier = 0.002; // 三塁打確率補正
   static const double _powerSingleModifier = 0.003; // 単打確率補正（打球速度で少し増）
 
+  // 基準守備力（この守備力で基本確率になる）
+  static const int _baseFielding = 5;
+
+  // 守備力1あたりの補正率（高いほどアウト率が上がる）
+  static const double _fieldingModifier = 0.015;
+
   // 基本確率（球速145km、制球力5、ミート力5、長打力5基準）
   static const double _baseProbBall = 0.35;
   static const double _baseProbStrikeLooking = 0.15;
@@ -168,9 +174,10 @@ class AtBatSimulator {
     }
   }
 
-  /// インプレー時の打席結果を決定（球速・制球力・長打力考慮）
+  /// インプレー時の打席結果を決定（球速・制球力・長打力・守備力考慮）
   /// ミート力はインプレーになる確率に影響し、インプレー後の結果には影響しない
-  AtBatResultType simulateInPlayResult(BattedBallType battedBallType, int speed, int control, int power) {
+  /// fielding: 打球方向を守る野手の守備力（0〜10、nullの場合はデフォルト5）
+  AtBatResultType simulateInPlayResult(BattedBallType battedBallType, int speed, int control, int power, int? fielding) {
     // 球速による補正（速いほどヒットが減る）
     final speedDiff = speed - _baseSpeed;
     final speedModifier = speedDiff * _speedModifierPerKm;
@@ -179,6 +186,11 @@ class AtBatSimulator {
     final controlDiff = control - _baseControl;
     final controlModifier = controlDiff * _controlHitModifier;
 
+    // 守備力による補正（高いほどアウトが増える）
+    final fieldingValue = fielding ?? _baseFielding;
+    final fieldingDiff = fieldingValue - _baseFielding;
+    final fieldingModifierValue = fieldingDiff * _fieldingModifier;
+
     // 長打力による補正（高いほど長打が増える）
     final powerDiff = power - _basePower;
     final homeRunModifier = powerDiff * _powerHomeRunModifier;
@@ -186,8 +198,8 @@ class AtBatSimulator {
     final tripleModifier = powerDiff * _powerTripleModifier;
     final singleModifier = powerDiff * _powerSingleModifier;
 
-    // アウト率（球速が速いほど、制球力が高いほど増える）
-    final outModifier = speedModifier + controlModifier;
+    // アウト率（球速が速いほど、制球力が高いほど、守備力が高いほど増える）
+    final outModifier = speedModifier + controlModifier + fieldingModifierValue;
     final probOut = (_baseProbOut + outModifier).clamp(0.50, 0.85);
 
     // 長打確率（長打力で大きく変動）
@@ -245,7 +257,8 @@ class AtBatSimulator {
 
   /// 1打席をシミュレート
   /// 戻り値: (打席結果タイプ, 投球リスト)
-  (AtBatResultType, List<PitchResult>) simulateAtBat(Player pitcher, Player batter) {
+  /// pitchingTeam: 守備側チーム（打球方向の守備力を取得するため）
+  (AtBatResultType, List<PitchResult>) simulateAtBat(Player pitcher, Player batter, Team pitchingTeam) {
     // 投手の平均球速（設定されていなければ145km）
     final avgSpeed = pitcher.averageSpeed ?? 145;
     // 投手の制球力（設定されていなければ5）
@@ -289,7 +302,9 @@ class AtBatSimulator {
           break;
 
         case PitchResultType.inPlay:
-          final result = simulateInPlayResult(pitch.battedBallType!, speed, control, power);
+          // 打球方向の守備力を取得
+          final fielding = pitchingTeam.getFieldingAt(pitch.fieldPosition!);
+          final result = simulateInPlayResult(pitch.battedBallType!, speed, control, power, fielding);
           return (result, pitches);
       }
     }

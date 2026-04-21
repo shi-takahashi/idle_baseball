@@ -2,21 +2,47 @@ import 'package:idle_baseball/engine/engine.dart';
 
 void main() {
   // テスト用チームを作成
+  // チームA: 守備力が高い（各ポジション守備力8）
   final teamA = Team(
     id: 'team_a',
     name: 'タイガース',
     players: List.generate(
       9,
-      (i) => Player(id: 'a_$i', name: '選手A${i + 1}', number: i + 1),
+      (i) => Player(
+        id: 'a_$i',
+        name: '選手A${i + 1}',
+        number: i + 1,
+        fielding: {
+          DefensePosition.catcher: 8,
+          DefensePosition.first: 8,
+          DefensePosition.second: 8,
+          DefensePosition.third: 8,
+          DefensePosition.shortstop: 8,
+          DefensePosition.outfield: 8,
+        },
+      ),
     ),
   );
 
+  // チームB: 守備力が低い（各ポジション守備力2）
   final teamB = Team(
     id: 'team_b',
     name: 'ジャイアンツ',
     players: List.generate(
       9,
-      (i) => Player(id: 'b_$i', name: '選手B${i + 1}', number: i + 1),
+      (i) => Player(
+        id: 'b_$i',
+        name: '選手B${i + 1}',
+        number: i + 1,
+        fielding: {
+          DefensePosition.catcher: 2,
+          DefensePosition.first: 2,
+          DefensePosition.second: 2,
+          DefensePosition.third: 2,
+          DefensePosition.shortstop: 2,
+          DefensePosition.outfield: 2,
+        },
+      ),
     ),
   );
 

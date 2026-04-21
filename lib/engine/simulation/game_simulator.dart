@@ -82,8 +82,8 @@ class GameSimulator {
       final outsBefore = outs;
       final runnersBefore = runners;
 
-      // 打席シミュレーション
-      final (resultType, pitches) = _atBatSimulator.simulateAtBat(pitcher, batter);
+      // 打席シミュレーション（守備チームを渡す）
+      final (resultType, pitches) = _atBatSimulator.simulateAtBat(pitcher, batter, pitchingTeam);
 
       // インプレー時の打球方向を取得（最後の投球結果から）
       FieldPosition? fieldPosition;
