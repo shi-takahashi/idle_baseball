@@ -31,37 +31,37 @@ class _GameResultScreenState extends State<GameResultScreen>
   }
 
   void _simulateGame() {
-    // タイガース: 速球派投手 + 強打者ライナップ
+    // タイガース: 速球派投手 + 強打者ライナップ（足速いチーム）
     final teamA = Team(
       id: 'team_a',
       name: 'タイガース',
       players: [
-        const Player(id: 'a_0', name: '剛速球太郎', number: 18, averageSpeed: 155, control: 4),
-        const Player(id: 'a_1', name: '首位打者', number: 1, meet: 8, power: 5),  // 巧打タイプ
-        const Player(id: 'a_2', name: '巧打者', number: 2, meet: 7, power: 4),    // 巧打タイプ
-        const Player(id: 'a_3', name: '強打者', number: 3, meet: 6, power: 8),    // パワータイプ
-        const Player(id: 'a_4', name: '四番打者', number: 4, meet: 7, power: 9),  // 主砲
-        const Player(id: 'a_5', name: '中堅打者', number: 5, meet: 6, power: 6),  // バランス
-        const Player(id: 'a_6', name: '堅実打者', number: 6, meet: 6, power: 5),  // バランス
-        const Player(id: 'a_7', name: '下位打者', number: 7, meet: 5, power: 4),  // 平均
-        const Player(id: 'a_8', name: '守備職人', number: 8, meet: 4, power: 3),  // 守備型
+        const Player(id: 'a_0', name: '剛速球太郎', number: 18, averageSpeed: 155, control: 4, speed: 4),
+        const Player(id: 'a_1', name: '首位打者', number: 1, meet: 8, power: 5, speed: 9),  // 俊足巧打
+        const Player(id: 'a_2', name: '巧打者', number: 2, meet: 7, power: 4, speed: 8),    // 俊足
+        const Player(id: 'a_3', name: '強打者', number: 3, meet: 6, power: 8, speed: 5),    // パワータイプ
+        const Player(id: 'a_4', name: '四番打者', number: 4, meet: 7, power: 9, speed: 4),  // 主砲（鈍足）
+        const Player(id: 'a_5', name: '中堅打者', number: 5, meet: 6, power: 6, speed: 7),  // バランス
+        const Player(id: 'a_6', name: '堅実打者', number: 6, meet: 6, power: 5, speed: 6),  // バランス
+        const Player(id: 'a_7', name: '下位打者', number: 7, meet: 5, power: 4, speed: 8),  // 俊足
+        const Player(id: 'a_8', name: '守備職人', number: 8, meet: 4, power: 3, speed: 7),  // 守備型
       ],
     );
 
-    // ジャイアンツ: 技巧派投手 + 平均的ライナップ
+    // ジャイアンツ: 技巧派投手 + 平均的ライナップ（足普通チーム）
     final teamB = Team(
       id: 'team_b',
       name: 'ジャイアンツ',
       players: [
-        const Player(id: 'b_0', name: '技巧派次郎', number: 11, averageSpeed: 138, control: 8),
-        const Player(id: 'b_1', name: '一番打者', number: 1, meet: 6, power: 4),
-        const Player(id: 'b_2', name: '二番打者', number: 2, meet: 5, power: 3),
-        const Player(id: 'b_3', name: '三番打者', number: 3, meet: 6, power: 6),
-        const Player(id: 'b_4', name: '四番打者', number: 4, meet: 5, power: 7),  // 四番なのでやや高め
-        const Player(id: 'b_5', name: '五番打者', number: 5, meet: 5, power: 5),
-        const Player(id: 'b_6', name: '六番打者', number: 6, meet: 4, power: 4),
-        const Player(id: 'b_7', name: '七番打者', number: 7, meet: 4, power: 3),
-        const Player(id: 'b_8', name: '八番打者', number: 8, meet: 3, power: 2),
+        const Player(id: 'b_0', name: '技巧派次郎', number: 11, averageSpeed: 138, control: 8, speed: 3),
+        const Player(id: 'b_1', name: '一番打者', number: 1, meet: 6, power: 4, speed: 7),  // 一番は俊足
+        const Player(id: 'b_2', name: '二番打者', number: 2, meet: 5, power: 3, speed: 6),
+        const Player(id: 'b_3', name: '三番打者', number: 3, meet: 6, power: 6, speed: 5),
+        const Player(id: 'b_4', name: '四番打者', number: 4, meet: 5, power: 7, speed: 3),  // 鈍足
+        const Player(id: 'b_5', name: '五番打者', number: 5, meet: 5, power: 5, speed: 4),
+        const Player(id: 'b_6', name: '六番打者', number: 6, meet: 4, power: 4, speed: 5),
+        const Player(id: 'b_7', name: '七番打者', number: 7, meet: 4, power: 3, speed: 5),
+        const Player(id: 'b_8', name: '八番打者', number: 8, meet: 3, power: 2, speed: 4),
       ],
     );
 

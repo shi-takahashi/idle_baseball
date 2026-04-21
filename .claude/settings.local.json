@@ -5,7 +5,13 @@
       "Bash(flutter --version:*)",
       "Bash(flutter create:*)",
       "Bash(dart run:*)",
-      "Bash(flutter analyze:*)"
+      "Bash(flutter analyze:*)",
+      "Bash(for i in {1..5})",
+      "Bash(do echo '=== Game $i ===')",
+      "Bash(done)",
+      "Bash(for i in 1 2 3 4 5)",
+      "Bash(do dart run bin/test_game.dart)",
+      "Bash(flutter build:*)"
     ]
   }
 }

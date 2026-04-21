@@ -1,5 +1,23 @@
 import 'dart:math';
 import '../models/models.dart';
+import 'steal_simulator.dart';
+
+/// 打席シミュレーションの結果
+class AtBatSimulationResult {
+  final AtBatResultType result;
+  final List<PitchResult> pitches;
+  final List<StealAttempt> stealAttempts; // 打席中の盗塁（記録されるもののみ）
+  final BaseRunners updatedRunners; // 盗塁後のランナー状況
+  final int additionalOuts; // 盗塁失敗によるアウト数
+
+  const AtBatSimulationResult({
+    required this.result,
+    required this.pitches,
+    this.stealAttempts = const [],
+    required this.updatedRunners,
+    this.additionalOuts = 0,
+  });
+}
 
 /// 1打席のシミュレーター
 class AtBatSimulator {
@@ -255,10 +273,19 @@ class AtBatSimulator {
     return AtBatResultType.double_;
   }
 
-  /// 1打席をシミュレート
-  /// 戻り値: (打席結果タイプ, 投球リスト)
+  /// 1打席をシミュレート（盗塁判定を含む）
   /// pitchingTeam: 守備側チーム（打球方向の守備力を取得するため）
-  (AtBatResultType, List<PitchResult>) simulateAtBat(Player pitcher, Player batter, Team pitchingTeam) {
+  /// runners: 現在のランナー状況
+  /// outs: 現在のアウト数
+  /// stealSimulator: 盗塁シミュレーター
+  AtBatSimulationResult simulateAtBat(
+    Player pitcher,
+    Player batter,
+    Team pitchingTeam, {
+    required BaseRunners runners,
+    required int outs,
+    required StealSimulator stealSimulator,
+  }) {
     // 投手の平均球速（設定されていなければ145km）
     final avgSpeed = pitcher.averageSpeed ?? 145;
     // 投手の制球力（設定されていなければ5）
@@ -271,42 +298,223 @@ class AtBatSimulator {
     int balls = 0;
     int strikes = 0;
     final pitches = <PitchResult>[];
+    final recordedSteals = <StealAttempt>[]; // 記録される盗塁
+    var currentRunners = runners;
+    int additionalOuts = 0;
 
     while (true) {
-      // 毎球、球速を生成
+      // 盗塁失敗で3アウトになったら打席終了
+      if (outs + additionalOuts >= 3) {
+        return AtBatSimulationResult(
+          result: AtBatResultType.strikeout, // ダミー（使われない）
+          pitches: pitches,
+          stealAttempts: recordedSteals,
+          updatedRunners: currentRunners,
+          additionalOuts: additionalOuts,
+        );
+      }
+
+      // 1. 盗塁判定（投球前）
+      final stealAttempts = stealSimulator.simulateSteal(currentRunners, outs + additionalOuts);
+
+      // 2. 投球
       final speed = generateSpeed(avgSpeed);
       final pitch = simulatePitch(balls, strikes, speed, control, meet);
-      pitches.add(pitch);
 
-      switch (pitch.type) {
-        case PitchResultType.ball:
-          balls++;
-          if (balls >= 4) {
-            return (AtBatResultType.walk, pitches);
-          }
-          break;
+      // 3. 盗塁がある場合の処理
+      if (stealAttempts.isNotEmpty) {
+        final result = _resolveStealAndPitch(
+          stealAttempts: stealAttempts,
+          pitch: pitch,
+          balls: balls,
+          strikes: strikes,
+          currentRunners: currentRunners,
+          stealSimulator: stealSimulator,
+          outs: outs + additionalOuts,
+        );
 
-        case PitchResultType.strikeLooking:
-        case PitchResultType.strikeSwinging:
-          strikes++;
-          if (strikes >= 3) {
-            return (AtBatResultType.strikeout, pitches);
-          }
-          break;
+        // 盗塁結果を反映
+        currentRunners = result.newRunners;
+        additionalOuts += result.additionalOuts;
+        recordedSteals.addAll(result.recordedSteals);
 
-        case PitchResultType.foul:
-          if (strikes < 2) {
-            strikes++;
-          }
-          // 2ストライク以降のファウルはカウント変わらず
-          break;
+        // 盗塁結果を投球に付加して記録
+        pitches.add(PitchResult(
+          type: pitch.type,
+          battedBallType: pitch.battedBallType,
+          fieldPosition: pitch.fieldPosition,
+          speed: pitch.speed,
+          steals: stealAttempts,
+        ));
 
-        case PitchResultType.inPlay:
-          // 打球方向の守備力を取得
-          final fielding = pitchingTeam.getFieldingAt(pitch.fieldPosition!);
-          final result = simulateInPlayResult(pitch.battedBallType!, speed, control, power, fielding);
-          return (result, pitches);
+        // 盗塁失敗で3アウトになったら打席終了
+        if (outs + additionalOuts >= 3) {
+          return AtBatSimulationResult(
+            result: AtBatResultType.strikeout, // ダミー（使われない）
+            pitches: pitches,
+            stealAttempts: recordedSteals,
+            updatedRunners: currentRunners,
+            additionalOuts: additionalOuts,
+          );
+        }
+      } else {
+        // 盗塁なしの場合
+        pitches.add(pitch);
       }
+
+      // 4. 打席終了条件をチェック（共通処理）
+      final atBatResult = _checkAtBatEnd(
+        pitch: pitch,
+        balls: balls,
+        strikes: strikes,
+        power: power,
+        control: control,
+        speed: speed,
+        pitchingTeam: pitchingTeam,
+      );
+
+      if (atBatResult != null) {
+        return AtBatSimulationResult(
+          result: atBatResult,
+          pitches: pitches,
+          stealAttempts: recordedSteals,
+          updatedRunners: currentRunners,
+          additionalOuts: additionalOuts,
+        );
+      }
+
+      // 5. カウント更新（共通処理）
+      _updateCount(pitch, balls, strikes, (b, s) {
+        balls = b;
+        strikes = s;
+      });
     }
   }
+
+  /// 盗塁と投球の組み合わせを解決
+  _StealPitchResult _resolveStealAndPitch({
+    required List<StealAttempt> stealAttempts,
+    required PitchResult pitch,
+    required int balls,
+    required int strikes,
+    required BaseRunners currentRunners,
+    required StealSimulator stealSimulator,
+    required int outs,
+  }) {
+    var newRunners = currentRunners;
+    int additionalOuts = 0;
+    final recordedSteals = <StealAttempt>[];
+
+    // 投球結果による打席終了判定（四球時の盗塁記録判定に使用）
+    final isBall4 = pitch.type == PitchResultType.ball && balls >= 3;
+
+    // 盗塁結果を適用
+    final (runnersAfterSteal, outsAfterSteal) =
+        stealSimulator.applyStealResult(currentRunners, outs, stealAttempts);
+    newRunners = runnersAfterSteal;
+    additionalOuts = outsAfterSteal - outs;
+
+    // 成功した盗塁を記録するかどうか判定
+    for (final attempt in stealAttempts) {
+      if (attempt.success) {
+        // 四球時、押し出し対象のランナーは盗塁記録なし
+        if (isBall4 && _isForceAdvance(attempt.fromBase, currentRunners)) {
+          // 押し出し対象なので盗塁記録なし
+          continue;
+        }
+        // それ以外は盗塁成功として記録
+        recordedSteals.add(attempt);
+      }
+      // 失敗した盗塁は記録しない（caught stealingは別途カウント）
+    }
+
+    return _StealPitchResult(
+      newRunners: newRunners,
+      additionalOuts: additionalOuts,
+      recordedSteals: recordedSteals,
+    );
+  }
+
+  /// ランナーが押し出し対象かどうか
+  bool _isForceAdvance(Base fromBase, BaseRunners runners) {
+    switch (fromBase) {
+      case Base.first:
+        return true; // 1塁ランナーは常に押し出し対象
+      case Base.second:
+        return runners.first != null; // 1塁にランナーがいれば押し出し
+      case Base.third:
+        return runners.first != null && runners.second != null; // 満塁なら押し出し
+      case Base.home:
+        return false;
+    }
+  }
+
+  /// 打席終了条件をチェック
+  AtBatResultType? _checkAtBatEnd({
+    required PitchResult pitch,
+    required int balls,
+    required int strikes,
+    required int power,
+    required int control,
+    required int speed,
+    required Team pitchingTeam,
+  }) {
+    switch (pitch.type) {
+      case PitchResultType.ball:
+        if (balls >= 3) {
+          return AtBatResultType.walk;
+        }
+        return null;
+
+      case PitchResultType.strikeLooking:
+      case PitchResultType.strikeSwinging:
+        if (strikes >= 2) {
+          return AtBatResultType.strikeout;
+        }
+        return null;
+
+      case PitchResultType.foul:
+        return null;
+
+      case PitchResultType.inPlay:
+        final fielding = pitchingTeam.getFieldingAt(pitch.fieldPosition!);
+        return simulateInPlayResult(pitch.battedBallType!, speed, control, power, fielding);
+    }
+  }
+
+  /// カウント更新
+  void _updateCount(PitchResult pitch, int balls, int strikes, void Function(int, int) callback) {
+    switch (pitch.type) {
+      case PitchResultType.ball:
+        callback(balls + 1, strikes);
+        break;
+      case PitchResultType.strikeLooking:
+      case PitchResultType.strikeSwinging:
+        callback(balls, strikes + 1);
+        break;
+      case PitchResultType.foul:
+        if (strikes < 2) {
+          callback(balls, strikes + 1);
+        } else {
+          callback(balls, strikes);
+        }
+        break;
+      case PitchResultType.inPlay:
+        callback(balls, strikes);
+        break;
+    }
+  }
+}
+
+/// 盗塁と投球の組み合わせ結果
+class _StealPitchResult {
+  final BaseRunners newRunners;
+  final int additionalOuts;
+  final List<StealAttempt> recordedSteals;
+
+  const _StealPitchResult({
+    required this.newRunners,
+    required this.additionalOuts,
+    required this.recordedSteals,
+  });
 }

@@ -1,13 +1,16 @@
 import 'dart:math';
 import '../models/models.dart';
 import 'at_bat_simulator.dart';
+import 'steal_simulator.dart';
 
 /// 試合シミュレーター
 class GameSimulator {
   final AtBatSimulator _atBatSimulator;
+  final StealSimulator _stealSimulator;
 
   GameSimulator({Random? random})
-      : _atBatSimulator = AtBatSimulator(random: random);
+      : _atBatSimulator = AtBatSimulator(random: random),
+        _stealSimulator = StealSimulator(random: random);
 
   /// 1試合をシミュレート
   GameResult simulate(Team homeTeam, Team awayTeam) {
@@ -69,8 +72,11 @@ class GameSimulator {
     required int battingOrder,
   }) {
     final atBats = <AtBatResult>[];
+    final stealEvents = <StealEvent>[];
     int outs = 0;
     int runs = 0;
+    int stolenBases = 0;
+    int caughtStealing = 0;
     BaseRunners runners = BaseRunners.empty;
     int currentBattingOrder = battingOrder;
 
@@ -82,8 +88,60 @@ class GameSimulator {
       final outsBefore = outs;
       final runnersBefore = runners;
 
-      // 打席シミュレーション（守備チームを渡す）
-      final (resultType, pitches) = _atBatSimulator.simulateAtBat(pitcher, batter, pitchingTeam);
+      // 打席シミュレーション（盗塁判定を含む）
+      final atBatResult = _atBatSimulator.simulateAtBat(
+        pitcher,
+        batter,
+        pitchingTeam,
+        runners: runners,
+        outs: outs,
+        stealSimulator: _stealSimulator,
+      );
+
+      // 盗塁失敗で3アウトになった場合
+      if (outs + atBatResult.additionalOuts >= 3) {
+        // 盗塁統計を更新
+        stolenBases += atBatResult.stealAttempts.length;
+        // caught stealingは投球から集計
+        for (final pitch in atBatResult.pitches) {
+          if (pitch.steals != null) {
+            for (final attempt in pitch.steals!) {
+              if (attempt.isOut) {
+                caughtStealing++;
+              }
+            }
+          }
+        }
+        outs += atBatResult.additionalOuts;
+        runners = atBatResult.updatedRunners;
+
+        // 盗塁イベントを記録
+        _recordStealEvents(atBatResult.pitches, atBats.length, stealEvents);
+
+        break;
+      }
+
+      // ランナー状態を更新（盗塁結果を反映）
+      runners = atBatResult.updatedRunners;
+      outs += atBatResult.additionalOuts;
+
+      // 盗塁統計を更新
+      stolenBases += atBatResult.stealAttempts.length;
+      for (final pitch in atBatResult.pitches) {
+        if (pitch.steals != null) {
+          for (final attempt in pitch.steals!) {
+            if (attempt.isOut) {
+              caughtStealing++;
+            }
+          }
+        }
+      }
+
+      // 盗塁イベントを記録
+      _recordStealEvents(atBatResult.pitches, atBats.length, stealEvents);
+
+      final resultType = atBatResult.result;
+      final pitches = atBatResult.pitches;
 
       // インプレー時の打球方向を取得（最後の投球結果から）
       FieldPosition? fieldPosition;
@@ -91,13 +149,13 @@ class GameSimulator {
         fieldPosition = pitches.last.fieldPosition;
       }
 
-      // 走塁処理（アウトカウントを渡す）
+      // 走塁処理（打席結果による進塁、盗塁後のランナー状態を使用）
       final advanceResult = _advanceRunners(runners, resultType, batter, outs);
       final rbiCount = advanceResult.runsScored;
       runs += rbiCount;
       runners = advanceResult.newRunners;
 
-      // アウトカウント
+      // アウトカウント（打席結果によるアウト）
       if (resultType.isOut) {
         outs++;
       }
@@ -124,9 +182,25 @@ class GameSimulator {
         isTop: isTop,
         atBats: atBats,
         runs: runs,
+        stealEvents: stealEvents,
+        stolenBases: stolenBases,
+        caughtStealing: caughtStealing,
       ),
       nextBattingOrder: currentBattingOrder,
     );
+  }
+
+  /// 投球から盗塁イベントを記録
+  void _recordStealEvents(List<PitchResult> pitches, int atBatIndex, List<StealEvent> stealEvents) {
+    for (int i = 0; i < pitches.length; i++) {
+      final pitch = pitches[i];
+      if (pitch.steals != null && pitch.steals!.isNotEmpty) {
+        stealEvents.add(StealEvent(
+          attempts: pitch.steals!,
+          beforeAtBatIndex: atBatIndex,
+        ));
+      }
+    }
   }
 
   /// 走塁処理（単純化版）

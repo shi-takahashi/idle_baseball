@@ -2,7 +2,7 @@ import 'package:idle_baseball/engine/engine.dart';
 
 void main() {
   // テスト用チームを作成
-  // チームA: 守備力が高い（各ポジション守備力8）
+  // チームA: 守備力が高い、走力も高い
   final teamA = Team(
     id: 'team_a',
     name: 'タイガース',
@@ -12,6 +12,7 @@ void main() {
         id: 'a_$i',
         name: '選手A${i + 1}',
         number: i + 1,
+        speed: 8, // 走力8（盗塁しやすい）
         fielding: {
           DefensePosition.catcher: 8,
           DefensePosition.first: 8,
@@ -24,7 +25,7 @@ void main() {
     ),
   );
 
-  // チームB: 守備力が低い（各ポジション守備力2）
+  // チームB: 守備力が低い、走力は普通
   final teamB = Team(
     id: 'team_b',
     name: 'ジャイアンツ',
@@ -34,6 +35,7 @@ void main() {
         id: 'b_$i',
         name: '選手B${i + 1}',
         number: i + 1,
+        speed: 5, // 走力5（普通）
         fielding: {
           DefensePosition.catcher: 2,
           DefensePosition.first: 2,
@@ -86,8 +88,12 @@ void main() {
   int totalWalks = 0;
   int totalHomeRuns = 0;
   int totalPitches = 0;
+  int totalStolenBases = 0;
+  int totalCaughtStealing = 0;
 
   for (final halfInning in result.halfInnings) {
+    totalStolenBases += halfInning.stolenBases;
+    totalCaughtStealing += halfInning.caughtStealing;
     for (final atBat in halfInning.atBats) {
       totalAtBats++;
       totalPitches += atBat.pitchCount;
@@ -105,4 +111,6 @@ void main() {
   print('三振数: $totalStrikeouts');
   print('四球数: $totalWalks');
   print('本塁打数: $totalHomeRuns');
+  print('盗塁成功: $totalStolenBases');
+  print('盗塁失敗: $totalCaughtStealing');
 }

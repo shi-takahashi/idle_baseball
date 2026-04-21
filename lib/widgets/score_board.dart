@@ -351,7 +351,7 @@ class ScoreBoard extends StatelessWidget {
     return atBat.result.displayName;
   }
 
-  /// 1球の表示チップ
+  /// 1球の表示チップ（盗塁情報を含む）
   Widget _buildPitchChip(PitchResult pitch) {
     Color bgColor;
     Color textColor;
@@ -376,6 +376,32 @@ class ScoreBoard extends StatelessWidget {
         break;
     }
 
+    // 盗塁情報がある場合
+    if (pitch.steals != null && pitch.steals!.isNotEmpty) {
+      return Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+            decoration: BoxDecoration(
+              color: bgColor,
+              borderRadius: BorderRadius.circular(4),
+            ),
+            child: Text(
+              '${pitch.type.displayName} ${pitch.speed}km',
+              style: TextStyle(
+                fontSize: 11,
+                color: textColor,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+          const SizedBox(width: 2),
+          _buildStealChip(pitch.steals!),
+        ],
+      );
+    }
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
       decoration: BoxDecoration(
@@ -388,6 +414,51 @@ class ScoreBoard extends StatelessWidget {
           fontSize: 11,
           color: textColor,
           fontWeight: FontWeight.w500,
+        ),
+      ),
+    );
+  }
+
+  /// 盗塁情報チップ
+  Widget _buildStealChip(List<StealAttempt> steals) {
+    // 成功と失敗を分類
+    final successful = steals.where((s) => s.success).toList();
+    final failed = steals.where((s) => s.isOut).toList();
+
+    final labels = <String>[];
+
+    for (final steal in successful) {
+      labels.add('${steal.runner.name}盗塁成功');
+    }
+    for (final steal in failed) {
+      labels.add('${steal.runner.name}盗塁失敗');
+    }
+
+    if (labels.isEmpty) return const SizedBox.shrink();
+
+    final isSuccess = successful.isNotEmpty && failed.isEmpty;
+    final isFailed = failed.isNotEmpty;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: isSuccess
+            ? Colors.purple.shade100
+            : isFailed
+                ? Colors.grey.shade300
+                : Colors.purple.shade50,
+        borderRadius: BorderRadius.circular(4),
+        border: Border.all(
+          color: isSuccess ? Colors.purple.shade400 : Colors.grey.shade500,
+          width: 1,
+        ),
+      ),
+      child: Text(
+        labels.join(', '),
+        style: TextStyle(
+          fontSize: 10,
+          color: isSuccess ? Colors.purple.shade800 : Colors.grey.shade800,
+          fontWeight: FontWeight.w600,
         ),
       ),
     );

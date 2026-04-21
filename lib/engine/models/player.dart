@@ -13,6 +13,7 @@ class Player {
   // 野手能力
   final int? meet; // ミート力（1〜10）
   final int? power; // 長打力（1〜10）
+  final int? speed; // 走力（1〜10）、高いほど盗塁成功率UP
 
   // 守備能力（ポジションごと、0〜10）
   // 0: そのポジションは守れない
@@ -28,6 +29,7 @@ class Player {
     this.control,
     this.meet,
     this.power,
+    this.speed,
     this.fielding,
   });
 
