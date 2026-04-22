@@ -51,7 +51,10 @@ enum BattedBallType {
 /// 球種
 enum PitchType {
   fastball,  // ストレート
+  slider,    // スライダー
   curveball, // カーブ
+  splitter,  // スプリット（フォーク系）
+  changeup,  // チェンジアップ
 }
 
 extension PitchTypeExtension on PitchType {
@@ -60,8 +63,14 @@ extension PitchTypeExtension on PitchType {
     switch (this) {
       case PitchType.fastball:
         return 'ストレート';
+      case PitchType.slider:
+        return 'スライダー';
       case PitchType.curveball:
         return 'カーブ';
+      case PitchType.splitter:
+        return 'スプリット';
+      case PitchType.changeup:
+        return 'チェンジアップ';
     }
   }
 
@@ -70,8 +79,14 @@ extension PitchTypeExtension on PitchType {
     switch (this) {
       case PitchType.fastball:
         return '直';
+      case PitchType.slider:
+        return 'ス';
       case PitchType.curveball:
         return 'カ';
+      case PitchType.splitter:
+        return 'フ';
+      case PitchType.changeup:
+        return 'チ';
     }
   }
 }

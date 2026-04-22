@@ -72,50 +72,117 @@ class AtBatSimulator {
   static const double _baseProbTriple = 0.01;
   // 本塁打確率は残り
 
-  // カーブの球速低下量
-  static const int _curveSpeedReduction = 25;
+  // 基準球種パラメータ（この値で基本効果）
+  static const int _basePitchParam = 5;
 
-  // 基準カーブ（このカーブで基本確率になる）
-  static const int _baseCurve = 5;
+  // パラメータ1あたりの補正率（球種の効果をスケール）
+  static const double _pitchParamModifier = 0.01;
 
-  // カーブ1あたりの補正率
-  static const double _curveSwingModifier = 0.01; // 空振り確率補正
-  static const double _curveOutModifier = 0.01; // アウト率補正
+  // 球種ごとの特性定義
+  // 球速低下量（km/h）
+  static const Map<PitchType, int> _speedReductions = {
+    PitchType.fastball: 0,
+    PitchType.slider: 15,    // -10〜-20の中央
+    PitchType.curveball: 25, // -20〜-30の中央
+    PitchType.splitter: 10,  // -5〜-15の中央
+    PitchType.changeup: 15,  // -10〜-20の中央
+  };
 
-  // 基準ストレートの質（この値で基本確率になる）
-  static const int _baseFastball = 5;
+  // ボール率補正（正=ボール増）
+  // ストレート: 低、スライダー: 中、カーブ: やや高、スプリット: 高、チェンジアップ: 中
+  static const Map<PitchType, double> _ballModifiers = {
+    PitchType.fastball: -0.02,  // 低（制球しやすい）
+    PitchType.slider: 0.0,      // 中
+    PitchType.curveball: 0.02,  // やや高
+    PitchType.splitter: 0.05,   // 高（抜けやすい）
+    PitchType.changeup: 0.0,    // 中
+  };
 
-  // ストレートの質1あたりの補正率（キレ、ノビ等）
-  static const double _fastballSwingModifier = 0.01; // 空振り確率補正
-  static const double _fastballOutModifier = 0.01; // アウト率補正
+  // 三振率補正（正=空振り増）
+  // ストレート: 中、スライダー: 高、カーブ: 中、スプリット: 最高、チェンジアップ: 中〜高
+  static const Map<PitchType, double> _swingModifiers = {
+    PitchType.fastball: 0.0,    // 中（質パラメータで変動）
+    PitchType.slider: 0.03,     // 高
+    PitchType.curveball: 0.01,  // 中
+    PitchType.splitter: 0.05,   // 最高（決め球）
+    PitchType.changeup: 0.02,   // 中〜高
+  };
+
+  // アウト率補正（正=アウト増=被打率低）
+  // ストレート: やや高（被打率やや高=アウト率低）、スライダー: 低、カーブ: 中、スプリット: 低、チェンジアップ: 低
+  static const Map<PitchType, double> _outModifiers = {
+    PitchType.fastball: -0.02,  // 被打率やや高
+    PitchType.slider: 0.03,     // 被打率低
+    PitchType.curveball: 0.0,   // 被打率中
+    PitchType.splitter: 0.03,   // 被打率低
+    PitchType.changeup: 0.02,   // 被打率低
+  };
+
+  // 被長打率補正（正=長打増=打者有利）
+  // ストレート: 高、スライダー: 低〜中、カーブ: やや高、スプリット: 低、チェンジアップ: 低
+  static const Map<PitchType, double> _xbhModifiers = {
+    PitchType.fastball: 0.02,   // 被長打率高（力負けしやすい）
+    PitchType.slider: -0.01,    // 被長打率低〜中
+    PitchType.curveball: 0.01,  // 被長打率やや高
+    PitchType.splitter: -0.02,  // 被長打率低
+    PitchType.changeup: -0.02,  // 被長打率低（タイミング崩れる）
+  };
 
   AtBatSimulator({Random? random}) : _random = random ?? Random();
 
   /// 投げる球種を選択
-  /// avgSpeed: 平均球速（高いほどストレートを投げやすい）
-  /// curve: カーブパラメータ（nullの場合はストレートのみ、高いほどカーブを投げやすい）
-  PitchType _selectPitchType(int avgSpeed, int? curve) {
-    // カーブが投げられない場合はストレート
-    if (curve == null) return PitchType.fastball;
+  /// 各球種のパラメータが高いほど、その球種を投げやすい
+  /// ストレートは球速をベースにした重みを使用
+  PitchType _selectPitchType(Player pitcher) {
+    final avgSpeed = pitcher.averageSpeed ?? 145;
 
-    // 球種選択の確率計算
-    // 基準: 球速145km、カーブ5の場合は50:50
-    // 球速が高いほどストレートを投げやすい、カーブが高いほどカーブを投げやすい
-    final speedWeight = ((avgSpeed - 130) / 25.0).clamp(0.2, 1.0); // 130-155kmで0.2-1.0
-    final curveWeight = (curve / 10.0).clamp(0.1, 1.0); // 1-10で0.1-1.0
+    // 各球種の重み（パラメータ値 / 10）
+    // nullの球種は重み0（投げない）
+    final weights = <PitchType, double>{};
 
-    final totalWeight = speedWeight + curveWeight;
-    final fastballProb = speedWeight / totalWeight;
+    // ストレートは球速をベースにした重み（130-155kmで0.3-1.0）
+    weights[PitchType.fastball] = ((avgSpeed - 130) / 25.0).clamp(0.3, 1.0);
 
-    return _random.nextDouble() < fastballProb ? PitchType.fastball : PitchType.curveball;
+    // 変化球はパラメータ値を重みに使用
+    if (pitcher.slider != null) {
+      weights[PitchType.slider] = (pitcher.slider! / 10.0).clamp(0.1, 1.0);
+    }
+    if (pitcher.curve != null) {
+      weights[PitchType.curveball] = (pitcher.curve! / 10.0).clamp(0.1, 1.0);
+    }
+    if (pitcher.splitter != null) {
+      weights[PitchType.splitter] = (pitcher.splitter! / 10.0).clamp(0.1, 1.0);
+    }
+    if (pitcher.changeup != null) {
+      weights[PitchType.changeup] = (pitcher.changeup! / 10.0).clamp(0.1, 1.0);
+    }
+
+    // 全球種が投げられない場合はストレートのみ
+    if (weights.isEmpty) {
+      return PitchType.fastball;
+    }
+
+    // 合計重みを計算
+    final totalWeight = weights.values.fold(0.0, (sum, w) => sum + w);
+    final roll = _random.nextDouble() * totalWeight;
+
+    // 重み付き選択
+    double cumulative = 0;
+    for (final entry in weights.entries) {
+      cumulative += entry.value;
+      if (roll < cumulative) {
+        return entry.key;
+      }
+    }
+
+    // フォールバック
+    return PitchType.fastball;
   }
 
   /// 球種に応じた球速を生成
   int _generatePitchSpeed(int avgSpeed, PitchType pitchType) {
-    final baseSpeed = pitchType == PitchType.curveball
-        ? avgSpeed -
-              _curveSpeedReduction // カーブは30km/h遅い
-        : avgSpeed;
+    final speedReduction = _speedReductions[pitchType] ?? 0;
+    final baseSpeed = avgSpeed - speedReduction;
     return generateSpeed(baseSpeed);
   }
 
@@ -131,11 +198,9 @@ class AtBatSimulator {
 
   /// 1球をシミュレート
   /// pitchType: 球種
-  /// fastball: ストレートの質パラメータ（ストレートの場合に使用）
-  /// curve: カーブパラメータ（カーブの場合に使用）
-  PitchResult simulatePitch(int balls, int strikes, int speed, int control, int meet, PitchType pitchType, int? fastball, int? curve) {
-    // 球速による補正（速いほど空振り増、ヒット減）
-    // ただしカーブの場合は球速ペナルティを受けない（curveパラメータで効果を決定）
+  /// pitchParam: その球種のパラメータ値（1-10、nullは基準値5）
+  PitchResult simulatePitch(int balls, int strikes, int speed, int control, int meet, PitchType pitchType, int? pitchParam) {
+    // 球速による補正（ストレートのみ、速いほど空振り増）
     double speedModifier = 0.0;
     if (pitchType == PitchType.fastball) {
       final speedDiff = speed - _baseSpeed;
@@ -144,33 +209,27 @@ class AtBatSimulator {
 
     // 制球力による補正（高いほどボール減）
     final controlDiff = control - _baseControl;
-    final ballModifier = controlDiff * _controlBallModifier;
+    final controlBallModifier = controlDiff * _controlBallModifier;
 
     // ミート力による補正（高いほど空振り減）
     final meetDiff = meet - _baseMeet;
     final swingModifier = meetDiff * _meetSwingModifier;
 
-    // ストレートの質による空振り補正（キレ、ノビ等）
-    // fastball 1: -4%, fastball 5: 0%, fastball 10: +5%
-    double fastballSwingModifier = 0.0;
-    if (pitchType == PitchType.fastball) {
-      final fastballValue = fastball ?? _baseFastball;
-      fastballSwingModifier = (fastballValue - _baseFastball) * _fastballSwingModifier;
-    }
+    // 球種固有のベース補正
+    final pitchBallModifier = _ballModifiers[pitchType] ?? 0.0;
+    final pitchSwingModifier = _swingModifiers[pitchType] ?? 0.0;
 
-    // カーブによる空振り補正
-    // カーブ1: -4%, カーブ5: 0%, カーブ10: +5%
-    double curveSwingModifier = 0.0;
-    if (pitchType == PitchType.curveball && curve != null) {
-      curveSwingModifier = (curve - _baseCurve) * _curveSwingModifier;
-    }
+    // パラメータによるスケーリング（パラメータ5で基準、1-10で±4%）
+    // ストレートの場合はfastballパラメータ、変化球はそれぞれのパラメータ
+    final paramValue = pitchParam ?? _basePitchParam;
+    final paramScaling = (paramValue - _basePitchParam) * _pitchParamModifier;
 
     // 確率を調整
-    // 制球力が高いほどボール確率が下がる（ただし最低25%、最高45%）
-    final probBall = (_baseProbBall - ballModifier).clamp(0.25, 0.45);
+    // ボール率: 球種固有 + 制球力 + パラメータ補正（高いパラメータ=制球良い=ボール減）
+    final probBall = (_baseProbBall + pitchBallModifier - controlBallModifier - paramScaling * 0.5).clamp(0.20, 0.50);
     final probStrikeLooking = _baseProbStrikeLooking;
-    // ストレートは球速+質で空振り増、カーブはcurveパラメータで空振り増、ミート力が高いほど空振り減
-    final probStrikeSwinging = (_baseProbStrikeSwinging + speedModifier + fastballSwingModifier - swingModifier + curveSwingModifier).clamp(0.03, 0.25);
+    // 空振り率: 球種固有 + 球速（ストレートのみ）+ パラメータ補正 - ミート力
+    final probStrikeSwinging = (_baseProbStrikeSwinging + pitchSwingModifier + speedModifier + paramScaling - swingModifier).clamp(0.03, 0.30);
     final probFoul = _baseProbFoul;
     // インプレー確率は残り
     final probInPlay = (1.0 - probBall - probStrikeLooking - probStrikeSwinging - probFoul).clamp(0.10, 0.30);
@@ -304,9 +363,8 @@ class AtBatSimulator {
   /// fielding: 打球方向を守る野手の守備力（0〜10、nullの場合はデフォルト5）
   /// batterSpeed: 打者の走力（1〜10、内野安打判定に使用）
   /// fieldPosition: 打球方向（内野安打判定に使用）
-  /// pitchType: 球種（カーブの場合はアウト率に影響）
-  /// fastball: ストレートの質パラメータ（ストレートの場合に使用）
-  /// curve: カーブパラメータ（カーブの場合に使用）
+  /// pitchType: 球種
+  /// pitchParam: その球種のパラメータ値（1-10、nullは基準値5）
   AtBatResultType simulateInPlayResult(
     BattedBallType battedBallType,
     int speed,
@@ -316,11 +374,9 @@ class AtBatSimulator {
     int? batterSpeed,
     FieldPosition? fieldPosition,
     PitchType pitchType = PitchType.fastball,
-    int? fastball,
-    int? curve,
+    int? pitchParam,
   }) {
-    // 球速による補正（速いほどヒットが減る）
-    // ただしカーブの場合は球速ペナルティを受けない（curveパラメータで効果を決定）
+    // 球速による補正（ストレートのみ、速いほどヒットが減る）
     double speedModifier = 0.0;
     if (pitchType == PitchType.fastball) {
       final speedDiff = speed - _baseSpeed;
@@ -336,20 +392,13 @@ class AtBatSimulator {
     final fieldingDiff = fieldingValue - _baseFielding;
     final fieldingModifierValue = fieldingDiff * _fieldingModifier;
 
-    // ストレートの質によるアウト率補正（キレ、ノビ等）
-    // fastball 1: -4%, fastball 5: 0%, fastball 10: +5%
-    double fastballOutModifier = 0.0;
-    if (pitchType == PitchType.fastball) {
-      final fastballValue = fastball ?? _baseFastball;
-      fastballOutModifier = (fastballValue - _baseFastball) * _fastballOutModifier;
-    }
+    // 球種固有のベース補正
+    final pitchOutModifier = _outModifiers[pitchType] ?? 0.0;
+    final pitchXbhModifier = _xbhModifiers[pitchType] ?? 0.0;
 
-    // カーブによるアウト率補正
-    // カーブ1: -4%, カーブ5: 0%, カーブ10: +5%
-    double curveOutModifier = 0.0;
-    if (pitchType == PitchType.curveball && curve != null) {
-      curveOutModifier = (curve - _baseCurve) * _curveOutModifier;
-    }
+    // パラメータによるスケーリング（パラメータ5で基準、1-10で±4%）
+    final paramValue = pitchParam ?? _basePitchParam;
+    final paramScaling = (paramValue - _basePitchParam) * _pitchParamModifier;
 
     // 長打力による補正（高いほど長打が増える）
     final powerDiff = power - _basePower;
@@ -358,17 +407,18 @@ class AtBatSimulator {
     final tripleModifier = powerDiff * _powerTripleModifier;
     final singleModifier = powerDiff * _powerSingleModifier;
 
-    // アウト率（ストレートは球速+質で、カーブはcurveパラメータで、制球力・守備力も影響）
-    final outModifier = speedModifier + fastballOutModifier + controlModifier + fieldingModifierValue + curveOutModifier;
+    // アウト率: 球種固有 + 球速（ストレートのみ）+ パラメータ + 制球力 + 守備力
+    final outModifier = pitchOutModifier + speedModifier + paramScaling + controlModifier + fieldingModifierValue;
     final probOut = (_baseProbOut + outModifier).clamp(0.50, 0.85);
 
-    // 長打確率（長打力で大きく変動）
+    // 長打確率（長打力 + 球種効果で変動）
+    // 球種によって長打が出やすい/出にくいが変わる
     // ホームラン: 長打力1で約1%、長打力10で約11%
-    final probHomeRun = (0.04 + homeRunModifier).clamp(0.005, 0.15);
+    final probHomeRun = (0.04 + homeRunModifier + pitchXbhModifier).clamp(0.005, 0.15);
     // 三塁打: 長打力でわずかに増加
-    final probTriple = (_baseProbTriple + tripleModifier).clamp(0.005, 0.03);
+    final probTriple = (_baseProbTriple + tripleModifier + pitchXbhModifier * 0.3).clamp(0.005, 0.03);
     // 二塁打: 長打力で増加
-    final probDouble = (_baseProbDouble + doubleModifier).clamp(0.02, 0.12);
+    final probDouble = (_baseProbDouble + doubleModifier + pitchXbhModifier * 0.5).clamp(0.02, 0.12);
     // 単打: 長打力で少し増加
     final probSingle = (_baseProbSingle - outModifier * 0.5 + singleModifier).clamp(0.10, 0.35);
 
@@ -427,6 +477,22 @@ class AtBatSimulator {
   /// runners: 現在のランナー状況
   /// outs: 現在のアウト数
   /// stealSimulator: 盗塁シミュレーター
+  /// 投手から球種に対応するパラメータ値を取得
+  int? _getPitchParam(Player pitcher, PitchType pitchType) {
+    switch (pitchType) {
+      case PitchType.fastball:
+        return pitcher.fastball;
+      case PitchType.slider:
+        return pitcher.slider;
+      case PitchType.curveball:
+        return pitcher.curve;
+      case PitchType.splitter:
+        return pitcher.splitter;
+      case PitchType.changeup:
+        return pitcher.changeup;
+    }
+  }
+
   AtBatSimulationResult simulateAtBat(
     Player pitcher,
     Player batter,
@@ -439,10 +505,6 @@ class AtBatSimulator {
     final avgSpeed = pitcher.averageSpeed ?? 145;
     // 投手の制球力（設定されていなければ5）
     final control = pitcher.control ?? 5;
-    // 投手のカーブ（nullの場合は投げられない）
-    final curve = pitcher.curve;
-    // 投手のストレートの質（設定されていなければnull=基準値5）
-    final fastball = pitcher.fastball;
     // 打者のミート力（設定されていなければ5）
     final meet = batter.meet ?? 5;
     // 打者の長打力（設定されていなければ5）
@@ -473,9 +535,10 @@ class AtBatSimulator {
       final stealAttempts = stealSimulator.simulateSteal(currentRunners, outs + additionalOuts);
 
       // 2. 球種選択と投球
-      final pitchType = _selectPitchType(avgSpeed, curve);
+      final pitchType = _selectPitchType(pitcher);
       final speed = _generatePitchSpeed(avgSpeed, pitchType);
-      final pitch = simulatePitch(balls, strikes, speed, control, meet, pitchType, fastball, curve);
+      final pitchParam = _getPitchParam(pitcher, pitchType);
+      final pitch = simulatePitch(balls, strikes, speed, control, meet, pitchType, pitchParam);
 
       // 3. 盗塁がある場合の処理
       if (stealAttempts.isNotEmpty) {
@@ -531,8 +594,7 @@ class AtBatSimulator {
         speed: speed,
         batterSpeed: batterSpeed,
         pitchingTeam: pitchingTeam,
-        fastball: fastball,
-        curve: curve,
+        pitchParam: pitchParam,
       );
 
       if (atBatResult != null) {
@@ -616,8 +678,7 @@ class AtBatSimulator {
     required int speed,
     required int batterSpeed,
     required Team pitchingTeam,
-    required int? fastball,
-    required int? curve,
+    required int? pitchParam,
   }) {
     switch (pitch.type) {
       case PitchResultType.ball:
@@ -647,8 +708,7 @@ class AtBatSimulator {
           batterSpeed: batterSpeed,
           fieldPosition: pitch.fieldPosition,
           pitchType: pitch.pitchType,
-          fastball: fastball,
-          curve: curve,
+          pitchParam: pitchParam,
         );
     }
   }
