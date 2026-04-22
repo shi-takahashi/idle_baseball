@@ -5,11 +5,13 @@ import 'steal_simulator.dart';
 
 /// 試合シミュレーター
 class GameSimulator {
+  final Random _random;
   final AtBatSimulator _atBatSimulator;
   final StealSimulator _stealSimulator;
 
   GameSimulator({Random? random})
-      : _atBatSimulator = AtBatSimulator(random: random),
+      : _random = random ?? Random(),
+        _atBatSimulator = AtBatSimulator(random: random),
         _stealSimulator = StealSimulator(random: random);
 
   /// 1試合をシミュレート
@@ -203,7 +205,19 @@ class GameSimulator {
     }
   }
 
-  /// 走塁処理（単純化版）
+  /// 追加進塁の確率を計算（走力に基づく）
+  /// 走力1: 5%, 走力5: 25%, 走力10: 50%
+  double _extraAdvanceProbability(int speed) {
+    return speed * 0.05;
+  }
+
+  /// 追加進塁するかどうかを判定
+  bool _shouldExtraAdvance(Player runner) {
+    final speed = runner.speed ?? 5;
+    return _random.nextDouble() < _extraAdvanceProbability(speed);
+  }
+
+  /// 走塁処理（走力考慮版）
   _RunnerAdvanceResult _advanceRunners(
     BaseRunners runners,
     AtBatResultType result,
@@ -229,18 +243,46 @@ class GameSimulator {
         break;
 
       case AtBatResultType.double_:
-        // 各走者2塁進む
+        // 3塁ランナー: ホーム
         if (runners.third != null) runsScored++;
+        // 2塁ランナー: ホーム
         if (runners.second != null) runsScored++;
-        newThird = runners.first;
+        // 1塁ランナー: 基本3塁、走力次第でホーム
+        if (runners.first != null) {
+          if (_shouldExtraAdvance(runners.first!)) {
+            runsScored++;
+          } else {
+            newThird = runners.first;
+          }
+        }
         newSecond = batter;
         break;
 
       case AtBatResultType.single:
-        // 各走者1塁進む
+        // 3塁ランナー: ホーム（常に）
         if (runners.third != null) runsScored++;
-        newThird = runners.second;
-        newSecond = runners.first;
+
+        // 2塁ランナー: 基本3塁、走力次第でホーム
+        if (runners.second != null) {
+          if (_shouldExtraAdvance(runners.second!)) {
+            runsScored++;
+          } else {
+            newThird = runners.second;
+          }
+        }
+
+        // 1塁ランナー: 基本2塁、走力次第で3塁
+        // ただし、2塁ランナーが3塁にいる場合は2塁止まり
+        if (runners.first != null) {
+          if (newThird == null && _shouldExtraAdvance(runners.first!)) {
+            // 3塁が空いていて、追加進塁成功 → 3塁へ
+            newThird = runners.first;
+          } else {
+            // 3塁が詰まっているか、追加進塁失敗 → 2塁へ
+            newSecond = runners.first;
+          }
+        }
+
         newFirst = batter;
         break;
 
