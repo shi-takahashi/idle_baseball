@@ -43,6 +43,15 @@ class AtBatSimulator {
   // ミート力1あたりの補正率（インプレーになる確率に影響）
   static const double _meetSwingModifier = 0.015; // 空振り確率補正（高いほど空振り減→インプレー増）
 
+  // 基準選球眼（この選球眼で基本確率になる）
+  static const int _baseEye = 5;
+
+  // 選球眼1あたりの補正率
+  static const double _eyeBallModifier = 0.015; // ボール確率補正（高いほどボール見逃し増→四球増）
+
+  // 長打力による四球率補正（ホームラン警戒で勝負を避けられる）
+  static const double _powerWalkModifier = 0.008; // 長打力1あたりの四球率補正
+
   // 基準長打力（この長打力で基本確率になる）
   static const int _basePower = 5;
 
@@ -280,8 +289,10 @@ class AtBatSimulator {
   /// 1球をシミュレート
   /// pitchType: 球種
   /// pitchParam: その球種のパラメータ値（1-10、nullは基準値5）
+  /// eye: 打者の選球眼（1-10、デフォルト5）
+  /// power: 打者の長打力（1-10、デフォルト5）- 警戒されて四球増
   /// fatigue: 基本疲労度（0.0〜1.0、デフォルト0）
-  PitchResult simulatePitch(int balls, int strikes, int speed, int control, int meet, PitchType pitchType, int? pitchParam, {double fatigue = 0.0}) {
+  PitchResult simulatePitch(int balls, int strikes, int speed, int control, int meet, PitchType pitchType, int? pitchParam, {int eye = 5, int power = 5, double fatigue = 0.0}) {
     // 球種に応じた実効疲労度を計算
     final effectiveFatigue = _getEffectiveFatigue(fatigue, pitchType);
 
@@ -305,6 +316,14 @@ class AtBatSimulator {
     final meetDiff = meet - _baseMeet;
     final swingModifier = meetDiff * _meetSwingModifier;
 
+    // 選球眼による補正（高いほどボール見逃し増→四球増）
+    final eyeDiff = eye - _baseEye;
+    final eyeBallBonus = eyeDiff * _eyeBallModifier;     // ボール率増加
+
+    // 長打力による補正（高いほど警戒されて四球増）
+    final powerDiff = power - _basePower;
+    final powerWalkBonus = powerDiff * _powerWalkModifier;  // ボール率増加
+
     // 球種固有のベース補正
     final pitchBallModifier = _ballModifiers[pitchType] ?? 0.0;
     final pitchSwingModifier = _swingModifiers[pitchType] ?? 0.0;
@@ -320,8 +339,8 @@ class AtBatSimulator {
     final fatigueSwingDecrease = effectiveFatigue * _fatigueSwingModifier;
 
     // 確率を調整
-    // ボール率: 球種固有 + 制球力 + パラメータ補正 + 疲労
-    final probBall = (_baseProbBall + pitchBallModifier - controlBallModifier - paramScaling * 0.5 + fatigueBallIncrease).clamp(0.20, 0.55);
+    // ボール率: 球種固有 + 制球力 + パラメータ補正 + 疲労 + 選球眼 + 長打力警戒
+    final probBall = (_baseProbBall + pitchBallModifier - controlBallModifier - paramScaling * 0.5 + fatigueBallIncrease + eyeBallBonus + powerWalkBonus).clamp(0.20, 0.55);
     final probStrikeLooking = _baseProbStrikeLooking;
     // 空振り率: 球種固有 + 球速（ストレートのみ）+ パラメータ補正 - ミート力 - 疲労
     final probStrikeSwinging = (_baseProbStrikeSwinging + pitchSwingModifier + speedModifier + paramScaling - swingModifier - fatigueSwingDecrease).clamp(0.03, 0.30);
@@ -640,6 +659,8 @@ class AtBatSimulator {
     final power = batter.power ?? 5;
     // 打者の走力（設定されていなければ5）
     final batterSpeed = batter.speed ?? 5;
+    // 打者の選球眼（設定されていなければ5）
+    final eye = batter.eye ?? 5;
 
     int balls = 0;
     int strikes = 0;
@@ -670,7 +691,7 @@ class AtBatSimulator {
       final pitchType = _selectPitchType(pitcher, condition);
       final speed = _generatePitchSpeed(avgSpeed, pitchType);
       final pitchParam = _getPitchParam(pitcher, pitchType, condition);
-      final pitch = simulatePitch(balls, strikes, speed, control, meet, pitchType, pitchParam, fatigue: fatigue);
+      final pitch = simulatePitch(balls, strikes, speed, control, meet, pitchType, pitchParam, eye: eye, power: power, fatigue: fatigue);
       currentPitchCount++; // 投球数を増加
 
       // 3. 盗塁がある場合の処理

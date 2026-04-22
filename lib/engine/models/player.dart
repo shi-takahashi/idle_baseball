@@ -20,6 +20,7 @@ class Player {
   final int? meet; // ミート力（1〜10）
   final int? power; // 長打力（1〜10）
   final int? speed; // 走力（1〜10）、高いほど盗塁成功率UP
+  final int? eye; // 選球眼（1〜10）、高いほど四球が増える
 
   // 守備能力（ポジションごと、0〜10）
   // 0: そのポジションは守れない
@@ -42,6 +43,7 @@ class Player {
     this.meet,
     this.power,
     this.speed,
+    this.eye,
     this.fielding,
   });
 
