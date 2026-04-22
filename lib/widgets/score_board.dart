@@ -270,7 +270,9 @@ class ScoreBoard extends StatelessWidget {
                         ? Colors.green.shade100
                         : atBat.result == AtBatResultType.walk
                             ? Colors.blue.shade100
-                            : Colors.grey.shade200,
+                            : atBat.result == AtBatResultType.reachedOnError
+                                ? Colors.red.shade100
+                                : Colors.grey.shade200,
                     borderRadius: BorderRadius.circular(4),
                   ),
                   child: Text(
@@ -281,7 +283,9 @@ class ScoreBoard extends StatelessWidget {
                           ? Colors.green.shade800
                           : atBat.result == AtBatResultType.walk
                               ? Colors.blue.shade800
-                              : Colors.grey.shade800,
+                              : atBat.result == AtBatResultType.reachedOnError
+                                  ? Colors.red.shade800
+                                  : Colors.grey.shade800,
                     ),
                   ),
                 ),
@@ -319,7 +323,38 @@ class ScoreBoard extends StatelessWidget {
                 padding: const EdgeInsets.only(top: 4),
                 child: _buildTagUpInfo(atBat.tagUps!),
               ),
+            // フィールディングエラー情報
+            if (atBat.fieldingError != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: _buildFieldingErrorInfo(atBat.fieldingError!),
+              ),
           ],
+        ),
+      ),
+    );
+  }
+
+  /// フィールディングエラー情報を表示
+  Widget _buildFieldingErrorInfo(FieldingError error) {
+    final posName = error.position.displayName;
+    final typeName = error.type.displayName;
+    final label = error.runsScored > 0
+        ? '$posName$typeName(${error.runsScored}点)'
+        : '$posName$typeName';
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: Colors.red.shade100,
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontSize: 10,
+          color: Colors.red.shade800,
+          fontWeight: FontWeight.w500,
         ),
       ),
     );
@@ -374,6 +409,8 @@ class ScoreBoard extends StatelessWidget {
           return '${fieldPos.displayName}三';
         case AtBatResultType.homeRun:
           return '本塁打';
+        case AtBatResultType.reachedOnError:
+          return '$posNameエラー'; // 「遊エラー」「三エラー」
         default:
           return atBat.result.displayName;
       }
@@ -383,7 +420,7 @@ class ScoreBoard extends StatelessWidget {
     return atBat.result.displayName;
   }
 
-  /// 1球の表示チップ（盗塁情報を含む）
+  /// 1球の表示チップ（盗塁情報・バッテリーエラー情報を含む）
   Widget _buildPitchChip(PitchResult pitch) {
     Color bgColor;
     Color textColor;
@@ -408,8 +445,22 @@ class ScoreBoard extends StatelessWidget {
         break;
     }
 
+    // 付加情報（盗塁、バッテリーエラー）
+    final additionalWidgets = <Widget>[];
+
     // 盗塁情報がある場合
     if (pitch.steals != null && pitch.steals!.isNotEmpty) {
+      additionalWidgets.add(const SizedBox(width: 2));
+      additionalWidgets.add(_buildStealChip(pitch.steals!));
+    }
+
+    // バッテリーエラー情報がある場合
+    if (pitch.batteryError != null) {
+      additionalWidgets.add(const SizedBox(width: 2));
+      additionalWidgets.add(_buildBatteryErrorChip(pitch.batteryError!));
+    }
+
+    if (additionalWidgets.isNotEmpty) {
       return Row(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -428,8 +479,7 @@ class ScoreBoard extends StatelessWidget {
               ),
             ),
           ),
-          const SizedBox(width: 2),
-          _buildStealChip(pitch.steals!),
+          ...additionalWidgets,
         ],
       );
     }
@@ -446,6 +496,33 @@ class ScoreBoard extends StatelessWidget {
           fontSize: 11,
           color: textColor,
           fontWeight: FontWeight.w500,
+        ),
+      ),
+    );
+  }
+
+  /// バッテリーエラー情報チップ
+  Widget _buildBatteryErrorChip(BatteryError error) {
+    final label = error.runsScored > 0
+        ? '${error.type.displayName}(${error.runsScored}点)'
+        : error.type.displayName;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: Colors.red.shade200,
+        borderRadius: BorderRadius.circular(4),
+        border: Border.all(
+          color: Colors.red.shade600,
+          width: 1,
+        ),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontSize: 10,
+          color: Colors.red.shade900,
+          fontWeight: FontWeight.w600,
         ),
       ),
     );

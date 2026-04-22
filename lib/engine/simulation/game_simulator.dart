@@ -178,6 +178,9 @@ class GameSimulator {
         resultType = AtBatResultType.doublePlay;
       }
 
+      // バッテリーエラーによる得点を加算
+      runs += atBatResult.batteryErrorRuns;
+
       // 走塁処理（打席結果による進塁、盗塁後のランナー状態を使用）
       final advanceResult = _advanceRunners(
         runners,
@@ -214,6 +217,7 @@ class GameSimulator {
         outsBefore: outsBefore,
         runnersBefore: runnersBefore,
         tagUps: advanceResult.tagUps.isNotEmpty ? advanceResult.tagUps : null,
+        fieldingError: atBatResult.fieldingError,
       ));
 
       currentBattingOrder = (currentBattingOrder + 1) % 9;
@@ -567,6 +571,15 @@ class GameSimulator {
         newFirst = runners.first;
         newSecond = runners.second;
         newThird = runners.third;
+        break;
+
+      case AtBatResultType.reachedOnError:
+        // エラー出塁: 単打と同様の進塁（ランナーは1つずつ進塁）
+        // ただしエラーなので追加進塁は発生しない
+        if (runners.third != null) runsScored++;
+        newThird = runners.second;
+        newSecond = runners.first;
+        newFirst = batter;
         break;
     }
 

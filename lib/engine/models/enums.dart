@@ -104,6 +104,7 @@ enum AtBatResultType {
   doublePlay, // 併殺打（ゴロでダブルプレー）
   flyOut, // フライアウト
   lineOut, // ライナーアウト
+  reachedOnError, // エラー出塁
 }
 
 /// 塁
@@ -288,9 +289,14 @@ extension AtBatResultTypeExtension on AtBatResultType {
     return this == AtBatResultType.doublePlay;
   }
 
+  /// エラー出塁かどうか
+  bool get isError {
+    return this == AtBatResultType.reachedOnError;
+  }
+
   /// 打者が出塁するかどうか
   bool get isOnBase {
-    return isHit || this == AtBatResultType.walk;
+    return isHit || this == AtBatResultType.walk || this == AtBatResultType.reachedOnError;
   }
 
   /// 表示用の文字列
@@ -318,6 +324,8 @@ extension AtBatResultTypeExtension on AtBatResultType {
         return 'フライ';
       case AtBatResultType.lineOut:
         return 'ライナー';
+      case AtBatResultType.reachedOnError:
+        return 'エラー出塁';
     }
   }
 }

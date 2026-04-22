@@ -1,7 +1,33 @@
 import 'dart:math';
 
 import '../models/models.dart';
+import 'error_simulator.dart';
 import 'steal_simulator.dart';
+
+/// インプレー結果（エラー情報を含む）
+class InPlayResult {
+  final AtBatResultType result;
+  final FieldingError? fieldingError;
+
+  const InPlayResult({
+    required this.result,
+    this.fieldingError,
+  });
+}
+
+/// 打席終了チェックの結果
+class AtBatEndCheckResult {
+  final AtBatResultType? result;
+  final FieldingError? fieldingError;
+
+  const AtBatEndCheckResult({
+    this.result,
+    this.fieldingError,
+  });
+
+  /// 打席が終了したかどうか
+  bool get isEnded => result != null;
+}
 
 /// 打席シミュレーションの結果
 class AtBatSimulationResult {
@@ -10,6 +36,8 @@ class AtBatSimulationResult {
   final List<StealAttempt> stealAttempts; // 打席中の盗塁（記録されるもののみ）
   final BaseRunners updatedRunners; // 盗塁後のランナー状況
   final int additionalOuts; // 盗塁失敗によるアウト数
+  final FieldingError? fieldingError; // フィールディングエラー
+  final int batteryErrorRuns; // バッテリーエラーによる得点
 
   const AtBatSimulationResult({
     required this.result,
@@ -17,6 +45,8 @@ class AtBatSimulationResult {
     this.stealAttempts = const [],
     required this.updatedRunners,
     this.additionalOuts = 0,
+    this.fieldingError,
+    this.batteryErrorRuns = 0,
   });
 }
 
@@ -179,7 +209,11 @@ class AtBatSimulator {
   // 疲労時の被長打率増加（最大値）
   static const double _fatigueXbhModifier = 0.03;
 
-  AtBatSimulator({Random? random}) : _random = random ?? Random();
+  late final ErrorSimulator _errorSimulator;
+
+  AtBatSimulator({Random? random}) : _random = random ?? Random() {
+    _errorSimulator = ErrorSimulator(random: _random);
+  }
 
   /// 疲労度を計算（0.0〜1.0）
   /// pitchCount: 現在の投球数
@@ -487,7 +521,7 @@ class AtBatSimulator {
   /// pitchType: 球種
   /// pitchParam: その球種のパラメータ値（1-10、nullは基準値5）
   /// fatigue: 基本疲労度（0.0〜1.0、デフォルト0）
-  AtBatResultType simulateInPlayResult(
+  InPlayResult simulateInPlayResult(
     BattedBallType battedBallType,
     int speed,
     int control,
@@ -571,47 +605,61 @@ class AtBatSimulator {
     if (roll < cumulative) {
       switch (battedBallType) {
         case BattedBallType.groundBall:
-          // ゴロの場合、内野安打の可能性をチェック
+          // ゴロの場合、まずエラーチェック（内野のみ）
+          if (fieldPosition != null && !fieldPosition.isOutfield) {
+            if (_errorSimulator.checkGroundBallError(fieldingValue, fieldPosition)) {
+              // エラー発生 → 打者出塁
+              return InPlayResult(
+                result: AtBatResultType.reachedOnError,
+                fieldingError: FieldingError(
+                  type: FieldingErrorType.fielding,
+                  position: fieldPosition,
+                  runsScored: 0, // 得点はGameSimulatorで計算
+                ),
+              );
+            }
+          }
+          // エラーなし → 内野安打の可能性をチェック
           if (batterSpeed != null && fieldPosition != null) {
             final armValue = fielderArm ?? 5;
             final infieldHitProb = _calcInfieldHitProbability(batterSpeed, fieldPosition, fieldingValue, armValue);
             if (_random.nextDouble() < infieldHitProb) {
-              return AtBatResultType.infieldHit; // 内野安打
+              return const InPlayResult(result: AtBatResultType.infieldHit); // 内野安打
             }
           }
-          return AtBatResultType.groundOut;
+          return const InPlayResult(result: AtBatResultType.groundOut);
         case BattedBallType.flyBall:
-          return AtBatResultType.flyOut;
+          return const InPlayResult(result: AtBatResultType.flyOut);
         case BattedBallType.lineDrive:
-          return AtBatResultType.lineOut;
+          return const InPlayResult(result: AtBatResultType.lineOut);
       }
     }
 
     // 単打
     cumulative += probSingle;
     if (roll < cumulative) {
-      return AtBatResultType.single;
+      return const InPlayResult(result: AtBatResultType.single);
     }
 
     // 二塁打
     cumulative += probDouble;
     if (roll < cumulative) {
-      return AtBatResultType.double_;
+      return const InPlayResult(result: AtBatResultType.double_);
     }
 
     // 三塁打
     cumulative += probTriple;
     if (roll < cumulative) {
-      return AtBatResultType.triple;
+      return const InPlayResult(result: AtBatResultType.triple);
     }
 
     // 本塁打（残り）
     // ただし長打力で確率を直接使う
     if (_random.nextDouble() < probHomeRun / (probHomeRun + 0.01)) {
-      return AtBatResultType.homeRun;
+      return const InPlayResult(result: AtBatResultType.homeRun);
     }
     // 本塁打にならなかった場合は二塁打
-    return AtBatResultType.double_;
+    return const InPlayResult(result: AtBatResultType.double_);
   }
 
   /// 1打席をシミュレート（盗塁判定を含む）
@@ -687,6 +735,9 @@ class AtBatSimulator {
     var currentRunners = runners;
     int additionalOuts = 0;
     int currentPitchCount = pitchCount; // 打席中の投球数を追跡
+    int batteryErrorRuns = 0; // バッテリーエラーによる得点
+    // 捕手の守備力（パスボール判定に使用）
+    final catcherFielding = catcher?.getFielding(DefensePosition.catcher) ?? 5;
 
     while (true) {
       // 盗塁失敗で3アウトになったら打席終了
@@ -697,6 +748,7 @@ class AtBatSimulator {
           stealAttempts: recordedSteals,
           updatedRunners: currentRunners,
           additionalOuts: additionalOuts,
+          batteryErrorRuns: batteryErrorRuns,
         );
       }
 
@@ -709,8 +761,52 @@ class AtBatSimulator {
       final pitchType = _selectPitchType(pitcher, condition);
       final speed = _generatePitchSpeed(avgSpeed, pitchType);
       final pitchParam = _getPitchParam(pitcher, pitchType, condition);
-      final pitch = simulatePitch(balls, strikes, speed, control, meet, pitchType, pitchParam, eye: eye, power: power, fatigue: fatigue);
+      var pitch = simulatePitch(balls, strikes, speed, control, meet, pitchType, pitchParam, eye: eye, power: power, fatigue: fatigue);
       currentPitchCount++; // 投球数を増加
+
+      // 2.5 ワイルドピッチ/パスボールチェック（ボール時のみ、ランナーがいる場合）
+      BatteryError? currentBatteryError;
+      if (pitch.type == PitchResultType.ball && currentRunners.hasRunners) {
+        // ワイルドピッチチェック（投手の制球力と球種に依存）
+        if (_errorSimulator.checkWildPitch(control, pitchType)) {
+          final errorResult = _errorSimulator.applyBatteryError(
+            ErrorType.wildPitch,
+            currentRunners,
+          );
+          currentRunners = _errorSimulator.applyBatteryErrorToRunners(currentRunners);
+          batteryErrorRuns += errorResult.runsScored;
+          currentBatteryError = BatteryError(
+            type: BatteryErrorType.wildPitch,
+            runsScored: errorResult.runsScored,
+          );
+        }
+        // ワイルドピッチでなければパスボールチェック（捕手の守備力と球種に依存）
+        else if (_errorSimulator.checkPassedBall(catcherFielding, pitchType)) {
+          final errorResult = _errorSimulator.applyBatteryError(
+            ErrorType.passedBall,
+            currentRunners,
+          );
+          currentRunners = _errorSimulator.applyBatteryErrorToRunners(currentRunners);
+          batteryErrorRuns += errorResult.runsScored;
+          currentBatteryError = BatteryError(
+            type: BatteryErrorType.passedBall,
+            runsScored: errorResult.runsScored,
+          );
+        }
+
+        // バッテリーエラーがあればPitchResultを更新
+        if (currentBatteryError != null) {
+          pitch = PitchResult(
+            type: pitch.type,
+            pitchType: pitch.pitchType,
+            battedBallType: pitch.battedBallType,
+            fieldPosition: pitch.fieldPosition,
+            speed: pitch.speed,
+            steals: pitch.steals,
+            batteryError: currentBatteryError,
+          );
+        }
+      }
 
       // 3. 盗塁がある場合の処理
       if (stealAttempts.isNotEmpty) {
@@ -729,7 +825,7 @@ class AtBatSimulator {
         additionalOuts += result.additionalOuts;
         recordedSteals.addAll(result.recordedSteals);
 
-        // 盗塁結果を投球に付加して記録
+        // 盗塁結果を投球に付加して記録（バッテリーエラーも保持）
         pitches.add(
           PitchResult(
             type: pitch.type,
@@ -738,6 +834,7 @@ class AtBatSimulator {
             fieldPosition: pitch.fieldPosition,
             speed: pitch.speed,
             steals: stealAttempts,
+            batteryError: pitch.batteryError,
           ),
         );
 
@@ -749,6 +846,7 @@ class AtBatSimulator {
             stealAttempts: recordedSteals,
             updatedRunners: currentRunners,
             additionalOuts: additionalOuts,
+            batteryErrorRuns: batteryErrorRuns,
           );
         }
       } else {
@@ -757,7 +855,7 @@ class AtBatSimulator {
       }
 
       // 4. 打席終了条件をチェック（共通処理）
-      final atBatResult = _checkAtBatEnd(
+      final atBatEndCheck = _checkAtBatEnd(
         pitch: pitch,
         balls: balls,
         strikes: strikes,
@@ -770,13 +868,15 @@ class AtBatSimulator {
         fatigue: fatigue,
       );
 
-      if (atBatResult != null) {
+      if (atBatEndCheck.isEnded) {
         return AtBatSimulationResult(
-          result: atBatResult,
+          result: atBatEndCheck.result!,
           pitches: pitches,
           stealAttempts: recordedSteals,
           updatedRunners: currentRunners,
           additionalOuts: additionalOuts,
+          fieldingError: atBatEndCheck.fieldingError,
+          batteryErrorRuns: batteryErrorRuns,
         );
       }
 
@@ -842,7 +942,7 @@ class AtBatSimulator {
   }
 
   /// 打席終了条件をチェック
-  AtBatResultType? _checkAtBatEnd({
+  AtBatEndCheckResult _checkAtBatEnd({
     required PitchResult pitch,
     required int balls,
     required int strikes,
@@ -857,25 +957,25 @@ class AtBatSimulator {
     switch (pitch.type) {
       case PitchResultType.ball:
         if (balls >= 3) {
-          return AtBatResultType.walk;
+          return const AtBatEndCheckResult(result: AtBatResultType.walk);
         }
-        return null;
+        return const AtBatEndCheckResult();
 
       case PitchResultType.strikeLooking:
       case PitchResultType.strikeSwinging:
         if (strikes >= 2) {
-          return AtBatResultType.strikeout;
+          return const AtBatEndCheckResult(result: AtBatResultType.strikeout);
         }
-        return null;
+        return const AtBatEndCheckResult();
 
       case PitchResultType.foul:
-        return null;
+        return const AtBatEndCheckResult();
 
       case PitchResultType.inPlay:
         final fielding = pitchingTeam.getFieldingAt(pitch.fieldPosition!);
         final fielder = pitchingTeam.getFielder(pitch.fieldPosition!);
         final catcher = pitchingTeam.getFielder(FieldPosition.catcher);
-        return simulateInPlayResult(
+        final inPlayResult = simulateInPlayResult(
           pitch.battedBallType!,
           speed,
           control,
@@ -888,6 +988,10 @@ class AtBatSimulator {
           pitchType: pitch.pitchType,
           pitchParam: pitchParam,
           fatigue: fatigue,
+        );
+        return AtBatEndCheckResult(
+          result: inPlayResult.result,
+          fieldingError: inPlayResult.fieldingError,
         );
     }
   }

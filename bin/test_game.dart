@@ -2,7 +2,7 @@ import 'package:idle_baseball/engine/engine.dart';
 
 void main() {
   // テスト用チームを作成
-  // チームA: 守備力が高い、走力も高い
+  // チームA: 守備力が高い、走力も高い、投手の制球力低め（ワイルドピッチしやすい）
   final teamA = Team(
     id: 'team_a',
     name: 'タイガース',
@@ -13,6 +13,11 @@ void main() {
         name: '選手A${i + 1}',
         number: i + 1,
         speed: 8, // 走力8（盗塁しやすい）
+        // 投手は制球力低め（ワイルドピッチしやすい）
+        averageSpeed: i == 0 ? 145 : null,
+        control: i == 0 ? 2 : null, // 制球力2（ワイルドピッチ多め）
+        fastball: i == 0 ? 5 : null,
+        splitter: i == 0 ? 6 : null, // スプリットも投げる（暴投しやすい）
         fielding: {
           DefensePosition.catcher: 8,
           DefensePosition.first: 8,
@@ -25,7 +30,7 @@ void main() {
     ),
   );
 
-  // チームB: 守備力が低い、走力は普通
+  // チームB: 守備力が低い（エラーしやすい）、走力は普通、捕手の守備力も低い（パスボールしやすい）
   final teamB = Team(
     id: 'team_b',
     name: 'ジャイアンツ',
@@ -36,8 +41,11 @@ void main() {
         name: '選手B${i + 1}',
         number: i + 1,
         speed: 5, // 走力5（普通）
+        averageSpeed: i == 0 ? 145 : null,
+        control: i == 0 ? 5 : null,
+        fastball: i == 0 ? 5 : null,
         fielding: {
-          DefensePosition.catcher: 2,
+          DefensePosition.catcher: 2, // 捕手守備力2（パスボールしやすい）
           DefensePosition.first: 2,
           DefensePosition.second: 2,
           DefensePosition.third: 2,
@@ -72,9 +80,25 @@ void main() {
       final fieldPosStr = atBat.fieldPosition != null
           ? ' [${atBat.fieldPosition!.displayName}]'
           : '';
+      // エラー情報
+      String errorStr = '';
+      if (atBat.fieldingError != null) {
+        final err = atBat.fieldingError!;
+        errorStr = ' ※${err.position.displayName}${err.type.displayName}';
+      }
+      // バッテリーエラー情報
+      for (final pitch in atBat.pitches) {
+        if (pitch.batteryError != null) {
+          final be = pitch.batteryError!;
+          errorStr += ' ※${be.type.displayName}';
+          if (be.runsScored > 0) {
+            errorStr += '(${be.runsScored}点)';
+          }
+        }
+      }
       print(
         '  ${atBat.batter.name}: ${atBat.result.displayName}$fieldPosStr '
-        '(${atBat.pitchCount}球, 打点${atBat.rbiCount})',
+        '(${atBat.pitchCount}球, 打点${atBat.rbiCount})$errorStr',
       );
     }
     print('');
@@ -90,6 +114,10 @@ void main() {
   int totalPitches = 0;
   int totalStolenBases = 0;
   int totalCaughtStealing = 0;
+  int totalWildPitches = 0;
+  int totalPassedBalls = 0;
+  int totalFieldingErrors = 0;
+  int totalReachedOnError = 0;
 
   for (final halfInning in result.halfInnings) {
     totalStolenBases += halfInning.stolenBases;
@@ -101,6 +129,19 @@ void main() {
       if (atBat.result == AtBatResultType.strikeout) totalStrikeouts++;
       if (atBat.result == AtBatResultType.walk) totalWalks++;
       if (atBat.result == AtBatResultType.homeRun) totalHomeRuns++;
+      if (atBat.result == AtBatResultType.reachedOnError) totalReachedOnError++;
+      if (atBat.fieldingError != null) totalFieldingErrors++;
+
+      // バッテリーエラーのカウント
+      for (final pitch in atBat.pitches) {
+        if (pitch.batteryError != null) {
+          if (pitch.batteryError!.type == BatteryErrorType.wildPitch) {
+            totalWildPitches++;
+          } else if (pitch.batteryError!.type == BatteryErrorType.passedBall) {
+            totalPassedBalls++;
+          }
+        }
+      }
     }
   }
 
@@ -113,4 +154,10 @@ void main() {
   print('本塁打数: $totalHomeRuns');
   print('盗塁成功: $totalStolenBases');
   print('盗塁失敗: $totalCaughtStealing');
+  print('');
+  print('=== エラー統計 ===');
+  print('ワイルドピッチ: $totalWildPitches');
+  print('パスボール: $totalPassedBalls');
+  print('フィールディングエラー: $totalFieldingErrors');
+  print('エラー出塁: $totalReachedOnError');
 }

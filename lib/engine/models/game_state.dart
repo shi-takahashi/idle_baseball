@@ -114,6 +114,46 @@ class TagUpAttempt {
   }
 }
 
+/// バッテリーエラー（ワイルドピッチ/パスボール）の種類
+enum BatteryErrorType {
+  wildPitch,   // 暴投
+  passedBall,  // 捕逸
+}
+
+extension BatteryErrorTypeExtension on BatteryErrorType {
+  String get displayName {
+    switch (this) {
+      case BatteryErrorType.wildPitch:
+        return '暴投';
+      case BatteryErrorType.passedBall:
+        return '捕逸';
+    }
+  }
+
+  String get shortName {
+    switch (this) {
+      case BatteryErrorType.wildPitch:
+        return 'WP';
+      case BatteryErrorType.passedBall:
+        return 'PB';
+    }
+  }
+}
+
+/// バッテリーエラーの結果
+class BatteryError {
+  final BatteryErrorType type;
+  final int runsScored; // このエラーによる得点
+
+  const BatteryError({
+    required this.type,
+    required this.runsScored,
+  });
+
+  @override
+  String toString() => '${type.displayName}${runsScored > 0 ? "(${runsScored}点)" : ""}';
+}
+
 /// 1球の結果
 class PitchResult {
   final PitchResultType type;
@@ -122,6 +162,7 @@ class PitchResult {
   final FieldPosition? fieldPosition; // インプレー時の打球方向
   final int speed; // 球速（km/h）
   final List<StealAttempt>? steals; // 盗塁の試み（ダブルスチール対応）
+  final BatteryError? batteryError; // バッテリーエラー（ワイルドピッチ/パスボール）
 
   const PitchResult({
     required this.type,
@@ -130,6 +171,7 @@ class PitchResult {
     this.fieldPosition,
     required this.speed,
     this.steals,
+    this.batteryError,
   });
 
   /// 盗塁があったかどうか
@@ -137,6 +179,56 @@ class PitchResult {
 
   /// 盗塁失敗があったかどうか
   bool get hasFailedSteal => steals?.any((s) => !s.success) ?? false;
+
+  /// バッテリーエラーがあったかどうか
+  bool get hasBatteryError => batteryError != null;
+}
+
+/// フィールディングエラーの種類
+enum FieldingErrorType {
+  fielding,  // 捕球エラー
+  throwing,  // 送球エラー
+  cushion,   // クッションボール処理エラー
+}
+
+extension FieldingErrorTypeExtension on FieldingErrorType {
+  String get displayName {
+    switch (this) {
+      case FieldingErrorType.fielding:
+        return '捕球エラー';
+      case FieldingErrorType.throwing:
+        return '送球エラー';
+      case FieldingErrorType.cushion:
+        return '処理エラー';
+    }
+  }
+
+  String get shortName {
+    switch (this) {
+      case FieldingErrorType.fielding:
+        return 'E';
+      case FieldingErrorType.throwing:
+        return 'E送';
+      case FieldingErrorType.cushion:
+        return 'E処';
+    }
+  }
+}
+
+/// フィールディングエラー
+class FieldingError {
+  final FieldingErrorType type;
+  final FieldPosition position; // エラーしたポジション
+  final int runsScored; // このエラーによる得点
+
+  const FieldingError({
+    required this.type,
+    required this.position,
+    required this.runsScored,
+  });
+
+  @override
+  String toString() => '${position.shortName}${type.shortName}${runsScored > 0 ? "(${runsScored}点)" : ""}';
 }
 
 /// 1打席の結果
@@ -152,6 +244,7 @@ class AtBatResult {
   final int outsBefore; // 打席前のアウトカウント
   final BaseRunners runnersBefore; // 打席前のランナー状況
   final List<TagUpAttempt>? tagUps; // タッチアップの試み
+  final FieldingError? fieldingError; // フィールディングエラー
 
   const AtBatResult({
     required this.batter,
@@ -165,6 +258,7 @@ class AtBatResult {
     required this.outsBefore,
     required this.runnersBefore,
     this.tagUps,
+    this.fieldingError,
   });
 
   /// 球数
@@ -172,6 +266,9 @@ class AtBatResult {
 
   /// タッチアップがあったかどうか
   bool get hasTagUp => tagUps != null && tagUps!.isNotEmpty;
+
+  /// フィールディングエラーがあったかどうか
+  bool get hasFieldingError => fieldingError != null;
 
   /// タッチアップ失敗があったかどうか
   bool get hasFailedTagUp => tagUps?.any((t) => !t.success) ?? false;

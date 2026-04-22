@@ -199,6 +199,8 @@ class BattingStats extends StatelessWidget {
         return '飛球';
       case AtBatResultType.lineOut:
         return '直球';
+      case AtBatResultType.reachedOnError:
+        return 'エラー';
     }
   }
 }
