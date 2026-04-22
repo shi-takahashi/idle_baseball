@@ -207,7 +207,11 @@ class AtBatSimulator {
   /// 投げる球種を選択
   /// 速球派: ストレート60%程度、変化球各20%程度
   /// 技巧派: ストレート40%程度、変化球各20%程度
-  PitchType _selectPitchType(Player pitcher) {
+  /// 球種選択の確率は調子に影響されない（習慣的なもの）
+  PitchType _selectPitchType(Player pitcher, PitcherCondition condition) {
+    // 調子は選択確率には影響しない（効果のみに影響）
+    // ignore: unused_local_variable
+    final _ = condition;
     final avgSpeed = pitcher.averageSpeed ?? 145;
     final fastballQuality = pitcher.fastball ?? 5;
 
@@ -266,9 +270,9 @@ class AtBatSimulator {
   /// 球速を生成（正規分布的、中央付近が出やすい）
   int generateSpeed(int averageSpeed) {
     // 2つの一様乱数の平均を使って中央寄りの分布を作る
-    // これで±5の範囲で中央付近が出やすくなる
-    final r1 = _random.nextDouble() * 10 - 5; // -5 to +5
-    final r2 = _random.nextDouble() * 10 - 5; // -5 to +5
+    // ±3の範囲で中央付近が出やすい（調子±2と合わせて±5の変動）
+    final r1 = _random.nextDouble() * 6 - 3; // -3 to +3
+    final r2 = _random.nextDouble() * 6 - 3; // -3 to +3
     final offset = ((r1 + r2) / 2).round(); // 平均を取ると中央寄りに
     return averageSpeed + offset;
   }
@@ -581,20 +585,37 @@ class AtBatSimulator {
   /// runners: 現在のランナー状況
   /// outs: 現在のアウト数
   /// stealSimulator: 盗塁シミュレーター
-  /// 投手から球種に対応するパラメータ値を取得
-  int? _getPitchParam(Player pitcher, PitchType pitchType) {
+  /// 投手から球種に対応するパラメータ値を取得（調子補正を適用）
+  int? _getPitchParam(Player pitcher, PitchType pitchType, PitcherCondition condition) {
+    int? baseParam;
+    int modifier;
+
     switch (pitchType) {
       case PitchType.fastball:
-        return pitcher.fastball;
+        baseParam = pitcher.fastball;
+        modifier = condition.fastballModifier;
+        break;
       case PitchType.slider:
-        return pitcher.slider;
+        baseParam = pitcher.slider;
+        modifier = condition.sliderModifier;
+        break;
       case PitchType.curveball:
-        return pitcher.curve;
+        baseParam = pitcher.curve;
+        modifier = condition.curveModifier;
+        break;
       case PitchType.splitter:
-        return pitcher.splitter;
+        baseParam = pitcher.splitter;
+        modifier = condition.splitterModifier;
+        break;
       case PitchType.changeup:
-        return pitcher.changeup;
+        baseParam = pitcher.changeup;
+        modifier = condition.changeupModifier;
+        break;
     }
+
+    if (baseParam == null) return null;
+    // 調子補正を適用（1〜10の範囲内）
+    return (baseParam + modifier).clamp(1, 10);
   }
 
   AtBatSimulationResult simulateAtBat(
@@ -605,11 +626,12 @@ class AtBatSimulator {
     required int outs,
     required StealSimulator stealSimulator,
     int pitchCount = 0, // この打席前までの投球数
+    PitcherCondition condition = const PitcherCondition(), // 投手の調子
   }) {
-    // 投手の平均球速（設定されていなければ145km）
-    final avgSpeed = pitcher.averageSpeed ?? 145;
-    // 投手の制球力（設定されていなければ5）
-    final control = pitcher.control ?? 5;
+    // 投手の平均球速（設定されていなければ145km）+ 調子補正
+    final avgSpeed = (pitcher.averageSpeed ?? 145) + condition.speedModifier;
+    // 投手の制球力（設定されていなければ5）+ 調子補正（1〜10の範囲内）
+    final control = ((pitcher.control ?? 5) + condition.controlModifier).clamp(1, 10);
     // 投手のスタミナ（設定されていなければ5）
     final stamina = pitcher.stamina;
     // 打者のミート力（設定されていなければ5）
@@ -645,9 +667,9 @@ class AtBatSimulator {
       // 2. 球種選択と投球
       // 疲労度を計算（投球数とスタミナに基づく）
       final fatigue = _calculateFatigue(currentPitchCount, stamina);
-      final pitchType = _selectPitchType(pitcher);
+      final pitchType = _selectPitchType(pitcher, condition);
       final speed = _generatePitchSpeed(avgSpeed, pitchType);
-      final pitchParam = _getPitchParam(pitcher, pitchType);
+      final pitchParam = _getPitchParam(pitcher, pitchType, condition);
       final pitch = simulatePitch(balls, strikes, speed, control, meet, pitchType, pitchParam, fatigue: fatigue);
       currentPitchCount++; // 投球数を増加
 

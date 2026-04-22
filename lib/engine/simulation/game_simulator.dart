@@ -26,6 +26,10 @@ class GameSimulator {
     int homePitcherPitchCount = 0; // ホーム投手の投球数
     int awayPitcherPitchCount = 0; // アウェイ投手の投球数
 
+    // 試合開始時に各投手の調子を決定
+    final homePitcherCondition = PitcherCondition.random(_random);
+    final awayPitcherCondition = PitcherCondition.random(_random);
+
     for (int inning = 1; inning <= 9; inning++) {
       // 表（アウェイチームの攻撃、ホーム投手が投げる）
       final topResult = _simulateHalfInning(
@@ -35,6 +39,7 @@ class GameSimulator {
         pitchingTeam: homeTeam,
         battingOrder: awayBattingOrder,
         pitcherPitchCount: homePitcherPitchCount,
+        pitcherCondition: homePitcherCondition,
       );
       halfInnings.add(topResult.halfInning);
       awayScore += topResult.halfInning.runs;
@@ -49,6 +54,7 @@ class GameSimulator {
         pitchingTeam: awayTeam,
         battingOrder: homeBattingOrder,
         pitcherPitchCount: awayPitcherPitchCount,
+        pitcherCondition: awayPitcherCondition,
       );
       halfInnings.add(bottomResult.halfInning);
       homeScore += bottomResult.halfInning.runs;
@@ -79,6 +85,7 @@ class GameSimulator {
     required Team pitchingTeam,
     required int battingOrder,
     int pitcherPitchCount = 0, // 投手の現在の投球数
+    required PitcherCondition pitcherCondition, // 投手の調子
   }) {
     final atBats = <AtBatResult>[];
     final stealEvents = <StealEvent>[];
@@ -107,6 +114,7 @@ class GameSimulator {
         outs: outs,
         stealSimulator: _stealSimulator,
         pitchCount: currentPitchCount, // 投球数を渡す
+        condition: pitcherCondition, // 投手の調子を渡す
       );
       // 投球数を更新
       currentPitchCount += atBatResult.pitches.length;
