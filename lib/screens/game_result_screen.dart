@@ -36,7 +36,18 @@ class _GameResultScreenState extends State<GameResultScreen>
       id: 'team_a',
       name: 'タイガース',
       players: [
-        const Player(id: 'a_0', name: '剛速球太郎', number: 18, averageSpeed: 155, control: 4, speed: 4),
+        const Player(
+          id: 'a_0',
+          name: '剛速球太郎',
+          number: 18,
+          averageSpeed: 155,
+          fastball: 8,  // キレのあるストレート
+          control: 4,
+          stamina: 6,
+          slider: 6,    // スライダーも投げる
+          splitter: 7,  // 決め球のスプリット
+          speed: 4,
+        ),
         const Player(id: 'a_1', name: '首位打者', number: 1, meet: 8, power: 5, speed: 9),  // 俊足巧打
         const Player(id: 'a_2', name: '巧打者', number: 2, meet: 7, power: 4, speed: 8),    // 俊足
         const Player(id: 'a_3', name: '強打者', number: 3, meet: 6, power: 8, speed: 5),    // パワータイプ
@@ -53,7 +64,19 @@ class _GameResultScreenState extends State<GameResultScreen>
       id: 'team_b',
       name: 'ジャイアンツ',
       players: [
-        const Player(id: 'b_0', name: '技巧派次郎', number: 11, averageSpeed: 138, control: 8, speed: 3),
+        const Player(
+          id: 'b_0',
+          name: '技巧派次郎',
+          number: 11,
+          averageSpeed: 138,
+          fastball: 5,   // 普通のストレート
+          control: 8,
+          stamina: 7,
+          curve: 8,      // 得意のカーブ
+          slider: 5,     // スライダーも
+          changeup: 7,   // チェンジアップで緩急
+          speed: 3,
+        ),
         const Player(id: 'b_1', name: '一番打者', number: 1, meet: 6, power: 4, speed: 7),  // 一番は俊足
         const Player(id: 'b_2', name: '二番打者', number: 2, meet: 5, power: 3, speed: 6),
         const Player(id: 'b_3', name: '三番打者', number: 3, meet: 6, power: 6, speed: 5),

@@ -205,30 +205,33 @@ class AtBatSimulator {
   }
 
   /// 投げる球種を選択
-  /// 各球種のパラメータが高いほど、その球種を投げやすい
-  /// ストレートは球速をベースにした重みを使用
+  /// 速球派: ストレート60%程度、変化球各20%程度
+  /// 技巧派: ストレート40%程度、変化球各20%程度
   PitchType _selectPitchType(Player pitcher) {
     final avgSpeed = pitcher.averageSpeed ?? 145;
+    final fastballQuality = pitcher.fastball ?? 5;
 
-    // 各球種の重み（パラメータ値 / 10）
+    // 各球種の重み
     // nullの球種は重み0（投げない）
     final weights = <PitchType, double>{};
 
-    // ストレートは球速をベースにした重み（130-155kmで0.3-1.0）
-    weights[PitchType.fastball] = ((avgSpeed - 130) / 25.0).clamp(0.3, 1.0);
+    // ストレートは基本重み1.8 + 球速と質で補正
+    final speedBonus = ((avgSpeed - 140) / 30.0).clamp(-0.3, 0.5);  // -0.3〜+0.5
+    final qualityBonus = (fastballQuality - 5) * 0.1;               // -0.4〜+0.5
+    weights[PitchType.fastball] = (1.8 + speedBonus + qualityBonus).clamp(1.2, 2.5);
 
-    // 変化球はパラメータ値を重みに使用
+    // 変化球はパラメータ値を重みに使用（0.5〜1.2）
     if (pitcher.slider != null) {
-      weights[PitchType.slider] = (pitcher.slider! / 10.0).clamp(0.1, 1.0);
+      weights[PitchType.slider] = (pitcher.slider! / 10.0 + 0.2).clamp(0.5, 1.2);
     }
     if (pitcher.curve != null) {
-      weights[PitchType.curveball] = (pitcher.curve! / 10.0).clamp(0.1, 1.0);
+      weights[PitchType.curveball] = (pitcher.curve! / 10.0 + 0.2).clamp(0.5, 1.2);
     }
     if (pitcher.splitter != null) {
-      weights[PitchType.splitter] = (pitcher.splitter! / 10.0).clamp(0.1, 1.0);
+      weights[PitchType.splitter] = (pitcher.splitter! / 10.0 + 0.2).clamp(0.5, 1.2);
     }
     if (pitcher.changeup != null) {
-      weights[PitchType.changeup] = (pitcher.changeup! / 10.0).clamp(0.1, 1.0);
+      weights[PitchType.changeup] = (pitcher.changeup! / 10.0 + 0.2).clamp(0.5, 1.2);
     }
 
     // 全球種が投げられない場合はストレートのみ

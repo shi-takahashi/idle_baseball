@@ -1,10 +1,10 @@
 /// 1球の結果タイプ
 enum PitchResultType {
-  ball,           // ボール
-  strikeLooking,  // 見逃しストライク
+  ball, // ボール
+  strikeLooking, // 見逃しストライク
   strikeSwinging, // 空振りストライク
-  foul,           // ファウル
-  inPlay,         // インプレー（打球が飛んだ）
+  foul, // ファウル
+  inPlay, // インプレー（打球が飛んだ）
 }
 
 extension PitchResultTypeExtension on PitchResultType {
@@ -43,18 +43,18 @@ extension PitchResultTypeExtension on PitchResultType {
 
 /// 打球の種類
 enum BattedBallType {
-  groundBall,  // ゴロ
-  flyBall,     // フライ
-  lineDrive,   // ライナー
+  groundBall, // ゴロ
+  flyBall, // フライ
+  lineDrive, // ライナー
 }
 
 /// 球種
 enum PitchType {
-  fastball,  // ストレート
-  slider,    // スライダー
+  fastball, // ストレート
+  slider, // スライダー
   curveball, // カーブ
-  splitter,  // スプリット（フォーク系）
-  changeup,  // チェンジアップ
+  splitter, // スプリット（フォーク系）
+  changeup, // チェンジアップ
 }
 
 extension PitchTypeExtension on PitchType {
@@ -78,64 +78,59 @@ extension PitchTypeExtension on PitchType {
   String get shortName {
     switch (this) {
       case PitchType.fastball:
-        return '直';
+        return 'スト';
       case PitchType.slider:
-        return 'ス';
+        return 'スラ';
       case PitchType.curveball:
-        return 'カ';
+        return 'カー';
       case PitchType.splitter:
-        return 'フ';
+        return 'スプ';
       case PitchType.changeup:
-        return 'チ';
+        return 'チェ';
     }
   }
 }
 
 /// 打席の結果タイプ
 enum AtBatResultType {
-  strikeout,    // 三振
-  walk,         // 四球
-  single,       // 単打
-  infieldHit,   // 内野安打（単打の一種）
-  double_,      // 二塁打（doubleは予約語なのでアンダースコア）
-  triple,       // 三塁打
-  homeRun,      // 本塁打
-  groundOut,    // ゴロアウト
-  doublePlay,   // 併殺打（ゴロでダブルプレー）
-  flyOut,       // フライアウト
-  lineOut,      // ライナーアウト
+  strikeout, // 三振
+  walk, // 四球
+  single, // 単打
+  infieldHit, // 内野安打（単打の一種）
+  double_, // 二塁打（doubleは予約語なのでアンダースコア）
+  triple, // 三塁打
+  homeRun, // 本塁打
+  groundOut, // ゴロアウト
+  doublePlay, // 併殺打（ゴロでダブルプレー）
+  flyOut, // フライアウト
+  lineOut, // ライナーアウト
 }
 
 /// 塁
-enum Base {
-  first,
-  second,
-  third,
-  home,
-}
+enum Base { first, second, third, home }
 
 /// 守備位置 / 打球方向（9方向）
 enum FieldPosition {
-  pitcher,    // 投手
-  catcher,    // 捕手
-  first,      // 一塁手
-  second,     // 二塁手
-  third,      // 三塁手
-  shortstop,  // 遊撃手
-  left,       // 左翼手
-  center,     // 中堅手
-  right,      // 右翼手
+  pitcher, // 投手
+  catcher, // 捕手
+  first, // 一塁手
+  second, // 二塁手
+  third, // 三塁手
+  shortstop, // 遊撃手
+  left, // 左翼手
+  center, // 中堅手
+  right, // 右翼手
 }
 
 /// 守備能力の種類（6種類 + 投手向けに飛んだ場合は一律扱い）
 /// 外野は左翼・中堅・右翼をまとめて1つ
 enum DefensePosition {
-  catcher,    // 捕手
-  first,      // 一塁手
-  second,     // 二塁手
-  third,      // 三塁手
-  shortstop,  // 遊撃手
-  outfield,   // 外野手（左翼・中堅・右翼共通）
+  catcher, // 捕手
+  first, // 一塁手
+  second, // 二塁手
+  third, // 三塁手
+  shortstop, // 遊撃手
+  outfield, // 外野手（左翼・中堅・右翼共通）
 }
 
 extension DefensePositionExtension on DefensePosition {
@@ -237,9 +232,7 @@ extension FieldPositionExtension on FieldPosition {
 
   /// 外野かどうか
   bool get isOutfield {
-    return this == FieldPosition.left ||
-        this == FieldPosition.center ||
-        this == FieldPosition.right;
+    return this == FieldPosition.left || this == FieldPosition.center || this == FieldPosition.right;
   }
 
   /// 対応する守備能力の種類を取得
@@ -278,8 +271,7 @@ extension AtBatResultTypeExtension on AtBatResultType {
 
   /// 単打かどうか（内野安打を含む）
   bool get isSingle {
-    return this == AtBatResultType.single ||
-        this == AtBatResultType.infieldHit;
+    return this == AtBatResultType.single || this == AtBatResultType.infieldHit;
   }
 
   /// アウトかどうか

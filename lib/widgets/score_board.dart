@@ -388,7 +388,7 @@ class ScoreBoard extends StatelessWidget {
               borderRadius: BorderRadius.circular(4),
             ),
             child: Text(
-              '${pitch.type.displayName} ${pitch.speed}km',
+              '${pitch.pitchType.shortName}${pitch.speed} ${pitch.type.shortName}',
               style: TextStyle(
                 fontSize: 11,
                 color: textColor,
@@ -409,7 +409,7 @@ class ScoreBoard extends StatelessWidget {
         borderRadius: BorderRadius.circular(4),
       ),
       child: Text(
-        '${pitch.type.displayName} ${pitch.speed}km',
+        '${pitch.pitchType.shortName}${pitch.speed} ${pitch.type.shortName}',
         style: TextStyle(
           fontSize: 11,
           color: textColor,
