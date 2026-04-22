@@ -27,6 +27,7 @@ class StealAttempt {
 /// 1球の結果
 class PitchResult {
   final PitchResultType type;
+  final PitchType pitchType; // 球種
   final BattedBallType? battedBallType; // インプレー時のみ
   final FieldPosition? fieldPosition; // インプレー時の打球方向
   final int speed; // 球速（km/h）
@@ -34,6 +35,7 @@ class PitchResult {
 
   const PitchResult({
     required this.type,
+    required this.pitchType,
     this.battedBallType,
     this.fieldPosition,
     required this.speed,

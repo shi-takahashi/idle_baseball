@@ -48,6 +48,34 @@ enum BattedBallType {
   lineDrive,   // ライナー
 }
 
+/// 球種
+enum PitchType {
+  fastball,  // ストレート
+  curveball, // カーブ
+}
+
+extension PitchTypeExtension on PitchType {
+  /// 表示用の日本語名
+  String get displayName {
+    switch (this) {
+      case PitchType.fastball:
+        return 'ストレート';
+      case PitchType.curveball:
+        return 'カーブ';
+    }
+  }
+
+  /// 短い表示名（省スペース用）
+  String get shortName {
+    switch (this) {
+      case PitchType.fastball:
+        return '直';
+      case PitchType.curveball:
+        return 'カ';
+    }
+  }
+}
+
 /// 打席の結果タイプ
 enum AtBatResultType {
   strikeout,    // 三振

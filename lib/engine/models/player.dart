@@ -9,6 +9,7 @@ class Player {
   // 投手能力
   final int? averageSpeed; // 平均球速（km/h）、野手はnull
   final int? control; // 制球力（1〜10）、野手はnull
+  final int? curve; // カーブ（1〜10）、nullの場合は投げられない
 
   // 野手能力
   final int? meet; // ミート力（1〜10）
@@ -27,6 +28,7 @@ class Player {
     required this.number,
     this.averageSpeed,
     this.control,
+    this.curve,
     this.meet,
     this.power,
     this.speed,
