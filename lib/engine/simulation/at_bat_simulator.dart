@@ -128,7 +128,81 @@ class AtBatSimulator {
     PitchType.changeup: -0.02,  // 被長打率低（タイミング崩れる）
   };
 
+  // === 疲労システム ===
+
+  // 基準スタミナ（この値で標準的な疲労カーブ）
+  static const int _baseStamina = 5;
+
+  // 疲労開始球数（スタミナ5で70球から疲労開始）
+  static const int _baseFatigueStartPitches = 70;
+
+  // 完全疲労球数（スタミナ5で100球で完全疲労）
+  static const int _baseFullFatiguePitches = 100;
+
+  // スタミナ1あたりの疲労開始球数補正
+  static const int _staminaPitchModifier = 5;
+
+  // 球種ごとの疲労影響度（0.0〜1.0、高いほど疲労の影響を受けやすい）
+  // スプリット: 最大、スライダー: 高、カーブ: 中、チェンジアップ: 低、ストレート: 低
+  static const Map<PitchType, double> _fatigueSensitivity = {
+    PitchType.fastball: 0.4,    // ★★☆☆☆ 球速低下
+    PitchType.slider: 0.8,      // ★★★★☆ 曲がらない
+    PitchType.curveball: 0.6,   // ★★★☆☆ 浮く
+    PitchType.splitter: 1.0,    // ★★★★★ 落ちない＆被弾
+    PitchType.changeup: 0.4,    // ★★☆☆☆ 少しズレる
+  };
+
+  // 疲労時の球速低下量（ストレート用、最大値）
+  static const int _fatigueSpeedReduction = 5;
+
+  // 疲労時のボール率増加（最大値）
+  static const double _fatigueBallModifier = 0.08;
+
+  // 疲労時の空振り率低下（最大値）
+  static const double _fatigueSwingModifier = 0.05;
+
+  // 疲労時のアウト率低下（最大値、被打率増加）
+  static const double _fatigueOutModifier = 0.08;
+
+  // 疲労時の被長打率増加（最大値）
+  static const double _fatigueXbhModifier = 0.03;
+
   AtBatSimulator({Random? random}) : _random = random ?? Random();
+
+  /// 疲労度を計算（0.0〜1.0）
+  /// pitchCount: 現在の投球数
+  /// stamina: スタミナパラメータ（1-10、nullは5）
+  double _calculateFatigue(int pitchCount, int? stamina) {
+    final staminaValue = stamina ?? _baseStamina;
+
+    // スタミナに応じた疲労開始/完全疲労の球数を計算
+    // スタミナ1: 50球から開始、80球で完全疲労
+    // スタミナ5: 70球から開始、100球で完全疲労
+    // スタミナ10: 95球から開始、125球で完全疲労
+    final fatigueStart =
+        _baseFatigueStartPitches + (staminaValue - _baseStamina) * _staminaPitchModifier;
+    final fullFatigue =
+        _baseFullFatiguePitches + (staminaValue - _baseStamina) * _staminaPitchModifier;
+
+    if (pitchCount < fatigueStart) {
+      return 0.0; // 疲労なし
+    }
+    if (pitchCount >= fullFatigue) {
+      return 1.0; // 完全疲労
+    }
+
+    // 疲労開始〜完全疲労の間で線形補間
+    return (pitchCount - fatigueStart) / (fullFatigue - fatigueStart);
+  }
+
+  /// 球種に応じた疲労効果を計算
+  /// fatigue: 基本疲労度（0.0〜1.0）
+  /// pitchType: 球種
+  /// 戻り値: 球種ごとの実効疲労度（0.0〜1.0）
+  double _getEffectiveFatigue(double fatigue, PitchType pitchType) {
+    final sensitivity = _fatigueSensitivity[pitchType] ?? 0.5;
+    return fatigue * sensitivity;
+  }
 
   /// 投げる球種を選択
   /// 各球種のパラメータが高いほど、その球種を投げやすい
@@ -199,11 +273,20 @@ class AtBatSimulator {
   /// 1球をシミュレート
   /// pitchType: 球種
   /// pitchParam: その球種のパラメータ値（1-10、nullは基準値5）
-  PitchResult simulatePitch(int balls, int strikes, int speed, int control, int meet, PitchType pitchType, int? pitchParam) {
+  /// fatigue: 基本疲労度（0.0〜1.0、デフォルト0）
+  PitchResult simulatePitch(int balls, int strikes, int speed, int control, int meet, PitchType pitchType, int? pitchParam, {double fatigue = 0.0}) {
+    // 球種に応じた実効疲労度を計算
+    final effectiveFatigue = _getEffectiveFatigue(fatigue, pitchType);
+
     // 球速による補正（ストレートのみ、速いほど空振り増）
+    // 疲労時はストレートの球速が低下
     double speedModifier = 0.0;
+    int effectiveSpeed = speed;
     if (pitchType == PitchType.fastball) {
-      final speedDiff = speed - _baseSpeed;
+      // 疲労による球速低下（最大5km/h）
+      final fatigueSpeedDrop = (effectiveFatigue * _fatigueSpeedReduction).round();
+      effectiveSpeed = speed - fatigueSpeedDrop;
+      final speedDiff = effectiveSpeed - _baseSpeed;
       speedModifier = speedDiff * _speedModifierPerKm;
     }
 
@@ -224,12 +307,17 @@ class AtBatSimulator {
     final paramValue = pitchParam ?? _basePitchParam;
     final paramScaling = (paramValue - _basePitchParam) * _pitchParamModifier;
 
+    // 疲労による補正
+    // ボール率増加、空振り率低下
+    final fatigueBallIncrease = effectiveFatigue * _fatigueBallModifier;
+    final fatigueSwingDecrease = effectiveFatigue * _fatigueSwingModifier;
+
     // 確率を調整
-    // ボール率: 球種固有 + 制球力 + パラメータ補正（高いパラメータ=制球良い=ボール減）
-    final probBall = (_baseProbBall + pitchBallModifier - controlBallModifier - paramScaling * 0.5).clamp(0.20, 0.50);
+    // ボール率: 球種固有 + 制球力 + パラメータ補正 + 疲労
+    final probBall = (_baseProbBall + pitchBallModifier - controlBallModifier - paramScaling * 0.5 + fatigueBallIncrease).clamp(0.20, 0.55);
     final probStrikeLooking = _baseProbStrikeLooking;
-    // 空振り率: 球種固有 + 球速（ストレートのみ）+ パラメータ補正 - ミート力
-    final probStrikeSwinging = (_baseProbStrikeSwinging + pitchSwingModifier + speedModifier + paramScaling - swingModifier).clamp(0.03, 0.30);
+    // 空振り率: 球種固有 + 球速（ストレートのみ）+ パラメータ補正 - ミート力 - 疲労
+    final probStrikeSwinging = (_baseProbStrikeSwinging + pitchSwingModifier + speedModifier + paramScaling - swingModifier - fatigueSwingDecrease).clamp(0.03, 0.30);
     final probFoul = _baseProbFoul;
     // インプレー確率は残り
     final probInPlay = (1.0 - probBall - probStrikeLooking - probStrikeSwinging - probFoul).clamp(0.10, 0.30);
@@ -358,13 +446,14 @@ class AtBatSimulator {
     return (baseProbability * directionModifier * fieldingModifier).clamp(0.0, 0.25);
   }
 
-  /// インプレー時の打席結果を決定（球速・制球力・長打力・守備力・走力・球種考慮）
+  /// インプレー時の打席結果を決定（球速・制球力・長打力・守備力・走力・球種・疲労考慮）
   /// ミート力はインプレーになる確率に影響し、インプレー後の結果には影響しない
   /// fielding: 打球方向を守る野手の守備力（0〜10、nullの場合はデフォルト5）
   /// batterSpeed: 打者の走力（1〜10、内野安打判定に使用）
   /// fieldPosition: 打球方向（内野安打判定に使用）
   /// pitchType: 球種
   /// pitchParam: その球種のパラメータ値（1-10、nullは基準値5）
+  /// fatigue: 基本疲労度（0.0〜1.0、デフォルト0）
   AtBatResultType simulateInPlayResult(
     BattedBallType battedBallType,
     int speed,
@@ -375,11 +464,18 @@ class AtBatSimulator {
     FieldPosition? fieldPosition,
     PitchType pitchType = PitchType.fastball,
     int? pitchParam,
+    double fatigue = 0.0,
   }) {
+    // 球種に応じた実効疲労度を計算
+    final effectiveFatigue = _getEffectiveFatigue(fatigue, pitchType);
+
     // 球速による補正（ストレートのみ、速いほどヒットが減る）
     double speedModifier = 0.0;
     if (pitchType == PitchType.fastball) {
-      final speedDiff = speed - _baseSpeed;
+      // 疲労による球速低下を考慮
+      final fatigueSpeedDrop = (effectiveFatigue * _fatigueSpeedReduction).round();
+      final effectiveSpeed = speed - fatigueSpeedDrop;
+      final speedDiff = effectiveSpeed - _baseSpeed;
       speedModifier = speedDiff * _speedModifierPerKm;
     }
 
@@ -400,6 +496,10 @@ class AtBatSimulator {
     final paramValue = pitchParam ?? _basePitchParam;
     final paramScaling = (paramValue - _basePitchParam) * _pitchParamModifier;
 
+    // 疲労による補正（アウト率低下、被長打率増加）
+    final fatigueOutDecrease = effectiveFatigue * _fatigueOutModifier;
+    final fatigueXbhIncrease = effectiveFatigue * _fatigueXbhModifier;
+
     // 長打力による補正（高いほど長打が増える）
     final powerDiff = power - _basePower;
     final homeRunModifier = powerDiff * _powerHomeRunModifier;
@@ -407,18 +507,19 @@ class AtBatSimulator {
     final tripleModifier = powerDiff * _powerTripleModifier;
     final singleModifier = powerDiff * _powerSingleModifier;
 
-    // アウト率: 球種固有 + 球速（ストレートのみ）+ パラメータ + 制球力 + 守備力
-    final outModifier = pitchOutModifier + speedModifier + paramScaling + controlModifier + fieldingModifierValue;
-    final probOut = (_baseProbOut + outModifier).clamp(0.50, 0.85);
+    // アウト率: 球種固有 + 球速（ストレートのみ）+ パラメータ + 制球力 + 守備力 - 疲労
+    final outModifier = pitchOutModifier + speedModifier + paramScaling + controlModifier + fieldingModifierValue - fatigueOutDecrease;
+    final probOut = (_baseProbOut + outModifier).clamp(0.45, 0.85);
 
-    // 長打確率（長打力 + 球種効果で変動）
+    // 長打確率（長打力 + 球種効果 + 疲労で変動）
     // 球種によって長打が出やすい/出にくいが変わる
+    // 疲労時は被長打率が増加
     // ホームラン: 長打力1で約1%、長打力10で約11%
-    final probHomeRun = (0.04 + homeRunModifier + pitchXbhModifier).clamp(0.005, 0.15);
+    final probHomeRun = (0.04 + homeRunModifier + pitchXbhModifier + fatigueXbhIncrease).clamp(0.005, 0.18);
     // 三塁打: 長打力でわずかに増加
-    final probTriple = (_baseProbTriple + tripleModifier + pitchXbhModifier * 0.3).clamp(0.005, 0.03);
+    final probTriple = (_baseProbTriple + tripleModifier + pitchXbhModifier * 0.3 + fatigueXbhIncrease * 0.3).clamp(0.005, 0.04);
     // 二塁打: 長打力で増加
-    final probDouble = (_baseProbDouble + doubleModifier + pitchXbhModifier * 0.5).clamp(0.02, 0.12);
+    final probDouble = (_baseProbDouble + doubleModifier + pitchXbhModifier * 0.5 + fatigueXbhIncrease * 0.5).clamp(0.02, 0.15);
     // 単打: 長打力で少し増加
     final probSingle = (_baseProbSingle - outModifier * 0.5 + singleModifier).clamp(0.10, 0.35);
 
@@ -500,11 +601,14 @@ class AtBatSimulator {
     required BaseRunners runners,
     required int outs,
     required StealSimulator stealSimulator,
+    int pitchCount = 0, // この打席前までの投球数
   }) {
     // 投手の平均球速（設定されていなければ145km）
     final avgSpeed = pitcher.averageSpeed ?? 145;
     // 投手の制球力（設定されていなければ5）
     final control = pitcher.control ?? 5;
+    // 投手のスタミナ（設定されていなければ5）
+    final stamina = pitcher.stamina;
     // 打者のミート力（設定されていなければ5）
     final meet = batter.meet ?? 5;
     // 打者の長打力（設定されていなければ5）
@@ -518,6 +622,7 @@ class AtBatSimulator {
     final recordedSteals = <StealAttempt>[]; // 記録される盗塁
     var currentRunners = runners;
     int additionalOuts = 0;
+    int currentPitchCount = pitchCount; // 打席中の投球数を追跡
 
     while (true) {
       // 盗塁失敗で3アウトになったら打席終了
@@ -535,10 +640,13 @@ class AtBatSimulator {
       final stealAttempts = stealSimulator.simulateSteal(currentRunners, outs + additionalOuts);
 
       // 2. 球種選択と投球
+      // 疲労度を計算（投球数とスタミナに基づく）
+      final fatigue = _calculateFatigue(currentPitchCount, stamina);
       final pitchType = _selectPitchType(pitcher);
       final speed = _generatePitchSpeed(avgSpeed, pitchType);
       final pitchParam = _getPitchParam(pitcher, pitchType);
-      final pitch = simulatePitch(balls, strikes, speed, control, meet, pitchType, pitchParam);
+      final pitch = simulatePitch(balls, strikes, speed, control, meet, pitchType, pitchParam, fatigue: fatigue);
+      currentPitchCount++; // 投球数を増加
 
       // 3. 盗塁がある場合の処理
       if (stealAttempts.isNotEmpty) {
@@ -595,6 +703,7 @@ class AtBatSimulator {
         batterSpeed: batterSpeed,
         pitchingTeam: pitchingTeam,
         pitchParam: pitchParam,
+        fatigue: fatigue,
       );
 
       if (atBatResult != null) {
@@ -679,6 +788,7 @@ class AtBatSimulator {
     required int batterSpeed,
     required Team pitchingTeam,
     required int? pitchParam,
+    double fatigue = 0.0,
   }) {
     switch (pitch.type) {
       case PitchResultType.ball:
@@ -709,6 +819,7 @@ class AtBatSimulator {
           fieldPosition: pitch.fieldPosition,
           pitchType: pitch.pitchType,
           pitchParam: pitchParam,
+          fatigue: fatigue,
         );
     }
   }
