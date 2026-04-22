@@ -160,7 +160,13 @@ class GameSimulator {
       }
 
       // 走塁処理（打席結果による進塁、盗塁後のランナー状態を使用）
-      final advanceResult = _advanceRunners(runners, resultType, batter, outs);
+      final advanceResult = _advanceRunners(
+        runners,
+        resultType,
+        batter,
+        outs,
+        fieldPosition: fieldPosition,
+      );
       final rbiCount = advanceResult.runsScored;
       runs += rbiCount;
       runners = advanceResult.newRunners;
@@ -173,6 +179,8 @@ class GameSimulator {
       if (resultType.isDoublePlay) {
         outs++;
       }
+      // タッチアップ失敗などによる追加アウト
+      outs += advanceResult.additionalOuts;
 
       atBats.add(AtBatResult(
         batter: batter,
@@ -252,13 +260,46 @@ class GameSimulator {
     return runners.first != null && outs < 2;
   }
 
+  /// タッチアップ試行確率を計算（走力に基づく）
+  /// 走力1: 10%, 走力5: 45%, 走力10: 80%
+  double _tagUpAttemptProbability(int speed) {
+    return (speed * 0.078 + 0.02).clamp(0.10, 0.85);
+  }
+
+  /// タッチアップ成功確率を計算（走力に基づく）
+  /// 走力1: 40%, 走力5: 65%, 走力10: 95%
+  double _tagUpSuccessProbability(int speed) {
+    return (speed * 0.06 + 0.34).clamp(0.35, 0.95);
+  }
+
+  /// タッチアップを試行するかどうかを判定
+  bool _shouldAttemptTagUp(Player runner) {
+    final speed = runner.speed ?? 5;
+    return _random.nextDouble() < _tagUpAttemptProbability(speed);
+  }
+
+  /// タッチアップが成功するかどうかを判定
+  bool _isTagUpSuccessful(Player runner) {
+    final speed = runner.speed ?? 5;
+    return _random.nextDouble() < _tagUpSuccessProbability(speed);
+  }
+
+  /// 2塁ランナーがタッチアップ可能な方向かチェック
+  /// ライトフライとセンターフライのみ可能（レフトは3塁に近いので不可）
+  bool _canSecondRunnerTagUp(FieldPosition? fieldPosition) {
+    return fieldPosition == FieldPosition.right ||
+        fieldPosition == FieldPosition.center;
+  }
+
   /// 走塁処理（走力考慮版）
+  /// fieldPosition: 打球方向（外野フライのタッチアップ判定に使用）
   _RunnerAdvanceResult _advanceRunners(
     BaseRunners runners,
     AtBatResultType result,
     Player batter,
-    int outs,
-  ) {
+    int outs, {
+    FieldPosition? fieldPosition,
+  }) {
     int runsScored = 0;
     Player? newFirst;
     Player? newSecond;
@@ -377,8 +418,88 @@ class GameSimulator {
         break;
 
       case AtBatResultType.flyOut:
+        // 外野フライ時のタッチアップ判定
+        final isOutfield = fieldPosition?.isOutfield ?? false;
+        int tagUpOuts = 0;
+
+        if (isOutfield && outs < 2) {
+          // タッチアップ可能な状況
+          // フライアウトで1アウト追加済みなので、現在のアウト数は outs + 1
+
+          // 3塁ランナーのタッチアップ判定
+          bool thirdRunnerTaggedUp = false;
+          bool thirdRunnerScored = false;
+          bool thirdRunnerOut = false;
+          if (runners.third != null && _shouldAttemptTagUp(runners.third!)) {
+            thirdRunnerTaggedUp = true;
+            if (_isTagUpSuccessful(runners.third!)) {
+              thirdRunnerScored = true;
+              runsScored++;
+            } else {
+              // タッチアップ失敗 → アウト
+              thirdRunnerOut = true;
+              tagUpOuts++;
+            }
+          }
+
+          // 2塁ランナーのタッチアップ判定
+          // 条件: ライト/センター方向、かつ3塁ランナーがタッチアップ試行中または3塁が空いている
+          if (runners.second != null &&
+              _canSecondRunnerTagUp(fieldPosition) &&
+              (thirdRunnerTaggedUp || runners.third == null)) {
+            if (_shouldAttemptTagUp(runners.second!)) {
+              // 成功判定: 3塁ランナーがいた場合はバックホームなので3塁ランナーの走力で判定済み
+              // 3塁ランナーがいない場合は2塁ランナーの走力で判定
+              final successCheck = runners.third != null
+                  ? thirdRunnerScored // バックホーム → 3塁ランナーが成功なら2塁ランナーも進塁
+                  : _isTagUpSuccessful(runners.second!);
+
+              if (successCheck) {
+                newThird = runners.second;
+              } else {
+                // タッチアップ失敗 → アウト（2塁ランナーは消える）
+                tagUpOuts++;
+              }
+            } else {
+              newSecond = runners.second;
+            }
+          } else {
+            newSecond = runners.second;
+          }
+
+          // 3塁ランナーの最終位置
+          if (!thirdRunnerScored && !thirdRunnerOut) {
+            newThird = runners.third;
+          }
+
+          // 1塁ランナーは動かない
+          newFirst = runners.first;
+
+          // タッチアップ失敗で3アウトになった場合、その後の得点は無効
+          // （フライアウト+1、タッチアップ失敗で+tagUpOuts）
+          // 例: 1アウトでフライ(+1=2アウト)、タッチアップ失敗(+1=3アウト) → 得点なし
+          if (outs + 1 + tagUpOuts >= 3) {
+            runsScored = 0;
+          }
+        } else {
+          // 内野フライ or 2アウト: 走者動かず
+          newFirst = runners.first;
+          newSecond = runners.second;
+          newThird = runners.third;
+        }
+
+        return _RunnerAdvanceResult(
+          runsScored: runsScored,
+          newRunners: BaseRunners(
+            first: newFirst,
+            second: newSecond,
+            third: newThird,
+          ),
+          additionalOuts: tagUpOuts,
+        );
+
       case AtBatResultType.lineOut:
-        // フライ/ライナー: 走者動かず（単純化、タッチアップなし）
+        // ライナー: 走者動かず（タッチアップなし、捕球後の反応が難しい）
         newFirst = runners.first;
         newSecond = runners.second;
         newThird = runners.third;
@@ -418,9 +539,11 @@ class _HalfInningSimulationResult {
 class _RunnerAdvanceResult {
   final int runsScored;
   final BaseRunners newRunners;
+  final int additionalOuts; // タッチアップ失敗などによる追加アウト
 
   const _RunnerAdvanceResult({
     required this.runsScored,
     required this.newRunners,
+    this.additionalOuts = 0,
   });
 }
