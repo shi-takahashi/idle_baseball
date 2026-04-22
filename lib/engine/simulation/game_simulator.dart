@@ -259,6 +259,7 @@ class GameSimulator {
         break;
 
       case AtBatResultType.single:
+      case AtBatResultType.infieldHit:
         // 3塁ランナー: ホーム（常に）
         if (runners.third != null) runsScored++;
 

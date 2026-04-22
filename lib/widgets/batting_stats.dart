@@ -183,6 +183,8 @@ class BattingStats extends StatelessWidget {
         return '四球';
       case AtBatResultType.single:
         return '安打';
+      case AtBatResultType.infieldHit:
+        return '内安';
       case AtBatResultType.double_:
         return '二塁打';
       case AtBatResultType.triple:

@@ -53,6 +53,7 @@ enum AtBatResultType {
   strikeout,    // 三振
   walk,         // 四球
   single,       // 単打
+  infieldHit,   // 内野安打（単打の一種）
   double_,      // 二塁打（doubleは予約語なのでアンダースコア）
   triple,       // 三塁打
   homeRun,      // 本塁打
@@ -225,9 +226,16 @@ extension AtBatResultTypeExtension on AtBatResultType {
   /// ヒットかどうか
   bool get isHit {
     return this == AtBatResultType.single ||
+        this == AtBatResultType.infieldHit ||
         this == AtBatResultType.double_ ||
         this == AtBatResultType.triple ||
         this == AtBatResultType.homeRun;
+  }
+
+  /// 単打かどうか（内野安打を含む）
+  bool get isSingle {
+    return this == AtBatResultType.single ||
+        this == AtBatResultType.infieldHit;
   }
 
   /// アウトかどうか
@@ -252,6 +260,8 @@ extension AtBatResultTypeExtension on AtBatResultType {
         return '四球';
       case AtBatResultType.single:
         return '単打';
+      case AtBatResultType.infieldHit:
+        return '内野安打';
       case AtBatResultType.double_:
         return '二塁打';
       case AtBatResultType.triple:

@@ -192,10 +192,64 @@ class AtBatSimulator {
     }
   }
 
-  /// インプレー時の打席結果を決定（球速・制球力・長打力・守備力考慮）
+  // 内野安打の基本確率（走力1あたり）
+  static const double _infieldHitBaseRate = 0.012;
+
+  /// 内野安打の確率を計算
+  /// batterSpeed: 打者の走力（1〜10）
+  /// fieldPosition: 打球方向
+  /// fielding: 守備力（1〜10）
+  double _calcInfieldHitProbability(int batterSpeed, FieldPosition fieldPosition, int fielding) {
+    // 基本確率: 走力 × 1.2%（走力10で12%）
+    final baseProbability = batterSpeed * _infieldHitBaseRate;
+
+    // 打球方向による補正
+    double directionModifier;
+    switch (fieldPosition) {
+      case FieldPosition.third:
+      case FieldPosition.shortstop:
+        // 三遊間: 一塁からの距離が遠いので内野安打になりやすい
+        directionModifier = 1.5;
+        break;
+      case FieldPosition.second:
+        // 二塁: 普通
+        directionModifier = 1.0;
+        break;
+      case FieldPosition.first:
+        // 一塁: 一塁に近いので内野安打になりにくい
+        directionModifier = 0.3;
+        break;
+      case FieldPosition.pitcher:
+      case FieldPosition.catcher:
+        // 投手、捕手: 特殊なケース
+        directionModifier = 0.5;
+        break;
+      default:
+        // 外野（通常ゴロは来ない）
+        directionModifier = 0.0;
+    }
+
+    // 守備力による補正（守備力が高いほど内野安打減少）
+    // 守備力5で1.0、守備力10で0.75、守備力1で1.2
+    final fieldingModifier = 1.0 - (fielding - 5) * 0.05;
+
+    return (baseProbability * directionModifier * fieldingModifier).clamp(0.0, 0.25);
+  }
+
+  /// インプレー時の打席結果を決定（球速・制球力・長打力・守備力・走力考慮）
   /// ミート力はインプレーになる確率に影響し、インプレー後の結果には影響しない
   /// fielding: 打球方向を守る野手の守備力（0〜10、nullの場合はデフォルト5）
-  AtBatResultType simulateInPlayResult(BattedBallType battedBallType, int speed, int control, int power, int? fielding) {
+  /// batterSpeed: 打者の走力（1〜10、内野安打判定に使用）
+  /// fieldPosition: 打球方向（内野安打判定に使用）
+  AtBatResultType simulateInPlayResult(
+    BattedBallType battedBallType,
+    int speed,
+    int control,
+    int power,
+    int? fielding, {
+    int? batterSpeed,
+    FieldPosition? fieldPosition,
+  }) {
     // 球速による補正（速いほどヒットが減る）
     final speedDiff = speed - _baseSpeed;
     final speedModifier = speedDiff * _speedModifierPerKm;
@@ -238,6 +292,17 @@ class AtBatSimulator {
     if (roll < cumulative) {
       switch (battedBallType) {
         case BattedBallType.groundBall:
+          // ゴロの場合、内野安打の可能性をチェック
+          if (batterSpeed != null && fieldPosition != null) {
+            final infieldHitProb = _calcInfieldHitProbability(
+              batterSpeed,
+              fieldPosition,
+              fieldingValue,
+            );
+            if (_random.nextDouble() < infieldHitProb) {
+              return AtBatResultType.infieldHit; // 内野安打
+            }
+          }
           return AtBatResultType.groundOut;
         case BattedBallType.flyBall:
           return AtBatResultType.flyOut;
@@ -294,6 +359,8 @@ class AtBatSimulator {
     final meet = batter.meet ?? 5;
     // 打者の長打力（設定されていなければ5）
     final power = batter.power ?? 5;
+    // 打者の走力（設定されていなければ5）
+    final batterSpeed = batter.speed ?? 5;
 
     int balls = 0;
     int strikes = 0;
@@ -370,6 +437,7 @@ class AtBatSimulator {
         power: power,
         control: control,
         speed: speed,
+        batterSpeed: batterSpeed,
         pitchingTeam: pitchingTeam,
       );
 
@@ -457,6 +525,7 @@ class AtBatSimulator {
     required int power,
     required int control,
     required int speed,
+    required int batterSpeed,
     required Team pitchingTeam,
   }) {
     switch (pitch.type) {
@@ -478,7 +547,15 @@ class AtBatSimulator {
 
       case PitchResultType.inPlay:
         final fielding = pitchingTeam.getFieldingAt(pitch.fieldPosition!);
-        return simulateInPlayResult(pitch.battedBallType!, speed, control, power, fielding);
+        return simulateInPlayResult(
+          pitch.battedBallType!,
+          speed,
+          control,
+          power,
+          fielding,
+          batterSpeed: batterSpeed,
+          fieldPosition: pitch.fieldPosition,
+        );
     }
   }
 
