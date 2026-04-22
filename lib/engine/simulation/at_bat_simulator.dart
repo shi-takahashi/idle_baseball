@@ -435,7 +435,7 @@ class AtBatSimulator {
   /// batterSpeed: 打者の走力（1〜10）
   /// fieldPosition: 打球方向
   /// fielding: 守備力（1〜10）
-  double _calcInfieldHitProbability(int batterSpeed, FieldPosition fieldPosition, int fielding) {
+  double _calcInfieldHitProbability(int batterSpeed, FieldPosition fieldPosition, int fielding, int arm) {
     // 基本確率: 走力 × 1.2%（走力10で12%）
     final baseProbability = batterSpeed * _infieldHitBaseRate;
 
@@ -469,7 +469,11 @@ class AtBatSimulator {
     // 守備力5で1.0、守備力10で0.75、守備力1で1.2
     final fieldingModifier = 1.0 - (fielding - 5) * 0.05;
 
-    return (baseProbability * directionModifier * fieldingModifier).clamp(0.0, 0.25);
+    // 肩の強さによる補正（肩が強いほど内野安打減少）
+    // 肩5で1.0、肩10で0.85、肩1で1.12
+    final armModifier = 1.0 - (arm - 5) * 0.03;
+
+    return (baseProbability * directionModifier * fieldingModifier * armModifier).clamp(0.0, 0.25);
   }
 
   /// インプレー時の打席結果を決定（球速・制球力・長打力・守備力・走力・球種・疲労考慮）
@@ -488,6 +492,7 @@ class AtBatSimulator {
     int? fielding, {
     int? batterSpeed,
     FieldPosition? fieldPosition,
+    int? fielderArm,
     PitchType pitchType = PitchType.fastball,
     int? pitchParam,
     double fatigue = 0.0,
@@ -559,7 +564,8 @@ class AtBatSimulator {
         case BattedBallType.groundBall:
           // ゴロの場合、内野安打の可能性をチェック
           if (batterSpeed != null && fieldPosition != null) {
-            final infieldHitProb = _calcInfieldHitProbability(batterSpeed, fieldPosition, fieldingValue);
+            final armValue = fielderArm ?? 5;
+            final infieldHitProb = _calcInfieldHitProbability(batterSpeed, fieldPosition, fieldingValue, armValue);
             if (_random.nextDouble() < infieldHitProb) {
               return AtBatResultType.infieldHit; // 内野安打
             }
@@ -661,6 +667,9 @@ class AtBatSimulator {
     final batterSpeed = batter.speed ?? 5;
     // 打者の選球眼（設定されていなければ5）
     final eye = batter.eye ?? 5;
+    // 捕手の肩の強さ（盗塁阻止に使用）
+    final catcher = pitchingTeam.getFielder(FieldPosition.catcher);
+    final catcherArm = catcher?.arm ?? 5;
 
     int balls = 0;
     int strikes = 0;
@@ -683,7 +692,7 @@ class AtBatSimulator {
       }
 
       // 1. 盗塁判定（投球前）
-      final stealAttempts = stealSimulator.simulateSteal(currentRunners, outs + additionalOuts);
+      final stealAttempts = stealSimulator.simulateSteal(currentRunners, outs + additionalOuts, catcherArm: catcherArm);
 
       // 2. 球種選択と投球
       // 疲労度を計算（投球数とスタミナに基づく）
@@ -855,6 +864,7 @@ class AtBatSimulator {
 
       case PitchResultType.inPlay:
         final fielding = pitchingTeam.getFieldingAt(pitch.fieldPosition!);
+        final fielder = pitchingTeam.getFielder(pitch.fieldPosition!);
         return simulateInPlayResult(
           pitch.battedBallType!,
           speed,
@@ -863,6 +873,7 @@ class AtBatSimulator {
           fielding,
           batterSpeed: batterSpeed,
           fieldPosition: pitch.fieldPosition,
+          fielderArm: fielder?.arm,
           pitchType: pitch.pitchType,
           pitchParam: pitchParam,
           fatigue: fatigue,

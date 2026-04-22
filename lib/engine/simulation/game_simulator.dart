@@ -185,6 +185,7 @@ class GameSimulator {
         batter,
         outs,
         fieldPosition: fieldPosition,
+        pitchingTeam: pitchingTeam,
       );
       final rbiCount = advanceResult.runsScored;
       runs += rbiCount;
@@ -212,6 +213,7 @@ class GameSimulator {
         rbiCount: rbiCount,
         outsBefore: outsBefore,
         runnersBefore: runnersBefore,
+        tagUps: advanceResult.tagUps.isNotEmpty ? advanceResult.tagUps : null,
       ));
 
       currentBattingOrder = (currentBattingOrder + 1) % 9;
@@ -286,10 +288,13 @@ class GameSimulator {
     return (speed * 0.078 + 0.02).clamp(0.10, 0.85);
   }
 
-  /// タッチアップ成功確率を計算（走力に基づく）
+  /// タッチアップ成功確率を計算（走力と外野手の肩に基づく）
   /// 走力1: 40%, 走力5: 65%, 走力10: 95%
-  double _tagUpSuccessProbability(int speed) {
-    return (speed * 0.06 + 0.34).clamp(0.35, 0.95);
+  /// 外野手の肩が強いほど成功率DOWN
+  double _tagUpSuccessProbability(int speed, int outfielderArm) {
+    final baseProb = speed * 0.06 + 0.34;
+    final armModifier = (outfielderArm - 5) * 0.03; // 肩1あたり3%
+    return (baseProb - armModifier).clamp(0.25, 0.95);
   }
 
   /// タッチアップを試行するかどうかを判定
@@ -298,10 +303,10 @@ class GameSimulator {
     return _random.nextDouble() < _tagUpAttemptProbability(speed);
   }
 
-  /// タッチアップが成功するかどうかを判定
-  bool _isTagUpSuccessful(Player runner) {
+  /// タッチアップが成功するかどうかを判定（外野手の肩を考慮）
+  bool _isTagUpSuccessful(Player runner, int outfielderArm) {
     final speed = runner.speed ?? 5;
-    return _random.nextDouble() < _tagUpSuccessProbability(speed);
+    return _random.nextDouble() < _tagUpSuccessProbability(speed, outfielderArm);
   }
 
   /// 2塁ランナーがタッチアップ可能な方向かチェック
@@ -313,12 +318,14 @@ class GameSimulator {
 
   /// 走塁処理（走力考慮版）
   /// fieldPosition: 打球方向（外野フライのタッチアップ判定に使用）
+  /// pitchingTeam: 守備側チーム（外野手の肩を取得するため）
   _RunnerAdvanceResult _advanceRunners(
     BaseRunners runners,
     AtBatResultType result,
     Player batter,
     int outs, {
     FieldPosition? fieldPosition,
+    Team? pitchingTeam,
   }) {
     int runsScored = 0;
     Player? newFirst;
@@ -441,10 +448,15 @@ class GameSimulator {
         // 外野フライ時のタッチアップ判定
         final isOutfield = fieldPosition?.isOutfield ?? false;
         int tagUpOuts = 0;
+        final tagUpAttempts = <TagUpAttempt>[];
 
         if (isOutfield && outs < 2) {
           // タッチアップ可能な状況
           // フライアウトで1アウト追加済みなので、現在のアウト数は outs + 1
+
+          // 外野手の肩を取得
+          final outfielder = pitchingTeam?.getFielder(fieldPosition!);
+          final outfielderArm = outfielder?.arm ?? 5;
 
           // 3塁ランナーのタッチアップ判定
           bool thirdRunnerTaggedUp = false;
@@ -452,13 +464,25 @@ class GameSimulator {
           bool thirdRunnerOut = false;
           if (runners.third != null && _shouldAttemptTagUp(runners.third!)) {
             thirdRunnerTaggedUp = true;
-            if (_isTagUpSuccessful(runners.third!)) {
+            if (_isTagUpSuccessful(runners.third!, outfielderArm)) {
               thirdRunnerScored = true;
               runsScored++;
+              tagUpAttempts.add(TagUpAttempt(
+                runner: runners.third!,
+                fromBase: Base.third,
+                toBase: Base.home,
+                success: true,
+              ));
             } else {
               // タッチアップ失敗 → アウト
               thirdRunnerOut = true;
               tagUpOuts++;
+              tagUpAttempts.add(TagUpAttempt(
+                runner: runners.third!,
+                fromBase: Base.third,
+                toBase: Base.home,
+                success: false,
+              ));
             }
           }
 
@@ -472,13 +496,25 @@ class GameSimulator {
               // 3塁ランナーがいない場合は2塁ランナーの走力で判定
               final successCheck = runners.third != null
                   ? thirdRunnerScored // バックホーム → 3塁ランナーが成功なら2塁ランナーも進塁
-                  : _isTagUpSuccessful(runners.second!);
+                  : _isTagUpSuccessful(runners.second!, outfielderArm);
 
               if (successCheck) {
                 newThird = runners.second;
+                tagUpAttempts.add(TagUpAttempt(
+                  runner: runners.second!,
+                  fromBase: Base.second,
+                  toBase: Base.third,
+                  success: true,
+                ));
               } else {
                 // タッチアップ失敗 → アウト（2塁ランナーは消える）
                 tagUpOuts++;
+                tagUpAttempts.add(TagUpAttempt(
+                  runner: runners.second!,
+                  fromBase: Base.second,
+                  toBase: Base.third,
+                  success: false,
+                ));
               }
             } else {
               newSecond = runners.second;
@@ -516,6 +552,7 @@ class GameSimulator {
             third: newThird,
           ),
           additionalOuts: tagUpOuts,
+          tagUps: tagUpAttempts,
         );
 
       case AtBatResultType.lineOut:
@@ -562,10 +599,12 @@ class _RunnerAdvanceResult {
   final int runsScored;
   final BaseRunners newRunners;
   final int additionalOuts; // タッチアップ失敗などによる追加アウト
+  final List<TagUpAttempt> tagUps; // タッチアップの試み
 
   const _RunnerAdvanceResult({
     required this.runsScored,
     required this.newRunners,
     this.additionalOuts = 0,
+    this.tagUps = const [],
   });
 }

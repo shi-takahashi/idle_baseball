@@ -21,6 +21,7 @@ class Player {
   final int? power; // 長打力（1〜10）
   final int? speed; // 走力（1〜10）、高いほど盗塁成功率UP
   final int? eye; // 選球眼（1〜10）、高いほど四球が増える
+  final int? arm; // 肩の強さ（1〜10）、捕手は盗塁阻止、外野手はタッチアップ阻止、内野手は内野安打阻止
 
   // 守備能力（ポジションごと、0〜10）
   // 0: そのポジションは守れない
@@ -44,6 +45,7 @@ class Player {
     this.power,
     this.speed,
     this.eye,
+    this.arm,
     this.fielding,
   });
 

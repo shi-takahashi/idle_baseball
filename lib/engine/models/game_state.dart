@@ -92,6 +92,28 @@ class StealAttempt {
   }
 }
 
+/// タッチアップの試み
+class TagUpAttempt {
+  final Player runner;
+  final Base fromBase; // 元の塁（second または third）
+  final Base toBase; // 目標の塁（third または home）
+  final bool success; // 成功したかどうか
+
+  const TagUpAttempt({
+    required this.runner,
+    required this.fromBase,
+    required this.toBase,
+    required this.success,
+  });
+
+  @override
+  String toString() {
+    final result = success ? '成功' : '失敗';
+    final target = toBase == Base.home ? 'ホーム' : '3塁';
+    return '${runner.name} タッチアップ$target $result';
+  }
+}
+
 /// 1球の結果
 class PitchResult {
   final PitchResultType type;
@@ -129,6 +151,7 @@ class AtBatResult {
   final int rbiCount; // 打点
   final int outsBefore; // 打席前のアウトカウント
   final BaseRunners runnersBefore; // 打席前のランナー状況
+  final List<TagUpAttempt>? tagUps; // タッチアップの試み
 
   const AtBatResult({
     required this.batter,
@@ -141,10 +164,17 @@ class AtBatResult {
     required this.rbiCount,
     required this.outsBefore,
     required this.runnersBefore,
+    this.tagUps,
   });
 
   /// 球数
   int get pitchCount => pitches.length;
+
+  /// タッチアップがあったかどうか
+  bool get hasTagUp => tagUps != null && tagUps!.isNotEmpty;
+
+  /// タッチアップ失敗があったかどうか
+  bool get hasFailedTagUp => tagUps?.any((t) => !t.success) ?? false;
 }
 
 /// 走者の状態

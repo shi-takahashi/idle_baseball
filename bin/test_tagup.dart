@@ -3,7 +3,7 @@ import 'package:idle_baseball/engine/engine.dart';
 
 /// タッチアップのテスト
 void main() {
-  print('=== タッチアップテスト ===\n');
+  print('=== タッチアップ情報記録テスト ===\n');
 
   final random = Random(42);
 
@@ -64,16 +64,12 @@ void main() {
   // 各チームで50試合ずつシミュレーション
   int slowTeamFlyOuts = 0;
   int slowTeamRuns = 0;
-  int slowTeamTotalOuts = 0;
-  int slowTeamAtBats = 0;
+  int slowTeamTagUpSuccess = 0;
+  int slowTeamTagUpFail = 0;
   int fastTeamFlyOuts = 0;
   int fastTeamRuns = 0;
-  int fastTeamTotalOuts = 0;
-  int fastTeamAtBats = 0;
-
-  // 犠牲フライをカウント（3塁ランナーがいる状態でのフライアウト後に得点）
-  int slowTeamSacFlies = 0;
-  int fastTeamSacFlies = 0;
+  int fastTeamTagUpSuccess = 0;
+  int fastTeamTagUpFail = 0;
 
   print('--- 鈍足チーム（走力1）の50試合 ---');
   for (int i = 0; i < 50; i++) {
@@ -83,27 +79,30 @@ void main() {
     slowTeamRuns += result.awayScore;
 
     for (final half in result.halfInnings.where((h) => h.isTop)) {
-      // 各イニングは3アウトで終了（タッチアップ失敗含む）
-      slowTeamTotalOuts += 3;
-      slowTeamAtBats += half.atBats.length;
       for (final ab in half.atBats) {
         if (ab.result == AtBatResultType.flyOut) {
           slowTeamFlyOuts++;
-          // 外野フライで得点があれば犠牲フライとカウント
-          if (ab.rbiCount > 0) {
-            slowTeamSacFlies++;
+        }
+        // タッチアップ情報をカウント
+        if (ab.hasTagUp) {
+          for (final tagUp in ab.tagUps!) {
+            if (tagUp.success) {
+              slowTeamTagUpSuccess++;
+              print('  [鈍足] タッチアップ成功: ${tagUp.runner.name} ${tagUp.fromBase.name}→${tagUp.toBase.name}');
+            } else {
+              slowTeamTagUpFail++;
+              print('  [鈍足] タッチアップ失敗: ${tagUp.runner.name} ${tagUp.fromBase.name}→${tagUp.toBase.name}');
+            }
           }
         }
       }
     }
   }
+  print('統計:');
   print('  総得点: $slowTeamRuns');
-  print('  打席数: $slowTeamAtBats');
   print('  フライアウト: $slowTeamFlyOuts');
-  print('  犠牲フライ: $slowTeamSacFlies');
-  if (slowTeamFlyOuts > 0) {
-    print('  犠牲フライ率: ${(slowTeamSacFlies / slowTeamFlyOuts * 100).toStringAsFixed(1)}%');
-  }
+  print('  タッチアップ成功: $slowTeamTagUpSuccess');
+  print('  タッチアップ失敗: $slowTeamTagUpFail');
 
   print('\n--- 俊足チーム（走力10）の50試合 ---');
   for (int i = 0; i < 50; i++) {
@@ -113,35 +112,34 @@ void main() {
     fastTeamRuns += result.awayScore;
 
     for (final half in result.halfInnings.where((h) => h.isTop)) {
-      fastTeamTotalOuts += 3;
-      fastTeamAtBats += half.atBats.length;
       for (final ab in half.atBats) {
         if (ab.result == AtBatResultType.flyOut) {
           fastTeamFlyOuts++;
-          if (ab.rbiCount > 0) {
-            fastTeamSacFlies++;
+        }
+        // タッチアップ情報をカウント
+        if (ab.hasTagUp) {
+          for (final tagUp in ab.tagUps!) {
+            if (tagUp.success) {
+              fastTeamTagUpSuccess++;
+              print('  [俊足] タッチアップ成功: ${tagUp.runner.name} ${tagUp.fromBase.name}→${tagUp.toBase.name}');
+            } else {
+              fastTeamTagUpFail++;
+              print('  [俊足] タッチアップ失敗: ${tagUp.runner.name} ${tagUp.fromBase.name}→${tagUp.toBase.name}');
+            }
           }
         }
       }
     }
   }
+  print('統計:');
   print('  総得点: $fastTeamRuns');
-  print('  打席数: $fastTeamAtBats');
   print('  フライアウト: $fastTeamFlyOuts');
-  print('  犠牲フライ: $fastTeamSacFlies');
-  if (fastTeamFlyOuts > 0) {
-    print('  犠牲フライ率: ${(fastTeamSacFlies / fastTeamFlyOuts * 100).toStringAsFixed(1)}%');
-  }
+  print('  タッチアップ成功: $fastTeamTagUpSuccess');
+  print('  タッチアップ失敗: $fastTeamTagUpFail');
 
   print('\n=== 結果比較 ===');
-  print('鈍足チーム: 得点 $slowTeamRuns, 犠牲フライ $slowTeamSacFlies');
-  print('俊足チーム: 得点 $fastTeamRuns, 犠牲フライ $fastTeamSacFlies');
+  print('鈍足チーム: タッチアップ成功 $slowTeamTagUpSuccess, 失敗 $slowTeamTagUpFail');
+  print('俊足チーム: タッチアップ成功 $fastTeamTagUpSuccess, 失敗 $fastTeamTagUpFail');
   print('');
-  print('犠牲フライの差: ${fastTeamSacFlies - slowTeamSacFlies}');
-  print('（俊足チームは犠牲フライが多いはず）');
-
-  print('\n=== タッチアップ理論値 ===');
-  print('走力1: 試行確率10%, 成功確率40%');
-  print('走力5: 試行確率45%, 成功確率65%');
-  print('走力10: 試行確率80%, 成功確率95%');
+  print('俊足チームはタッチアップが多く、成功率も高いはず');
 }

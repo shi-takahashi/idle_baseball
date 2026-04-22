@@ -313,9 +313,41 @@ class ScoreBoard extends StatelessWidget {
                   style: TextStyle(fontSize: 12, color: Colors.orange.shade700),
                 ),
               ),
+            // タッチアップ情報
+            if (atBat.hasTagUp)
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: _buildTagUpInfo(atBat.tagUps!),
+              ),
           ],
         ),
       ),
+    );
+  }
+
+  /// タッチアップ情報を表示
+  Widget _buildTagUpInfo(List<TagUpAttempt> tagUps) {
+    return Wrap(
+      spacing: 8,
+      children: tagUps.map((tagUp) {
+        final target = tagUp.toBase == Base.home ? 'ホーム' : '3塁';
+        final isSuccess = tagUp.success;
+        return Container(
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+          decoration: BoxDecoration(
+            color: isSuccess ? Colors.purple.shade100 : Colors.red.shade100,
+            borderRadius: BorderRadius.circular(4),
+          ),
+          child: Text(
+            '${tagUp.runner.name} タッチアップ$target${isSuccess ? '成功' : '失敗(アウト)'}',
+            style: TextStyle(
+              fontSize: 10,
+              color: isSuccess ? Colors.purple.shade800 : Colors.red.shade800,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        );
+      }).toList(),
     );
   }
 

@@ -20,11 +20,18 @@ class StealSimulator {
   // 走力による盗塁成功率補正（1あたり）
   static const double _speedSuccessModifier = 0.05;
 
+  // 基準捕手の肩
+  static const int _baseArm = 5;
+
+  // 捕手の肩による盗塁成功率補正（1あたり、肩が強いほど成功率DOWN）
+  static const double _catcherArmModifier = 0.025;
+
   StealSimulator({Random? random}) : _random = random ?? Random();
 
   /// 盗塁を試みるか判定し、試みる場合は成功/失敗を判定
+  /// catcherArm: 捕手の肩の強さ（1-10、デフォルト5）
   /// 戻り値: 盗塁の試みリスト（空なら盗塁なし）
-  List<StealAttempt> simulateSteal(BaseRunners runners, int outs) {
+  List<StealAttempt> simulateSteal(BaseRunners runners, int outs, {int catcherArm = 5}) {
     // 盗塁可能なランナーを取得
     final candidates = runners.getStealCandidates();
     if (candidates.isEmpty) return [];
@@ -56,7 +63,8 @@ class StealSimulator {
 
       final speed = secondRunner.$1.speed ?? _baseSpeed;
       final speedDiff = speed - _baseSpeed;
-      final successRate = (_baseStealSuccessRate + speedDiff * _speedSuccessModifier).clamp(0.40, 0.95);
+      final armDiff = catcherArm - _baseArm;
+      final successRate = (_baseStealSuccessRate + speedDiff * _speedSuccessModifier - armDiff * _catcherArmModifier).clamp(0.40, 0.95);
       final success = _random.nextDouble() < successRate;
 
       if (success) {
@@ -100,7 +108,8 @@ class StealSimulator {
       final (runner, fromBase, toBase) = candidates.first;
       final speed = runner.speed ?? _baseSpeed;
       final speedDiff = speed - _baseSpeed;
-      final successRate = (_baseStealSuccessRate + speedDiff * _speedSuccessModifier).clamp(0.40, 0.95);
+      final armDiff = catcherArm - _baseArm;
+      final successRate = (_baseStealSuccessRate + speedDiff * _speedSuccessModifier - armDiff * _catcherArmModifier).clamp(0.40, 0.95);
       final success = _random.nextDouble() < successRate;
 
       return [

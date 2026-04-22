@@ -11,7 +11,8 @@
       "Bash(done)",
       "Bash(for i in 1 2 3 4 5)",
       "Bash(do dart run bin/test_game.dart)",
-      "Bash(flutter build:*)"
+      "Bash(flutter build:*)",
+      "Bash(dart:*)"
     ]
   }
 }
