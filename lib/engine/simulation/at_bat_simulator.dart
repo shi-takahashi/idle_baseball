@@ -50,6 +50,23 @@ class AtBatSimulationResult {
   });
 }
 
+/// インプレー結果の確率データ
+class InPlayProbabilities {
+  final double probOut;
+  final double probSingle;
+  final double probDouble;
+  final double probTriple;
+  final double probHomeRun;
+
+  const InPlayProbabilities({
+    required this.probOut,
+    required this.probSingle,
+    required this.probDouble,
+    required this.probTriple,
+    required this.probHomeRun,
+  });
+}
+
 /// 1打席のシミュレーター
 class AtBatSimulator {
   final Random _random;
@@ -382,8 +399,7 @@ class AtBatSimulator {
     // 空振り率: 球種固有 + 球速（ストレートのみ）+ パラメータ補正 - ミート力 - 疲労
     final probStrikeSwinging = (_baseProbStrikeSwinging + pitchSwingModifier + speedModifier + paramScaling - swingModifier - fatigueSwingDecrease).clamp(0.03, 0.30);
     final probFoul = _baseProbFoul;
-    // インプレー確率は残り
-    final probInPlay = (1.0 - probBall - probStrikeLooking - probStrikeSwinging - probFoul).clamp(0.10, 0.30);
+    // インプレー確率は残り（他の結果にならなかった場合）
 
     final roll = _random.nextDouble();
     double cumulative = 0;
@@ -513,6 +529,124 @@ class AtBatSimulator {
     return (baseProbability * directionModifier * fieldingModifier * armModifier).clamp(0.0, 0.25);
   }
 
+  /// インプレー結果の確率データ
+  /// 確率計算ロジックをsimulateInPlayResultから分離
+  InPlayProbabilities _calculateInPlayProbabilities({
+    required int speed,
+    required int control,
+    required int power,
+    required int fielding,
+    required int catcherLead,
+    required PitchType pitchType,
+    required int pitchParam,
+    required double fatigue,
+  }) {
+    // 球種に応じた実効疲労度を計算
+    final effectiveFatigue = _getEffectiveFatigue(fatigue, pitchType);
+
+    // 球速による補正（ストレートのみ、速いほどヒットが減る）
+    double speedModifier = 0.0;
+    if (pitchType == PitchType.fastball) {
+      // 疲労による球速低下を考慮
+      final fatigueSpeedDrop = (effectiveFatigue * _fatigueSpeedReduction).round();
+      final effectiveSpeed = speed - fatigueSpeedDrop;
+      final speedDiff = effectiveSpeed - _baseSpeed;
+      speedModifier = speedDiff * _speedModifierPerKm;
+    }
+
+    // 制球力による補正（高いほど甘い球が減り、アウトが増える）
+    final controlDiff = control - _baseControl;
+    final controlModifier = controlDiff * _controlHitModifier;
+
+    // 守備力による補正（高いほどアウトが増える）
+    final fieldingDiff = fielding - _baseFielding;
+    final fieldingModifierValue = fieldingDiff * _fieldingModifier;
+
+    // 捕手リードによる補正（高いほどアウトが増える、おまけ程度）
+    final leadDiff = catcherLead - 5;
+    final leadModifierValue = leadDiff * _leadModifier;
+
+    // 球種固有のベース補正
+    final pitchOutModifier = _outModifiers[pitchType] ?? 0.0;
+    final pitchXbhModifier = _xbhModifiers[pitchType] ?? 0.0;
+
+    // パラメータによるスケーリング（パラメータ5で基準、1-10で±4%）
+    final paramScaling = (pitchParam - _basePitchParam) * _pitchParamModifier;
+
+    // 疲労による補正（アウト率低下、被長打率増加）
+    final fatigueOutDecrease = effectiveFatigue * _fatigueOutModifier;
+    final fatigueXbhIncrease = effectiveFatigue * _fatigueXbhModifier;
+
+    // 長打力による補正（高いほど長打が増える）
+    final powerDiff = power - _basePower;
+    final homeRunModifier = powerDiff * _powerHomeRunModifier;
+    final doubleModifier = powerDiff * _powerDoubleModifier;
+    final tripleModifier = powerDiff * _powerTripleModifier;
+    final singleModifier = powerDiff * _powerSingleModifier;
+
+    // アウト率: 球種固有 + 球速（ストレートのみ）+ パラメータ + 制球力 + 守備力 + リード - 疲労
+    final outModifier = pitchOutModifier +
+        speedModifier +
+        paramScaling +
+        controlModifier +
+        fieldingModifierValue +
+        leadModifierValue -
+        fatigueOutDecrease;
+    final probOut = (_baseProbOut + outModifier).clamp(0.45, 0.85);
+
+    // 長打確率（長打力 + 球種効果 + 疲労で変動）
+    final probHomeRun =
+        (0.04 + homeRunModifier + pitchXbhModifier + fatigueXbhIncrease).clamp(0.005, 0.18);
+    final probTriple =
+        (_baseProbTriple + tripleModifier + pitchXbhModifier * 0.3 + fatigueXbhIncrease * 0.3)
+            .clamp(0.005, 0.04);
+    final probDouble =
+        (_baseProbDouble + doubleModifier + pitchXbhModifier * 0.5 + fatigueXbhIncrease * 0.5)
+            .clamp(0.02, 0.15);
+    final probSingle =
+        (_baseProbSingle - outModifier * 0.5 + singleModifier).clamp(0.10, 0.35);
+
+    return InPlayProbabilities(
+      probOut: probOut,
+      probSingle: probSingle,
+      probDouble: probDouble,
+      probTriple: probTriple,
+      probHomeRun: probHomeRun,
+    );
+  }
+
+  /// ゴロアウト判定（エラーチェック・内野安打チェック含む）
+  InPlayResult _determineGroundOutResult({
+    required FieldPosition? fieldPosition,
+    required int fielding,
+    required int? batterSpeed,
+    required int? fielderArm,
+  }) {
+    // ゴロの場合、まずエラーチェック（内野のみ）
+    if (fieldPosition != null && !fieldPosition.isOutfield) {
+      if (_errorSimulator.checkGroundBallError(fielding, fieldPosition)) {
+        // エラー発生 → 打者出塁
+        return InPlayResult(
+          result: AtBatResultType.reachedOnError,
+          fieldingError: FieldingError(
+            type: FieldingErrorType.fielding,
+            position: fieldPosition,
+            runsScored: 0, // 得点はGameSimulatorで計算
+          ),
+        );
+      }
+    }
+    // エラーなし → 内野安打の可能性をチェック
+    if (batterSpeed != null && fieldPosition != null) {
+      final armValue = fielderArm ?? 5;
+      final infieldHitProb = _calcInfieldHitProbability(batterSpeed, fieldPosition, fielding, armValue);
+      if (_random.nextDouble() < infieldHitProb) {
+        return const InPlayResult(result: AtBatResultType.infieldHit);
+      }
+    }
+    return const InPlayResult(result: AtBatResultType.groundOut);
+  }
+
   /// インプレー時の打席結果を決定（球速・制球力・長打力・守備力・走力・球種・疲労考慮）
   /// ミート力はインプレーになる確率に影響し、インプレー後の結果には影響しない
   /// fielding: 打球方向を守る野手の守備力（0〜10、nullの場合はデフォルト5）
@@ -535,99 +669,36 @@ class AtBatSimulator {
     int? pitchParam,
     double fatigue = 0.0,
   }) {
-    // 球種に応じた実効疲労度を計算
-    final effectiveFatigue = _getEffectiveFatigue(fatigue, pitchType);
-
-    // 球速による補正（ストレートのみ、速いほどヒットが減る）
-    double speedModifier = 0.0;
-    if (pitchType == PitchType.fastball) {
-      // 疲労による球速低下を考慮
-      final fatigueSpeedDrop = (effectiveFatigue * _fatigueSpeedReduction).round();
-      final effectiveSpeed = speed - fatigueSpeedDrop;
-      final speedDiff = effectiveSpeed - _baseSpeed;
-      speedModifier = speedDiff * _speedModifierPerKm;
-    }
-
-    // 制球力による補正（高いほど甘い球が減り、アウトが増える）
-    final controlDiff = control - _baseControl;
-    final controlModifier = controlDiff * _controlHitModifier;
-
-    // 守備力による補正（高いほどアウトが増える）
     final fieldingValue = fielding ?? _baseFielding;
-    final fieldingDiff = fieldingValue - _baseFielding;
-    final fieldingModifierValue = fieldingDiff * _fieldingModifier;
-
-    // 捕手リードによる補正（高いほどアウトが増える、おまけ程度）
     final leadValue = catcherLead ?? 5;
-    final leadDiff = leadValue - 5;
-    final leadModifierValue = leadDiff * _leadModifier;
-
-    // 球種固有のベース補正
-    final pitchOutModifier = _outModifiers[pitchType] ?? 0.0;
-    final pitchXbhModifier = _xbhModifiers[pitchType] ?? 0.0;
-
-    // パラメータによるスケーリング（パラメータ5で基準、1-10で±4%）
     final paramValue = pitchParam ?? _basePitchParam;
-    final paramScaling = (paramValue - _basePitchParam) * _pitchParamModifier;
 
-    // 疲労による補正（アウト率低下、被長打率増加）
-    final fatigueOutDecrease = effectiveFatigue * _fatigueOutModifier;
-    final fatigueXbhIncrease = effectiveFatigue * _fatigueXbhModifier;
-
-    // 長打力による補正（高いほど長打が増える）
-    final powerDiff = power - _basePower;
-    final homeRunModifier = powerDiff * _powerHomeRunModifier;
-    final doubleModifier = powerDiff * _powerDoubleModifier;
-    final tripleModifier = powerDiff * _powerTripleModifier;
-    final singleModifier = powerDiff * _powerSingleModifier;
-
-    // アウト率: 球種固有 + 球速（ストレートのみ）+ パラメータ + 制球力 + 守備力 + リード - 疲労
-    final outModifier = pitchOutModifier + speedModifier + paramScaling + controlModifier + fieldingModifierValue + leadModifierValue - fatigueOutDecrease;
-    final probOut = (_baseProbOut + outModifier).clamp(0.45, 0.85);
-
-    // 長打確率（長打力 + 球種効果 + 疲労で変動）
-    // 球種によって長打が出やすい/出にくいが変わる
-    // 疲労時は被長打率が増加
-    // ホームラン: 長打力1で約1%、長打力10で約11%
-    final probHomeRun = (0.04 + homeRunModifier + pitchXbhModifier + fatigueXbhIncrease).clamp(0.005, 0.18);
-    // 三塁打: 長打力でわずかに増加
-    final probTriple = (_baseProbTriple + tripleModifier + pitchXbhModifier * 0.3 + fatigueXbhIncrease * 0.3).clamp(0.005, 0.04);
-    // 二塁打: 長打力で増加
-    final probDouble = (_baseProbDouble + doubleModifier + pitchXbhModifier * 0.5 + fatigueXbhIncrease * 0.5).clamp(0.02, 0.15);
-    // 単打: 長打力で少し増加
-    final probSingle = (_baseProbSingle - outModifier * 0.5 + singleModifier).clamp(0.10, 0.35);
+    // 確率を計算
+    final probs = _calculateInPlayProbabilities(
+      speed: speed,
+      control: control,
+      power: power,
+      fielding: fieldingValue,
+      catcherLead: leadValue,
+      pitchType: pitchType,
+      pitchParam: paramValue,
+      fatigue: fatigue,
+    );
 
     final roll = _random.nextDouble();
     double cumulative = 0;
 
-    // アウト
-    cumulative += probOut;
+    // アウト判定
+    cumulative += probs.probOut;
     if (roll < cumulative) {
       switch (battedBallType) {
         case BattedBallType.groundBall:
-          // ゴロの場合、まずエラーチェック（内野のみ）
-          if (fieldPosition != null && !fieldPosition.isOutfield) {
-            if (_errorSimulator.checkGroundBallError(fieldingValue, fieldPosition)) {
-              // エラー発生 → 打者出塁
-              return InPlayResult(
-                result: AtBatResultType.reachedOnError,
-                fieldingError: FieldingError(
-                  type: FieldingErrorType.fielding,
-                  position: fieldPosition,
-                  runsScored: 0, // 得点はGameSimulatorで計算
-                ),
-              );
-            }
-          }
-          // エラーなし → 内野安打の可能性をチェック
-          if (batterSpeed != null && fieldPosition != null) {
-            final armValue = fielderArm ?? 5;
-            final infieldHitProb = _calcInfieldHitProbability(batterSpeed, fieldPosition, fieldingValue, armValue);
-            if (_random.nextDouble() < infieldHitProb) {
-              return const InPlayResult(result: AtBatResultType.infieldHit); // 内野安打
-            }
-          }
-          return const InPlayResult(result: AtBatResultType.groundOut);
+          return _determineGroundOutResult(
+            fieldPosition: fieldPosition,
+            fielding: fieldingValue,
+            batterSpeed: batterSpeed,
+            fielderArm: fielderArm,
+          );
         case BattedBallType.flyBall:
           return const InPlayResult(result: AtBatResultType.flyOut);
         case BattedBallType.lineDrive:
@@ -636,26 +707,25 @@ class AtBatSimulator {
     }
 
     // 単打
-    cumulative += probSingle;
+    cumulative += probs.probSingle;
     if (roll < cumulative) {
       return const InPlayResult(result: AtBatResultType.single);
     }
 
     // 二塁打
-    cumulative += probDouble;
+    cumulative += probs.probDouble;
     if (roll < cumulative) {
       return const InPlayResult(result: AtBatResultType.double_);
     }
 
     // 三塁打
-    cumulative += probTriple;
+    cumulative += probs.probTriple;
     if (roll < cumulative) {
       return const InPlayResult(result: AtBatResultType.triple);
     }
 
     // 本塁打（残り）
-    // ただし長打力で確率を直接使う
-    if (_random.nextDouble() < probHomeRun / (probHomeRun + 0.01)) {
+    if (_random.nextDouble() < probs.probHomeRun / (probs.probHomeRun + 0.01)) {
       return const InPlayResult(result: AtBatResultType.homeRun);
     }
     // 本塁打にならなかった場合は二塁打

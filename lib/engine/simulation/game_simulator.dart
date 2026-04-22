@@ -320,9 +320,11 @@ class GameSimulator {
         fieldPosition == FieldPosition.center;
   }
 
-  /// 走塁処理（走力考慮版）
-  /// fieldPosition: 打球方向（外野フライのタッチアップ判定に使用）
-  /// pitchingTeam: 守備側チーム（外野手の肩を取得するため）
+  // ============================================================
+  // 走塁処理（打席結果タイプごとに分割）
+  // ============================================================
+
+  /// 走塁処理のメインメソッド
   _RunnerAdvanceResult _advanceRunners(
     BaseRunners runners,
     AtBatResultType result,
@@ -331,264 +333,300 @@ class GameSimulator {
     FieldPosition? fieldPosition,
     Team? pitchingTeam,
   }) {
-    int runsScored = 0;
-    Player? newFirst;
-    Player? newSecond;
-    Player? newThird;
-
     switch (result) {
       case AtBatResultType.homeRun:
-        // 全員生還（打者含む）
-        runsScored = 1 + runners.count;
-        // 走者クリア
-        break;
-
+        return _advanceOnHomeRun(runners);
       case AtBatResultType.triple:
-        // 全走者生還、打者3塁
-        runsScored = runners.count;
-        newThird = batter;
-        break;
-
+        return _advanceOnTriple(runners, batter);
       case AtBatResultType.double_:
-        // 3塁ランナー: ホーム
-        if (runners.third != null) runsScored++;
-        // 2塁ランナー: ホーム
-        if (runners.second != null) runsScored++;
-        // 1塁ランナー: 基本3塁、走力次第でホーム
-        if (runners.first != null) {
-          if (_shouldExtraAdvance(runners.first!)) {
-            runsScored++;
-          } else {
-            newThird = runners.first;
-          }
-        }
-        newSecond = batter;
-        break;
-
+        return _advanceOnDouble(runners, batter);
       case AtBatResultType.single:
       case AtBatResultType.infieldHit:
-        // 3塁ランナー: ホーム（常に）
-        if (runners.third != null) runsScored++;
-
-        // 2塁ランナー: 基本3塁、走力次第でホーム
-        if (runners.second != null) {
-          if (_shouldExtraAdvance(runners.second!)) {
-            runsScored++;
-          } else {
-            newThird = runners.second;
-          }
-        }
-
-        // 1塁ランナー: 基本2塁、走力次第で3塁
-        // ただし、2塁ランナーが3塁にいる場合は2塁止まり
-        if (runners.first != null) {
-          if (newThird == null && _shouldExtraAdvance(runners.first!)) {
-            // 3塁が空いていて、追加進塁成功 → 3塁へ
-            newThird = runners.first;
-          } else {
-            // 3塁が詰まっているか、追加進塁失敗 → 2塁へ
-            newSecond = runners.first;
-          }
-        }
-
-        newFirst = batter;
-        break;
-
+        return _advanceOnSingle(runners, batter);
       case AtBatResultType.walk:
-        // 押し出し（満塁時のみ得点）
-        if (runners.isLoaded) {
-          runsScored = 1;
-          newThird = runners.second;
-          newSecond = runners.first;
-          newFirst = batter;
-        } else if (runners.first != null && runners.second != null) {
-          newThird = runners.second;
-          newSecond = runners.first;
-          newFirst = batter;
-        } else if (runners.first != null) {
-          newSecond = runners.first;
-          newFirst = batter;
-          newThird = runners.third;
-        } else {
-          newFirst = batter;
-          newSecond = runners.second;
-          newThird = runners.third;
-        }
-        break;
-
+        return _advanceOnWalk(runners, batter);
       case AtBatResultType.groundOut:
-        // ゴロアウト: 2アウト時は得点なし（3アウトチェンジ）
-        // 0-1アウト時のみ走者進塁で得点の可能性
-        if (outs < 2) {
-          if (runners.third != null) runsScored++;
-          newThird = runners.second;
-          newSecond = runners.first;
-        }
-        // 2アウトの場合は打者アウトで3アウト、走者は進めない
-        // 打者アウト、1塁空く
-        break;
-
+        return _advanceOnGroundOut(runners, outs);
       case AtBatResultType.doublePlay:
-        // 併殺打: 1塁ランナーと打者がアウト（計2アウト追加）
-        // 1塁ランナーは2塁でフォースアウト → 消える
-        // 打者は1塁でアウト → 塁には出ない
-        // 2塁ランナーは3塁に進む（併殺崩れで1塁ランナーが2塁に来る可能性を考慮）
-        // 3塁ランナーは基本動かないが、満塁の場合はホームに進む
-
-        // 併殺で3アウトになるかどうか（outs == 1の時、併殺で3アウト）
-        final willBeThreeOuts = outs == 1;
-
-        // 満塁の場合、3塁ランナーがホームへ（ただし3アウトにならない場合のみ得点）
-        if (runners.isLoaded && !willBeThreeOuts) {
-          runsScored++;
-        }
-
-        // 2塁ランナーは3塁に進む
-        newThird = runners.second;
-        // 1塁、2塁は空く
-        break;
-
+        return _advanceOnDoublePlay(runners, outs);
       case AtBatResultType.flyOut:
-        // 外野フライ時のタッチアップ判定
-        final isOutfield = fieldPosition?.isOutfield ?? false;
-        int tagUpOuts = 0;
-        final tagUpAttempts = <TagUpAttempt>[];
-
-        if (isOutfield && outs < 2) {
-          // タッチアップ可能な状況
-          // フライアウトで1アウト追加済みなので、現在のアウト数は outs + 1
-
-          // 外野手の肩を取得
-          final outfielder = pitchingTeam?.getFielder(fieldPosition!);
-          final outfielderArm = outfielder?.arm ?? 5;
-
-          // 3塁ランナーのタッチアップ判定
-          bool thirdRunnerTaggedUp = false;
-          bool thirdRunnerScored = false;
-          bool thirdRunnerOut = false;
-          if (runners.third != null && _shouldAttemptTagUp(runners.third!)) {
-            thirdRunnerTaggedUp = true;
-            if (_isTagUpSuccessful(runners.third!, outfielderArm)) {
-              thirdRunnerScored = true;
-              runsScored++;
-              tagUpAttempts.add(TagUpAttempt(
-                runner: runners.third!,
-                fromBase: Base.third,
-                toBase: Base.home,
-                success: true,
-              ));
-            } else {
-              // タッチアップ失敗 → アウト
-              thirdRunnerOut = true;
-              tagUpOuts++;
-              tagUpAttempts.add(TagUpAttempt(
-                runner: runners.third!,
-                fromBase: Base.third,
-                toBase: Base.home,
-                success: false,
-              ));
-            }
-          }
-
-          // 2塁ランナーのタッチアップ判定
-          // 条件: ライト/センター方向、かつ3塁ランナーがタッチアップ試行中または3塁が空いている
-          if (runners.second != null &&
-              _canSecondRunnerTagUp(fieldPosition) &&
-              (thirdRunnerTaggedUp || runners.third == null)) {
-            if (_shouldAttemptTagUp(runners.second!)) {
-              // 成功判定: 3塁ランナーがいた場合はバックホームなので3塁ランナーの走力で判定済み
-              // 3塁ランナーがいない場合は2塁ランナーの走力で判定
-              final successCheck = runners.third != null
-                  ? thirdRunnerScored // バックホーム → 3塁ランナーが成功なら2塁ランナーも進塁
-                  : _isTagUpSuccessful(runners.second!, outfielderArm);
-
-              if (successCheck) {
-                newThird = runners.second;
-                tagUpAttempts.add(TagUpAttempt(
-                  runner: runners.second!,
-                  fromBase: Base.second,
-                  toBase: Base.third,
-                  success: true,
-                ));
-              } else {
-                // タッチアップ失敗 → アウト（2塁ランナーは消える）
-                tagUpOuts++;
-                tagUpAttempts.add(TagUpAttempt(
-                  runner: runners.second!,
-                  fromBase: Base.second,
-                  toBase: Base.third,
-                  success: false,
-                ));
-              }
-            } else {
-              newSecond = runners.second;
-            }
-          } else {
-            newSecond = runners.second;
-          }
-
-          // 3塁ランナーの最終位置
-          if (!thirdRunnerScored && !thirdRunnerOut) {
-            newThird = runners.third;
-          }
-
-          // 1塁ランナーは動かない
-          newFirst = runners.first;
-
-          // タッチアップ失敗で3アウトになった場合、その後の得点は無効
-          // （フライアウト+1、タッチアップ失敗で+tagUpOuts）
-          // 例: 1アウトでフライ(+1=2アウト)、タッチアップ失敗(+1=3アウト) → 得点なし
-          if (outs + 1 + tagUpOuts >= 3) {
-            runsScored = 0;
-          }
-        } else {
-          // 内野フライ or 2アウト: 走者動かず
-          newFirst = runners.first;
-          newSecond = runners.second;
-          newThird = runners.third;
-        }
-
-        return _RunnerAdvanceResult(
-          runsScored: runsScored,
-          newRunners: BaseRunners(
-            first: newFirst,
-            second: newSecond,
-            third: newThird,
-          ),
-          additionalOuts: tagUpOuts,
-          tagUps: tagUpAttempts,
-        );
-
+        return _advanceOnFlyOut(runners, outs, fieldPosition, pitchingTeam);
       case AtBatResultType.lineOut:
-        // ライナー: 走者動かず（タッチアップなし、捕球後の反応が難しい）
-        newFirst = runners.first;
-        newSecond = runners.second;
-        newThird = runners.third;
-        break;
-
       case AtBatResultType.strikeout:
-        // 三振: 走者動かず
-        newFirst = runners.first;
-        newSecond = runners.second;
-        newThird = runners.third;
-        break;
-
+        return _advanceOnNoChange(runners);
       case AtBatResultType.reachedOnError:
-        // エラー出塁: 単打と同様の進塁（ランナーは1つずつ進塁）
-        // ただしエラーなので追加進塁は発生しない
-        if (runners.third != null) runsScored++;
-        newThird = runners.second;
-        newSecond = runners.first;
-        newFirst = batter;
-        break;
+        return _advanceOnError(runners, batter);
+    }
+  }
+
+  /// ホームラン時の走塁
+  _RunnerAdvanceResult _advanceOnHomeRun(BaseRunners runners) {
+    return _RunnerAdvanceResult(
+      runsScored: 1 + runners.count,
+      newRunners: BaseRunners.empty,
+    );
+  }
+
+  /// 三塁打時の走塁
+  _RunnerAdvanceResult _advanceOnTriple(BaseRunners runners, Player batter) {
+    return _RunnerAdvanceResult(
+      runsScored: runners.count,
+      newRunners: BaseRunners(third: batter),
+    );
+  }
+
+  /// 二塁打時の走塁
+  _RunnerAdvanceResult _advanceOnDouble(BaseRunners runners, Player batter) {
+    int runsScored = 0;
+    Player? newThird;
+
+    // 3塁ランナー・2塁ランナーはホーム
+    if (runners.third != null) runsScored++;
+    if (runners.second != null) runsScored++;
+
+    // 1塁ランナー: 基本3塁、走力次第でホーム
+    if (runners.first != null) {
+      if (_shouldExtraAdvance(runners.first!)) {
+        runsScored++;
+      } else {
+        newThird = runners.first;
+      }
     }
 
     return _RunnerAdvanceResult(
       runsScored: runsScored,
+      newRunners: BaseRunners(second: batter, third: newThird),
+    );
+  }
+
+  /// 単打・内野安打時の走塁
+  _RunnerAdvanceResult _advanceOnSingle(BaseRunners runners, Player batter) {
+    int runsScored = 0;
+    Player? newSecond;
+    Player? newThird;
+
+    // 3塁ランナーはホーム
+    if (runners.third != null) runsScored++;
+
+    // 2塁ランナー: 基本3塁、走力次第でホーム
+    if (runners.second != null) {
+      if (_shouldExtraAdvance(runners.second!)) {
+        runsScored++;
+      } else {
+        newThird = runners.second;
+      }
+    }
+
+    // 1塁ランナー: 基本2塁、走力次第で3塁（3塁が空いている場合のみ）
+    if (runners.first != null) {
+      if (newThird == null && _shouldExtraAdvance(runners.first!)) {
+        newThird = runners.first;
+      } else {
+        newSecond = runners.first;
+      }
+    }
+
+    return _RunnerAdvanceResult(
+      runsScored: runsScored,
+      newRunners: BaseRunners(first: batter, second: newSecond, third: newThird),
+    );
+  }
+
+  /// 四球時の走塁（押し出し判定含む）
+  _RunnerAdvanceResult _advanceOnWalk(BaseRunners runners, Player batter) {
+    int runsScored = 0;
+    Player? newFirst = batter;
+    Player? newSecond = runners.second;
+    Player? newThird = runners.third;
+
+    if (runners.isLoaded) {
+      // 満塁: 押し出し
+      runsScored = 1;
+      newThird = runners.second;
+      newSecond = runners.first;
+    } else if (runners.first != null && runners.second != null) {
+      // 1,2塁: 詰まって進塁
+      newThird = runners.second;
+      newSecond = runners.first;
+    } else if (runners.first != null) {
+      // 1塁のみ: 1塁ランナーが2塁へ
+      newSecond = runners.first;
+    }
+    // それ以外は打者が1塁に出るだけ
+
+    return _RunnerAdvanceResult(
+      runsScored: runsScored,
+      newRunners: BaseRunners(first: newFirst, second: newSecond, third: newThird),
+    );
+  }
+
+  /// ゴロアウト時の走塁
+  _RunnerAdvanceResult _advanceOnGroundOut(BaseRunners runners, int outs) {
+    // 2アウト時は3アウトチェンジ、走者進塁なし
+    if (outs >= 2) {
+      return _RunnerAdvanceResult(
+        runsScored: 0,
+        newRunners: BaseRunners.empty,
+      );
+    }
+
+    // 0-1アウト: 走者進塁
+    int runsScored = 0;
+    if (runners.third != null) runsScored++;
+
+    return _RunnerAdvanceResult(
+      runsScored: runsScored,
+      newRunners: BaseRunners(second: runners.first, third: runners.second),
+    );
+  }
+
+  /// 併殺打時の走塁
+  _RunnerAdvanceResult _advanceOnDoublePlay(BaseRunners runners, int outs) {
+    // 併殺で3アウトになるかどうか
+    final willBeThreeOuts = outs == 1;
+    int runsScored = 0;
+
+    // 満塁の場合、3塁ランナーがホームへ（ただし3アウトにならない場合のみ）
+    if (runners.isLoaded && !willBeThreeOuts) {
+      runsScored++;
+    }
+
+    // 2塁ランナーは3塁へ、1塁・2塁は空く
+    return _RunnerAdvanceResult(
+      runsScored: runsScored,
+      newRunners: BaseRunners(third: runners.second),
+    );
+  }
+
+  /// 外野フライ時の走塁（タッチアップ判定含む）
+  _RunnerAdvanceResult _advanceOnFlyOut(
+    BaseRunners runners,
+    int outs,
+    FieldPosition? fieldPosition,
+    Team? pitchingTeam,
+  ) {
+    final isOutfield = fieldPosition?.isOutfield ?? false;
+
+    // 内野フライ or 2アウト: 走者動かず
+    if (!isOutfield || outs >= 2) {
+      return _advanceOnNoChange(runners);
+    }
+
+    // タッチアップ判定
+    return _processTagUp(runners, outs, fieldPosition!, pitchingTeam);
+  }
+
+  /// タッチアップ処理（外野フライ時）
+  _RunnerAdvanceResult _processTagUp(
+    BaseRunners runners,
+    int outs,
+    FieldPosition fieldPosition,
+    Team? pitchingTeam,
+  ) {
+    int runsScored = 0;
+    int tagUpOuts = 0;
+    final tagUpAttempts = <TagUpAttempt>[];
+
+    Player? newFirst = runners.first;
+    Player? newSecond = runners.second;
+    Player? newThird = runners.third;
+
+    // 外野手の肩を取得
+    final outfielder = pitchingTeam?.getFielder(fieldPosition);
+    final outfielderArm = outfielder?.arm ?? 5;
+
+    // 3塁ランナーのタッチアップ判定
+    bool thirdRunnerTaggedUp = false;
+    bool thirdRunnerScored = false;
+
+    if (runners.third != null && _shouldAttemptTagUp(runners.third!)) {
+      thirdRunnerTaggedUp = true;
+      if (_isTagUpSuccessful(runners.third!, outfielderArm)) {
+        thirdRunnerScored = true;
+        runsScored++;
+        newThird = null;
+        tagUpAttempts.add(TagUpAttempt(
+          runner: runners.third!,
+          fromBase: Base.third,
+          toBase: Base.home,
+          success: true,
+        ));
+      } else {
+        tagUpOuts++;
+        newThird = null;
+        tagUpAttempts.add(TagUpAttempt(
+          runner: runners.third!,
+          fromBase: Base.third,
+          toBase: Base.home,
+          success: false,
+        ));
+      }
+    }
+
+    // 2塁ランナーのタッチアップ判定
+    if (runners.second != null &&
+        _canSecondRunnerTagUp(fieldPosition) &&
+        (thirdRunnerTaggedUp || runners.third == null)) {
+      if (_shouldAttemptTagUp(runners.second!)) {
+        // 成功判定
+        final successCheck = runners.third != null
+            ? thirdRunnerScored
+            : _isTagUpSuccessful(runners.second!, outfielderArm);
+
+        if (successCheck) {
+          newThird = runners.second;
+          newSecond = null;
+          tagUpAttempts.add(TagUpAttempt(
+            runner: runners.second!,
+            fromBase: Base.second,
+            toBase: Base.third,
+            success: true,
+          ));
+        } else {
+          tagUpOuts++;
+          newSecond = null;
+          tagUpAttempts.add(TagUpAttempt(
+            runner: runners.second!,
+            fromBase: Base.second,
+            toBase: Base.third,
+            success: false,
+          ));
+        }
+      }
+    }
+
+    // タッチアップ失敗で3アウトになった場合、得点は無効
+    if (outs + 1 + tagUpOuts >= 3) {
+      runsScored = 0;
+    }
+
+    return _RunnerAdvanceResult(
+      runsScored: runsScored,
+      newRunners: BaseRunners(first: newFirst, second: newSecond, third: newThird),
+      additionalOuts: tagUpOuts,
+      tagUps: tagUpAttempts,
+    );
+  }
+
+  /// ランナー変化なし（三振・ライナーアウト）
+  _RunnerAdvanceResult _advanceOnNoChange(BaseRunners runners) {
+    return _RunnerAdvanceResult(
+      runsScored: 0,
+      newRunners: runners,
+    );
+  }
+
+  /// エラー出塁時の走塁
+  _RunnerAdvanceResult _advanceOnError(BaseRunners runners, Player batter) {
+    int runsScored = 0;
+    if (runners.third != null) runsScored++;
+
+    return _RunnerAdvanceResult(
+      runsScored: runsScored,
       newRunners: BaseRunners(
-        first: newFirst,
-        second: newSecond,
-        third: newThird,
+        first: batter,
+        second: runners.first,
+        third: runners.second,
       ),
     );
   }
