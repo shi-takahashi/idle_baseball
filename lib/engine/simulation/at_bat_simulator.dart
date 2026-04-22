@@ -67,6 +67,9 @@ class AtBatSimulator {
   // 守備力1あたりの補正率（高いほどアウト率が上がる）
   static const double _fieldingModifier = 0.015;
 
+  // 捕手リード1あたりの補正率（高いほどアウト率が上がる、おまけ程度）
+  static const double _leadModifier = 0.005;
+
   // 基本確率（球速145km、制球力5、ミート力5、長打力5基準）
   static const double _baseProbBall = 0.35;
   static const double _baseProbStrikeLooking = 0.15;
@@ -493,6 +496,7 @@ class AtBatSimulator {
     int? batterSpeed,
     FieldPosition? fieldPosition,
     int? fielderArm,
+    int? catcherLead,
     PitchType pitchType = PitchType.fastball,
     int? pitchParam,
     double fatigue = 0.0,
@@ -519,6 +523,11 @@ class AtBatSimulator {
     final fieldingDiff = fieldingValue - _baseFielding;
     final fieldingModifierValue = fieldingDiff * _fieldingModifier;
 
+    // 捕手リードによる補正（高いほどアウトが増える、おまけ程度）
+    final leadValue = catcherLead ?? 5;
+    final leadDiff = leadValue - 5;
+    final leadModifierValue = leadDiff * _leadModifier;
+
     // 球種固有のベース補正
     final pitchOutModifier = _outModifiers[pitchType] ?? 0.0;
     final pitchXbhModifier = _xbhModifiers[pitchType] ?? 0.0;
@@ -538,8 +547,8 @@ class AtBatSimulator {
     final tripleModifier = powerDiff * _powerTripleModifier;
     final singleModifier = powerDiff * _powerSingleModifier;
 
-    // アウト率: 球種固有 + 球速（ストレートのみ）+ パラメータ + 制球力 + 守備力 - 疲労
-    final outModifier = pitchOutModifier + speedModifier + paramScaling + controlModifier + fieldingModifierValue - fatigueOutDecrease;
+    // アウト率: 球種固有 + 球速（ストレートのみ）+ パラメータ + 制球力 + 守備力 + リード - 疲労
+    final outModifier = pitchOutModifier + speedModifier + paramScaling + controlModifier + fieldingModifierValue + leadModifierValue - fatigueOutDecrease;
     final probOut = (_baseProbOut + outModifier).clamp(0.45, 0.85);
 
     // 長打確率（長打力 + 球種効果 + 疲労で変動）
@@ -865,6 +874,7 @@ class AtBatSimulator {
       case PitchResultType.inPlay:
         final fielding = pitchingTeam.getFieldingAt(pitch.fieldPosition!);
         final fielder = pitchingTeam.getFielder(pitch.fieldPosition!);
+        final catcher = pitchingTeam.getFielder(FieldPosition.catcher);
         return simulateInPlayResult(
           pitch.battedBallType!,
           speed,
@@ -874,6 +884,7 @@ class AtBatSimulator {
           batterSpeed: batterSpeed,
           fieldPosition: pitch.fieldPosition,
           fielderArm: fielder?.arm,
+          catcherLead: catcher?.lead,
           pitchType: pitch.pitchType,
           pitchParam: pitchParam,
           fatigue: fatigue,

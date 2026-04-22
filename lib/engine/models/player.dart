@@ -23,6 +23,9 @@ class Player {
   final int? eye; // 選球眼（1〜10）、高いほど四球が増える
   final int? arm; // 肩の強さ（1〜10）、捕手は盗塁阻止、外野手はタッチアップ阻止、内野手は内野安打阻止
 
+  // 捕手専用能力
+  final int? lead; // リード（1〜10）、捕手のみ、高いほど被打率が下がる（おまけ程度）
+
   // 守備能力（ポジションごと、0〜10）
   // 0: そのポジションは守れない
   // 1〜10: 守備力（高いほど良い）
@@ -46,6 +49,7 @@ class Player {
     this.speed,
     this.eye,
     this.arm,
+    this.lead,
     this.fielding,
   });
 
