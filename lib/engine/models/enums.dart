@@ -58,6 +58,7 @@ enum AtBatResultType {
   triple,       // 三塁打
   homeRun,      // 本塁打
   groundOut,    // ゴロアウト
+  doublePlay,   // 併殺打（ゴロでダブルプレー）
   flyOut,       // フライアウト
   lineOut,      // ライナーアウト
 }
@@ -242,8 +243,14 @@ extension AtBatResultTypeExtension on AtBatResultType {
   bool get isOut {
     return this == AtBatResultType.strikeout ||
         this == AtBatResultType.groundOut ||
+        this == AtBatResultType.doublePlay ||
         this == AtBatResultType.flyOut ||
         this == AtBatResultType.lineOut;
+  }
+
+  /// 併殺打かどうか
+  bool get isDoublePlay {
+    return this == AtBatResultType.doublePlay;
   }
 
   /// 打者が出塁するかどうか
@@ -270,6 +277,8 @@ extension AtBatResultTypeExtension on AtBatResultType {
         return '本塁打';
       case AtBatResultType.groundOut:
         return 'ゴロ';
+      case AtBatResultType.doublePlay:
+        return '併殺打';
       case AtBatResultType.flyOut:
         return 'フライ';
       case AtBatResultType.lineOut:

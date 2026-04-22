@@ -193,6 +193,8 @@ class BattingStats extends StatelessWidget {
         return '本塁打';
       case AtBatResultType.groundOut:
         return 'ゴロ';
+      case AtBatResultType.doublePlay:
+        return '併殺';
       case AtBatResultType.flyOut:
         return '飛球';
       case AtBatResultType.lineOut:

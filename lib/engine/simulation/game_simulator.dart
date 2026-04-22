@@ -142,13 +142,21 @@ class GameSimulator {
       // 盗塁イベントを記録
       _recordStealEvents(atBatResult.pitches, atBats.length, stealEvents);
 
-      final resultType = atBatResult.result;
+      var resultType = atBatResult.result;
       final pitches = atBatResult.pitches;
 
       // インプレー時の打球方向を取得（最後の投球結果から）
       FieldPosition? fieldPosition;
       if (pitches.isNotEmpty && pitches.last.type == PitchResultType.inPlay) {
         fieldPosition = pitches.last.fieldPosition;
+      }
+
+      // ゴロアウト時に併殺判定
+      // 条件: ゴロアウト、ランナー1塁がいる、アウト < 2
+      if (resultType == AtBatResultType.groundOut &&
+          _canAttemptDoublePlay(runners, outs) &&
+          _shouldDoublePlay(batter)) {
+        resultType = AtBatResultType.doublePlay;
       }
 
       // 走塁処理（打席結果による進塁、盗塁後のランナー状態を使用）
@@ -159,6 +167,10 @@ class GameSimulator {
 
       // アウトカウント（打席結果によるアウト）
       if (resultType.isOut) {
+        outs++;
+      }
+      // 併殺打の場合、追加で1アウト（1塁ランナー）
+      if (resultType.isDoublePlay) {
         outs++;
       }
 
@@ -215,6 +227,29 @@ class GameSimulator {
   bool _shouldExtraAdvance(Player runner) {
     final speed = runner.speed ?? 5;
     return _random.nextDouble() < _extraAdvanceProbability(speed);
+  }
+
+  /// 併殺成功率を計算（打者の走力に基づく）
+  /// 走力1: 94%, 走力5: 70%, 走力10: 40%
+  /// 走力が高いほど併殺崩れが起きやすい
+  double _doublePlayProbability(int batterSpeed) {
+    const baseRate = 0.70;
+    final speedModifier = (batterSpeed - 5) * 0.06;
+    return (baseRate - speedModifier).clamp(0.30, 0.95);
+  }
+
+  /// 併殺が成立するかどうかを判定
+  /// 条件: ランナー1塁がいる、アウト < 2、ゴロアウト
+  /// 戻り値: true = 併殺成立、false = 併殺崩れ（通常のゴロアウト）
+  bool _shouldDoublePlay(Player batter) {
+    final batterSpeed = batter.speed ?? 5;
+    return _random.nextDouble() < _doublePlayProbability(batterSpeed);
+  }
+
+  /// 併殺の条件を満たしているかチェック
+  /// 条件: ランナー1塁がいる、アウト < 2
+  bool _canAttemptDoublePlay(BaseRunners runners, int outs) {
+    return runners.first != null && outs < 2;
   }
 
   /// 走塁処理（走力考慮版）
@@ -319,6 +354,26 @@ class GameSimulator {
         }
         // 2アウトの場合は打者アウトで3アウト、走者は進めない
         // 打者アウト、1塁空く
+        break;
+
+      case AtBatResultType.doublePlay:
+        // 併殺打: 1塁ランナーと打者がアウト（計2アウト追加）
+        // 1塁ランナーは2塁でフォースアウト → 消える
+        // 打者は1塁でアウト → 塁には出ない
+        // 2塁ランナーは3塁に進む（併殺崩れで1塁ランナーが2塁に来る可能性を考慮）
+        // 3塁ランナーは基本動かないが、満塁の場合はホームに進む
+
+        // 併殺で3アウトになるかどうか（outs == 1の時、併殺で3アウト）
+        final willBeThreeOuts = outs == 1;
+
+        // 満塁の場合、3塁ランナーがホームへ（ただし3アウトにならない場合のみ得点）
+        if (runners.isLoaded && !willBeThreeOuts) {
+          runsScored++;
+        }
+
+        // 2塁ランナーは3塁に進む
+        newThird = runners.second;
+        // 1塁、2塁は空く
         break;
 
       case AtBatResultType.flyOut:
