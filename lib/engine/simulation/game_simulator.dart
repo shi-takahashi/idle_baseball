@@ -14,6 +14,36 @@ class GameSimulator {
         _atBatSimulator = AtBatSimulator(random: random),
         _stealSimulator = StealSimulator(random: random);
 
+  /// ヒット（単打・二塁打・三塁打・本塁打）の場合、打球方向を外野に調整
+  /// 内野安打以外で内野方向へのヒットは野球的に不自然なため
+  FieldPosition? _adjustFieldPositionForHit(
+    FieldPosition? fieldPosition,
+    AtBatResultType resultType,
+  ) {
+    if (fieldPosition == null) return null;
+
+    // ヒットでない場合はそのまま（内野安打は除く - 内野方向で正しい）
+    final isHit = resultType == AtBatResultType.single ||
+        resultType == AtBatResultType.double_ ||
+        resultType == AtBatResultType.triple ||
+        resultType == AtBatResultType.homeRun;
+    if (!isHit) {
+      return fieldPosition;
+    }
+
+    // 既に外野方向なら調整不要
+    if (fieldPosition.isOutfield) {
+      return fieldPosition;
+    }
+
+    // 内野方向へのヒットは外野方向にランダムで変更
+    // 左翼30%, 中堅40%, 右翼30%
+    final roll = _random.nextDouble();
+    if (roll < 0.30) return FieldPosition.left;
+    if (roll < 0.70) return FieldPosition.center;
+    return FieldPosition.right;
+  }
+
   /// 1試合をシミュレート
   GameResult simulate(Team homeTeam, Team awayTeam) {
     final inningScores = <InningScore>[];
@@ -177,6 +207,9 @@ class GameSimulator {
           _shouldDoublePlay(batter)) {
         resultType = AtBatResultType.doublePlay;
       }
+
+      // ヒットの場合、打球方向を外野に調整（内野安打以外で内野方向は不自然なため）
+      fieldPosition = _adjustFieldPositionForHit(fieldPosition, resultType);
 
       // バッテリーエラーによる得点を加算
       runs += atBatResult.batteryErrorRuns;
