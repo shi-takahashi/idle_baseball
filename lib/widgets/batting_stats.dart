@@ -119,6 +119,8 @@ class BattingStats extends StatelessWidget {
       // 攻撃側のイニングを処理
       if (halfInning.isTop == isAway) {
         for (final atBat in halfInning.atBats) {
+          // 未完了打席（盗塁死でイニング終了）は打席として数えない
+          if (atBat.isIncomplete) continue;
           final playerId = atBat.batter.id;
 
           if (!statsMap.containsKey(playerId)) {

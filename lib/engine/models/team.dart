@@ -5,7 +5,11 @@ import 'enums.dart';
 class Team {
   final String id;
   final String name;
-  final List<Player> players; // 9人
+  final List<Player> players; // 9人（先発メンバー、players[0]は先発投手）
+
+  // 控え投手（救援投手）
+  // 先発投手はplayers[0]として扱い、ここには含めない
+  final List<Player> bullpen;
 
   // 守備配置（FieldPosition -> Player）
   // 誰がどのポジションを守っているか
@@ -16,6 +20,7 @@ class Team {
     required this.id,
     required this.name,
     required this.players,
+    this.bullpen = const [],
     this.defenseAlignment,
   });
 
@@ -24,7 +29,7 @@ class Team {
     return players[battingOrder % 9];
   }
 
-  /// 投手（Phase 1aでは最初の選手が投げ続ける想定だが、別途指定できるように）
+  /// 先発投手
   Player get pitcher => players[0];
 
   /// 指定ポジションの守備を担当する選手を取得

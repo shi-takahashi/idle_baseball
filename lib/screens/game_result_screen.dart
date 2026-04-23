@@ -57,6 +57,38 @@ class _GameResultScreenState extends State<GameResultScreen>
         const Player(id: 'a_7', name: '下位打者', number: 7, meet: 5, power: 4, speed: 8),  // 俊足
         const Player(id: 'a_8', name: '守備職人', number: 8, meet: 4, power: 3, speed: 7),  // 守備型
       ],
+      bullpen: [
+        const Player(
+          id: 'a_rp1',
+          name: '中継ぎA',
+          number: 21,
+          averageSpeed: 148,
+          fastball: 6,
+          control: 6,
+          stamina: 4, // 中継ぎ型
+          slider: 7,
+        ),
+        const Player(
+          id: 'a_rp2',
+          name: '中継ぎB',
+          number: 22,
+          averageSpeed: 143,
+          fastball: 4,
+          control: 7,
+          stamina: 3,
+          changeup: 7,
+        ),
+        const Player(
+          id: 'a_cp',
+          name: '守護神',
+          number: 47,
+          averageSpeed: 152,
+          fastball: 8,
+          control: 7,
+          stamina: 3, // クローザー型
+          splitter: 8,
+        ),
+      ],
     );
 
     // ジャイアンツ: 技巧派投手 + 平均的ライナップ（足普通チーム）
@@ -85,6 +117,38 @@ class _GameResultScreenState extends State<GameResultScreen>
         const Player(id: 'b_6', name: '六番打者', number: 6, meet: 4, power: 4, speed: 5),
         const Player(id: 'b_7', name: '七番打者', number: 7, meet: 4, power: 3, speed: 5),
         const Player(id: 'b_8', name: '八番打者', number: 8, meet: 3, power: 2, speed: 4),
+      ],
+      bullpen: [
+        const Player(
+          id: 'b_rp1',
+          name: '敗戦処理',
+          number: 31,
+          averageSpeed: 140,
+          fastball: 4,
+          control: 5,
+          stamina: 6,
+          curve: 5,
+        ),
+        const Player(
+          id: 'b_rp2',
+          name: 'セットアッパー',
+          number: 32,
+          averageSpeed: 146,
+          fastball: 6,
+          control: 7,
+          stamina: 3,
+          slider: 8,
+        ),
+        const Player(
+          id: 'b_cp',
+          name: '絶対的守護神',
+          number: 54,
+          averageSpeed: 150,
+          fastball: 7,
+          control: 8,
+          stamina: 3,
+          splitter: 9,
+        ),
       ],
     );
 

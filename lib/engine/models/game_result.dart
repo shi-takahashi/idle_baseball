@@ -1,5 +1,6 @@
 import 'at_bat_result.dart';
 import 'base_runners.dart';
+import 'pitcher_change.dart';
 
 /// 1イニングの結果（表または裏）
 class HalfInningResult {
@@ -10,6 +11,7 @@ class HalfInningResult {
   final List<StealEvent> stealEvents; // 盗塁イベント
   final int stolenBases; // 盗塁成功数
   final int caughtStealing; // 盗塁失敗（刺殺）数
+  final List<PitcherChangeEvent> pitcherChanges; // このイニング内で発生した投手交代
 
   const HalfInningResult({
     required this.inning,
@@ -19,6 +21,7 @@ class HalfInningResult {
     this.stealEvents = const [],
     this.stolenBases = 0,
     this.caughtStealing = 0,
+    this.pitcherChanges = const [],
   });
 }
 

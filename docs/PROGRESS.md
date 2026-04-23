@@ -171,7 +171,12 @@ lib/
     │   ├── enums.dart             # 列挙型（打球方向、守備位置等）
     │   ├── player.dart            # 選手（能力パラメータ）
     │   ├── team.dart              # チーム（守備配置）
-    │   ├── game_state.dart        # 試合結果データ（盗塁含む）
+    │   ├── pitcher_condition.dart # 投手の調子
+    │   ├── base_runners.dart      # ランナー状態（盗塁含む）
+    │   ├── error_models.dart      # エラーモデル
+    │   ├── pitch_result.dart      # 投球結果
+    │   ├── at_bat_result.dart     # 打席結果
+    │   ├── game_result.dart       # 試合結果
     │   └── models.dart            # エクスポート
     ├── simulation/
     │   ├── at_bat_simulator.dart  # 打席シミュレーション
@@ -631,3 +636,55 @@ docs/
 - 外野エラー（クッションボール処理ミス、返球エラー）
 - 送球エラー（中継プレイでのミス）
 - エラーによる追加進塁（エラーの重大度）
+
+### 2026-04-22 コードリファクタリング
+
+**背景:**
+- 機能追加を重ねた結果、一部のファイル/メソッドが肥大化
+- 可読性と保守性の向上のため、次の機能追加前にリファクタリングを実施
+
+**実施内容:**
+
+**1. game_state.dart の分割（524行 → 6ファイル）**
+- `pitcher_condition.dart` - 投手の調子（PitcherCondition）
+- `base_runners.dart` - ランナー状態管理（StealAttempt, TagUpAttempt, StealEvent, BaseRunners）
+- `error_models.dart` - エラーモデル（BatteryError, FieldingError等）
+- `pitch_result.dart` - 投球結果（PitchResult）
+- `at_bat_result.dart` - 打席結果（AtBatResult）
+- `game_result.dart` - 試合結果（HalfInningResult, InningScore, GameResult）
+
+**2. _advanceRunners() の分割（268行 → 12メソッド）**
+- ディスパッチャーパターンで結果タイプごとに専用メソッドに分離
+- `_advanceOnHomeRun()`, `_advanceOnTriple()`, `_advanceOnDouble()` 等
+- タッチアップ処理を `_processTagUp()` として抽出
+
+**3. simulateInPlayResult() の分割（140行 → 50行）**
+- `InPlayProbabilities` クラス追加（確率データ保持）
+- `_calculateInPlayProbabilities()` - 確率計算を分離
+- `_determineGroundOutResult()` - ゴロ判定（エラー・内野安打含む）を分離
+
+### 2026-04-22 打球方向の修正
+
+**問題:**
+- 打球方向は打球の種類（ゴロ/フライ/ライナー）で決まっていた
+- 結果（単打/二塁打等）とは独立して決まるため、「一塁方向への二塁打」のような野球的に不自然な組み合わせが発生
+
+**修正:**
+- `_adjustFieldPositionForHit()` メソッドを追加
+- ヒット（単打・二塁打・三塁打・本塁打）の場合、打球方向を外野に調整
+- 内野安打（infieldHit）は内野方向のまま（正しい動作）
+- 外野方向の配分: 左翼30%、中堅40%、右翼30%
+
+**結果表示例:**
+- 単打 [左翼] - 正しい（外野方向）
+- 二塁打 [中堅] - 正しい（外野方向）
+- 内野安打 [遊撃] - 正しい（内野方向）
+
+---
+
+## 次回の予定
+
+- 選手交代の実装
+  - 投手交代（リリーフ投手の起用）
+  - 代打・代走
+  - 守備固め

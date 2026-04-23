@@ -19,6 +19,11 @@ class AtBatResult {
   final List<TagUpAttempt>? tagUps; // タッチアップの試み
   final FieldingError? fieldingError; // フィールディングエラー
 
+  /// 打席が未完了で終了したかどうか
+  /// true: 打席の途中で盗塁死によってイニングが終了（resultはダミー）
+  /// 用途: batting統計では打席として数えない。pitching統計では投球数・盗塁死のみ計上
+  final bool isIncomplete;
+
   const AtBatResult({
     required this.batter,
     required this.pitcher,
@@ -32,6 +37,7 @@ class AtBatResult {
     required this.runnersBefore,
     this.tagUps,
     this.fieldingError,
+    this.isIncomplete = false,
   });
 
   /// 球数

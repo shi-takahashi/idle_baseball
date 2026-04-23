@@ -98,15 +98,38 @@ class PitchingStats extends StatelessWidget {
 
           final stat = statsMap[playerId]!;
 
-          // 投球数
+          // 投球数（未完了打席でもカウント）
           stat.pitchCount += atBat.pitches.length;
+
+          // 投球中の盗塁死（未完了打席でもカウント）
+          for (final pitch in atBat.pitches) {
+            if (pitch.steals != null) {
+              for (final steal in pitch.steals!) {
+                if (steal.isOut) stat.outsRecorded++;
+              }
+            }
+          }
+
+          // 未完了打席（盗塁死でイニング終了）は以降の集計対象外
+          if (atBat.isIncomplete) continue;
 
           // 打者数
           stat.battersFaced++;
 
           // アウトカウント（投球回計算用）
+          // 打席結果によるアウト
           if (atBat.result.isOut) {
             stat.outsRecorded++;
+          }
+          // 併殺打は追加で1アウト（1塁ランナーもアウト）
+          if (atBat.result.isDoublePlay) {
+            stat.outsRecorded++;
+          }
+          // タッチアップ失敗による追加アウト
+          if (atBat.tagUps != null) {
+            for (final tagUp in atBat.tagUps!) {
+              if (!tagUp.success) stat.outsRecorded++;
+            }
           }
 
           // 被安打

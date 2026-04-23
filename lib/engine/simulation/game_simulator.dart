@@ -1,18 +1,25 @@
 import 'dart:math';
 import '../models/models.dart';
 import 'at_bat_simulator.dart';
+import 'pitcher_change_strategy.dart';
 import 'steal_simulator.dart';
+import 'team_pitching_state.dart';
 
 /// 試合シミュレーター
 class GameSimulator {
   final Random _random;
   final AtBatSimulator _atBatSimulator;
   final StealSimulator _stealSimulator;
+  final PitcherChangeStrategy _pitcherChangeStrategy;
 
-  GameSimulator({Random? random})
-      : _random = random ?? Random(),
+  GameSimulator({
+    Random? random,
+    PitcherChangeStrategy? pitcherChangeStrategy,
+  })  : _random = random ?? Random(),
         _atBatSimulator = AtBatSimulator(random: random),
-        _stealSimulator = StealSimulator(random: random);
+        _stealSimulator = StealSimulator(random: random),
+        _pitcherChangeStrategy =
+            pitcherChangeStrategy ?? const SimplePitcherChangeStrategy();
 
   /// ヒット（単打・二塁打・三塁打・本塁打）の場合、打球方向を外野に調整
   /// 内野安打以外で内野方向へのヒットは野球的に不自然なため
@@ -53,12 +60,18 @@ class GameSimulator {
     int awayScore = 0;
     int homeBattingOrder = 0; // ホームチームの打順
     int awayBattingOrder = 0; // アウェイチームの打順
-    int homePitcherPitchCount = 0; // ホーム投手の投球数
-    int awayPitcherPitchCount = 0; // アウェイ投手の投球数
 
-    // 試合開始時に各投手の調子を決定
-    final homePitcherCondition = PitcherCondition.random(_random);
-    final awayPitcherCondition = PitcherCondition.random(_random);
+    // 各チームの投手運用状態（先発投手 + ブルペン）
+    final homePitchingState = TeamPitchingState(
+      currentPitcher: homeTeam.pitcher,
+      condition: PitcherCondition.random(_random),
+      bullpen: [...homeTeam.bullpen],
+    );
+    final awayPitchingState = TeamPitchingState(
+      currentPitcher: awayTeam.pitcher,
+      condition: PitcherCondition.random(_random),
+      bullpen: [...awayTeam.bullpen],
+    );
 
     for (int inning = 1; inning <= 9; inning++) {
       // 表（アウェイチームの攻撃、ホーム投手が投げる）
@@ -68,13 +81,13 @@ class GameSimulator {
         battingTeam: awayTeam,
         pitchingTeam: homeTeam,
         battingOrder: awayBattingOrder,
-        pitcherPitchCount: homePitcherPitchCount,
-        pitcherCondition: homePitcherCondition,
+        pitchingState: homePitchingState,
+        myTeamScore: homeScore,
+        opponentScoreAtStart: awayScore,
       );
       halfInnings.add(topResult.halfInning);
       awayScore += topResult.halfInning.runs;
       awayBattingOrder = topResult.nextBattingOrder;
-      homePitcherPitchCount += topResult.pitchesThrown;
 
       // 裏（ホームチームの攻撃、アウェイ投手が投げる）
       final bottomResult = _simulateHalfInning(
@@ -83,13 +96,13 @@ class GameSimulator {
         battingTeam: homeTeam,
         pitchingTeam: awayTeam,
         battingOrder: homeBattingOrder,
-        pitcherPitchCount: awayPitcherPitchCount,
-        pitcherCondition: awayPitcherCondition,
+        pitchingState: awayPitchingState,
+        myTeamScore: awayScore,
+        opponentScoreAtStart: homeScore,
       );
       halfInnings.add(bottomResult.halfInning);
       homeScore += bottomResult.halfInning.runs;
       homeBattingOrder = bottomResult.nextBattingOrder;
-      awayPitcherPitchCount += bottomResult.pitchesThrown;
 
       inningScores.add(InningScore(
         top: topResult.halfInning.runs,
@@ -114,22 +127,52 @@ class GameSimulator {
     required Team battingTeam,
     required Team pitchingTeam,
     required int battingOrder,
-    int pitcherPitchCount = 0, // 投手の現在の投球数
-    required PitcherCondition pitcherCondition, // 投手の調子
+    required TeamPitchingState pitchingState,
+    required int myTeamScore, // 投手チームの現在得点
+    required int opponentScoreAtStart, // 相手チームの現在得点（このハーフイニング開始時点）
   }) {
     final atBats = <AtBatResult>[];
     final stealEvents = <StealEvent>[];
+    final pitcherChanges = <PitcherChangeEvent>[];
     int outs = 0;
     int runs = 0;
     int stolenBases = 0;
     int caughtStealing = 0;
     BaseRunners runners = BaseRunners.empty;
     int currentBattingOrder = battingOrder;
-    int currentPitchCount = pitcherPitchCount; // このイニングの投球数を追跡
 
     while (outs < 3) {
       final batter = battingTeam.getBatter(currentBattingOrder);
-      final pitcher = pitchingTeam.pitcher;
+
+      // 投手交代判断（打者ごとに評価）
+      final changeContext = PitcherChangeContext(
+        pitchingState: pitchingState,
+        inning: inning,
+        isTop: isTop,
+        outs: outs,
+        myTeamScore: myTeamScore,
+        opponentScore: opponentScoreAtStart + runs,
+        runners: runners,
+        random: _random,
+      );
+      final decision = _pitcherChangeStrategy.decide(changeContext);
+      if (decision != null) {
+        final oldPitcher = pitchingState.currentPitcher;
+        pitchingState.changePitcher(
+          decision.newPitcher,
+          PitcherCondition.random(_random),
+        );
+        pitcherChanges.add(PitcherChangeEvent(
+          oldPitcher: oldPitcher,
+          newPitcher: decision.newPitcher,
+          inning: inning,
+          isTop: isTop,
+          atBatIndex: atBats.length,
+          reason: decision.reason,
+        ));
+      }
+
+      final pitcher = pitchingState.currentPitcher;
 
       // 打席前の状態を保存
       final outsBefore = outs;
@@ -143,11 +186,11 @@ class GameSimulator {
         runners: runners,
         outs: outs,
         stealSimulator: _stealSimulator,
-        pitchCount: currentPitchCount, // 投球数を渡す
-        condition: pitcherCondition, // 投手の調子を渡す
+        pitchCount: pitchingState.pitchCount,
+        condition: pitchingState.condition,
       );
-      // 投球数を更新
-      currentPitchCount += atBatResult.pitches.length;
+      // 現投手の投球数を更新
+      pitchingState.pitchCount += atBatResult.pitches.length;
 
       // 盗塁失敗で3アウトになった場合
       if (outs + atBatResult.additionalOuts >= 3) {
@@ -168,6 +211,22 @@ class GameSimulator {
 
         // 盗塁イベントを記録
         _recordStealEvents(atBatResult.pitches, atBats.length, stealEvents);
+
+        // 未完了の打席として記録（盗塁死でイニング終了）
+        // resultはダミー、isIncomplete=trueで打席として数えない
+        // 投手交代バナーの表示位置（atBatIndex）を正しく機能させるためにも必要
+        atBats.add(AtBatResult(
+          batter: batter,
+          pitcher: pitcher,
+          inning: inning,
+          isTop: isTop,
+          pitches: atBatResult.pitches,
+          result: AtBatResultType.strikeout, // ダミー（isIncomplete=trueなので使われない）
+          rbiCount: 0,
+          outsBefore: outsBefore,
+          runnersBefore: runnersBefore,
+          isIncomplete: true,
+        ));
 
         break;
       }
@@ -238,7 +297,7 @@ class GameSimulator {
       // タッチアップ失敗などによる追加アウト
       outs += advanceResult.additionalOuts;
 
-      atBats.add(AtBatResult(
+      final completedAtBat = AtBatResult(
         batter: batter,
         pitcher: pitcher,
         inning: inning,
@@ -251,7 +310,14 @@ class GameSimulator {
         runnersBefore: runnersBefore,
         tagUps: advanceResult.tagUps.isNotEmpty ? advanceResult.tagUps : null,
         fieldingError: atBatResult.fieldingError,
-      ));
+      );
+      atBats.add(completedAtBat);
+
+      // 現投手の交代判断用の指標を更新
+      pitchingState.recordAtBat(
+        completedAtBat,
+        batteryErrorRuns: atBatResult.batteryErrorRuns,
+      );
 
       currentBattingOrder = (currentBattingOrder + 1) % 9;
     }
@@ -265,9 +331,9 @@ class GameSimulator {
         stealEvents: stealEvents,
         stolenBases: stolenBases,
         caughtStealing: caughtStealing,
+        pitcherChanges: pitcherChanges,
       ),
       nextBattingOrder: currentBattingOrder,
-      pitchesThrown: currentPitchCount - pitcherPitchCount, // このイニングで投げた球数
     );
   }
 
@@ -596,8 +662,14 @@ class GameSimulator {
       }
     }
 
+    // 3塁ランナーのタッチアップ失敗で既に3アウト目に達している場合、
+    // 2塁ランナーのタッチアップは処理しない（プレイが死んでいるため）
+    // outs(打席前) + 1(フライアウト) + tagUpOuts(3塁ランナー分) >= 3 ならイニング終了
+    final inningAlreadyEnded = outs + 1 + tagUpOuts >= 3;
+
     // 2塁ランナーのタッチアップ判定
-    if (runners.second != null &&
+    if (!inningAlreadyEnded &&
+        runners.second != null &&
         _canSecondRunnerTagUp(fieldPosition) &&
         (thirdRunnerTaggedUp || runners.third == null)) {
       if (_shouldAttemptTagUp(runners.second!)) {
@@ -669,12 +741,10 @@ class GameSimulator {
 class _HalfInningSimulationResult {
   final HalfInningResult halfInning;
   final int nextBattingOrder;
-  final int pitchesThrown; // このイニングで投げた球数
 
   const _HalfInningSimulationResult({
     required this.halfInning,
     required this.nextBattingOrder,
-    required this.pitchesThrown,
   });
 }
 
