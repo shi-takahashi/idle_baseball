@@ -1,8 +1,10 @@
 import 'dart:math';
 import '../models/models.dart';
 import 'at_bat_simulator.dart';
+import 'fielder_change_strategy.dart';
 import 'pitcher_change_strategy.dart';
 import 'steal_simulator.dart';
+import 'team_fielding_state.dart';
 import 'team_pitching_state.dart';
 
 /// 試合シミュレーター
@@ -11,15 +13,19 @@ class GameSimulator {
   final AtBatSimulator _atBatSimulator;
   final StealSimulator _stealSimulator;
   final PitcherChangeStrategy _pitcherChangeStrategy;
+  final FielderChangeStrategy _fielderChangeStrategy;
 
   GameSimulator({
     Random? random,
     PitcherChangeStrategy? pitcherChangeStrategy,
+    FielderChangeStrategy? fielderChangeStrategy,
   })  : _random = random ?? Random(),
         _atBatSimulator = AtBatSimulator(random: random),
         _stealSimulator = StealSimulator(random: random),
         _pitcherChangeStrategy =
-            pitcherChangeStrategy ?? const SimplePitcherChangeStrategy();
+            pitcherChangeStrategy ?? const SimplePitcherChangeStrategy(),
+        _fielderChangeStrategy =
+            fielderChangeStrategy ?? const SimplePinchHitStrategy();
 
   /// ヒット（単打・二塁打・三塁打・本塁打）の場合、打球方向を外野に調整
   /// 内野安打以外で内野方向へのヒットは野球的に不自然なため
@@ -73,13 +79,17 @@ class GameSimulator {
       bullpen: [...awayTeam.bullpen],
     );
 
+    // 各チームの野手運用状態（ラインナップ・守備配置・ベンチ）
+    final homeFieldingState = TeamFieldingState.fromTeam(homeTeam);
+    final awayFieldingState = TeamFieldingState.fromTeam(awayTeam);
+
     for (int inning = 1; inning <= 9; inning++) {
       // 表（アウェイチームの攻撃、ホーム投手が投げる）
       final topResult = _simulateHalfInning(
         inning: inning,
         isTop: true,
-        battingTeam: awayTeam,
-        pitchingTeam: homeTeam,
+        battingFieldingState: awayFieldingState,
+        pitchingFieldingState: homeFieldingState,
         battingOrder: awayBattingOrder,
         pitchingState: homePitchingState,
         myTeamScore: homeScore,
@@ -93,8 +103,8 @@ class GameSimulator {
       final bottomResult = _simulateHalfInning(
         inning: inning,
         isTop: false,
-        battingTeam: homeTeam,
-        pitchingTeam: awayTeam,
+        battingFieldingState: homeFieldingState,
+        pitchingFieldingState: awayFieldingState,
         battingOrder: homeBattingOrder,
         pitchingState: awayPitchingState,
         myTeamScore: awayScore,
@@ -111,8 +121,8 @@ class GameSimulator {
     }
 
     return GameResult(
-      homeTeamName: homeTeam.name,
-      awayTeamName: awayTeam.name,
+      homeTeam: homeTeam,
+      awayTeam: awayTeam,
       inningScores: inningScores,
       halfInnings: halfInnings,
       homeScore: homeScore,
@@ -124,8 +134,8 @@ class GameSimulator {
   _HalfInningSimulationResult _simulateHalfInning({
     required int inning,
     required bool isTop,
-    required Team battingTeam,
-    required Team pitchingTeam,
+    required TeamFieldingState battingFieldingState,
+    required TeamFieldingState pitchingFieldingState,
     required int battingOrder,
     required TeamPitchingState pitchingState,
     required int myTeamScore, // 投手チームの現在得点
@@ -134,6 +144,7 @@ class GameSimulator {
     final atBats = <AtBatResult>[];
     final stealEvents = <StealEvent>[];
     final pitcherChanges = <PitcherChangeEvent>[];
+    final fielderChanges = <FielderChangeEvent>[];
     int outs = 0;
     int runs = 0;
     int stolenBases = 0;
@@ -142,7 +153,46 @@ class GameSimulator {
     int currentBattingOrder = battingOrder;
 
     while (outs < 3) {
-      final batter = battingTeam.getBatter(currentBattingOrder);
+      // 代打判断（打者前に評価）
+      final currentBatterBeforePH =
+          battingFieldingState.currentBatter(currentBattingOrder);
+      final phContext = PinchHitContext(
+        fieldingState: battingFieldingState,
+        inning: inning,
+        isTop: isTop,
+        outs: outs,
+        myTeamScore: opponentScoreAtStart + runs, // 攻撃側チームの現在得点
+        opponentScore: myTeamScore, // 守備側チームの現在得点
+        runners: runners,
+        battingOrder: currentBattingOrder,
+        currentBatter: currentBatterBeforePH,
+        opposingPitcher: pitchingState.currentPitcher,
+        random: _random,
+      );
+      final phDecision = _fielderChangeStrategy.decidePinchHit(phContext);
+      if (phDecision != null) {
+        battingFieldingState.applyPinchHit(
+          outgoing: phDecision.outgoing,
+          incoming: phDecision.hitter,
+          battingOrder: phDecision.battingOrder,
+          incomingNewPosition: phDecision.incomingPosition,
+          otherMoves: phDecision.otherMoves,
+        );
+        fielderChanges.add(FielderChangeEvent(
+          type: FielderChangeType.pinchHit,
+          inning: inning,
+          isTop: isTop,
+          atBatIndex: atBats.length,
+          outgoing: phDecision.outgoing,
+          incoming: phDecision.hitter,
+          battingOrder: phDecision.battingOrder,
+          incomingNewPosition: phDecision.incomingPosition,
+          otherMoves: phDecision.otherMoves,
+          reason: phDecision.reason,
+        ));
+      }
+
+      final batter = battingFieldingState.currentBatter(currentBattingOrder);
 
       // 投手交代判断（打者ごとに評価）
       final changeContext = PitcherChangeContext(
@@ -162,6 +212,8 @@ class GameSimulator {
           decision.newPitcher,
           PitcherCondition.random(_random),
         );
+        // 守備配置の投手位置も同期
+        pitchingFieldingState.setPitcher(decision.newPitcher);
         pitcherChanges.add(PitcherChangeEvent(
           oldPitcher: oldPitcher,
           newPitcher: decision.newPitcher,
@@ -178,11 +230,14 @@ class GameSimulator {
       final outsBefore = outs;
       final runnersBefore = runners;
 
+      // 守備側のスナップショット（現在の守備配置を反映したTeam）
+      final pitchingTeamSnapshot = pitchingFieldingState.asTeamSnapshot();
+
       // 打席シミュレーション（盗塁判定を含む）
       final atBatResult = _atBatSimulator.simulateAtBat(
         pitcher,
         batter,
-        pitchingTeam,
+        pitchingTeamSnapshot,
         runners: runners,
         outs: outs,
         stealSimulator: _stealSimulator,
@@ -280,7 +335,7 @@ class GameSimulator {
         batter,
         outs,
         fieldPosition: fieldPosition,
-        pitchingTeam: pitchingTeam,
+        pitchingTeam: pitchingTeamSnapshot,
       );
       final rbiCount = advanceResult.runsScored;
       runs += rbiCount;
@@ -332,6 +387,7 @@ class GameSimulator {
         stolenBases: stolenBases,
         caughtStealing: caughtStealing,
         pitcherChanges: pitcherChanges,
+        fielderChanges: fielderChanges,
       ),
       nextBattingOrder: currentBattingOrder,
     );

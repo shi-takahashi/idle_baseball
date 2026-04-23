@@ -11,3 +11,4 @@ export 'pitch_result.dart';
 export 'at_bat_result.dart';
 export 'game_result.dart';
 export 'pitcher_change.dart';
+export 'fielder_change.dart';

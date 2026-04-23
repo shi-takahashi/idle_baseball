@@ -58,6 +58,37 @@ class _GameResultScreenState extends State<GameResultScreen>
         const Player(id: 'a_7', name: '下位打者', number: 7, meet: 5, power: 4, speed: 8, bats: Handedness.left),
         const Player(id: 'a_8', name: '守備職人', number: 8, meet: 4, power: 3, speed: 7, bats: Handedness.right),
       ],
+      bench: [
+        // 外野専任の強打代打候補
+        const Player(
+          id: 'a_ph1',
+          name: '代打切り札',
+          number: 35,
+          meet: 7,
+          power: 8,
+          speed: 3,
+          bats: Handedness.left,
+          fielding: {
+            DefensePosition.outfield: 5,
+            DefensePosition.first: 4,
+          },
+        ),
+        // バランス型代打
+        const Player(
+          id: 'a_ph2',
+          name: '代打の神様',
+          number: 36,
+          meet: 8,
+          power: 6,
+          speed: 5,
+          bats: Handedness.right,
+          fielding: {
+            DefensePosition.first: 5,
+            DefensePosition.third: 5,
+            DefensePosition.outfield: 4,
+          },
+        ),
+      ],
       bullpen: [
         const Player(
           id: 'a_rp1',
@@ -122,6 +153,37 @@ class _GameResultScreenState extends State<GameResultScreen>
         const Player(id: 'b_6', name: '六番打者', number: 6, meet: 4, power: 4, speed: 5, bats: Handedness.right),
         const Player(id: 'b_7', name: '七番打者', number: 7, meet: 4, power: 3, speed: 5, bats: Handedness.right),
         const Player(id: 'b_8', name: '八番打者', number: 8, meet: 3, power: 2, speed: 4, bats: Handedness.left),
+      ],
+      bench: [
+        const Player(
+          id: 'b_ph1',
+          name: '強打代打',
+          number: 38,
+          meet: 7,
+          power: 9,
+          speed: 2,
+          bats: Handedness.right,
+          fielding: {
+            DefensePosition.first: 5,
+            DefensePosition.outfield: 3,
+          },
+        ),
+        const Player(
+          id: 'b_ph2',
+          name: '万能控え',
+          number: 39,
+          meet: 6,
+          power: 5,
+          speed: 6,
+          bats: Handedness.both,
+          // 内外野どこでも守れる万能型
+          fielding: {
+            DefensePosition.second: 6,
+            DefensePosition.third: 6,
+            DefensePosition.shortstop: 5,
+            DefensePosition.outfield: 5,
+          },
+        ),
       ],
       bullpen: [
         const Player(

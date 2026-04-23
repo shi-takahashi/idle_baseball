@@ -34,9 +34,11 @@ class Player {
   final Handedness? bats;
 
   // 守備能力（ポジションごと、0〜10）
-  // 0: そのポジションは守れない
-  // 1〜10: 守備力（高いほど良い）
-  // null: デフォルト値5として扱う
+  // fielding マップ自体が null  : 全ポジションをデフォルト値5で守れる（未設定の選手用）
+  // fielding マップが明示されている: 列挙されたポジションのみ守れる
+  //   - 値0   : 明示的に「守れない」
+  //   - 値1〜10: 守備力
+  //   - キー無し: 守れない（マップは「守れるポジションのリスト」として解釈）
   final Map<DefensePosition, int>? fielding;
 
   const Player({
@@ -83,18 +85,23 @@ class Player {
   }
 
   /// 指定ポジションの守備力を取得（0〜10）
-  /// 設定されていない場合はデフォルト値5を返す
+  /// fielding マップが null の場合はデフォルト値5を返す
+  /// マップに該当ポジションが列挙されていない場合は、強制配置時の最低値1を返す
   int getFielding(DefensePosition position) {
-    return fielding?[position] ?? 5;
+    final map = fielding;
+    if (map == null) return 5;
+    return map[position] ?? 1;
   }
 
   /// 指定ポジションを守れるかどうか
-  /// 守備力が0の場合は守れない
+  /// fielding マップが null の場合はどのポジションも守れる
+  /// マップが明示されている場合は、列挙されたポジション（0でない値）のみ守れる
   bool canPlay(DefensePosition position) {
-    final value = fielding?[position];
-    // 明示的に0が設定されている場合のみ守れない
-    // nullの場合はデフォルト値5で守れる
-    return value != 0;
+    final map = fielding;
+    if (map == null) return true;
+    final value = map[position];
+    if (value == null) return false; // 列挙されていない = 守れない
+    return value != 0; // 0は明示的に守れない
   }
 
   @override

@@ -11,6 +11,10 @@ class Team {
   // 先発投手はplayers[0]として扱い、ここには含めない
   final List<Player> bullpen;
 
+  // 控え野手（代打・代走・守備固め要員）
+  // スタメンはplayers[0..8]として扱い、ここには含めない
+  final List<Player> bench;
+
   // 守備配置（FieldPosition -> Player）
   // 誰がどのポジションを守っているか
   // null の場合はデフォルト配置を使用
@@ -21,6 +25,7 @@ class Team {
     required this.name,
     required this.players,
     this.bullpen = const [],
+    this.bench = const [],
     this.defenseAlignment,
   });
 

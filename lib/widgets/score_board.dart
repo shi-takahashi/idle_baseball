@@ -82,8 +82,11 @@ class _InningDetailDialogState extends State<_InningDetailDialog> {
           itemCount: halfInning.atBats.length,
           itemBuilder: (context, index) {
             final atBat = halfInning.atBats[index];
-            // この打席の前に発生した投手交代イベント
-            final changesBefore = halfInning.pitcherChanges
+            // この打席の前に発生した投手交代・野手交代イベント
+            final pitcherChangesBefore = halfInning.pitcherChanges
+                .where((c) => c.atBatIndex == index)
+                .toList();
+            final fielderChangesBefore = halfInning.fielderChanges
                 .where((c) => c.atBatIndex == index)
                 .toList();
             // 通常打席の表示番号（未完了打席は除外した番号付け）
@@ -95,7 +98,11 @@ class _InningDetailDialogState extends State<_InningDetailDialog> {
             return Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                for (final change in changesBefore)
+                // 野手交代（代打等）は打席直前に表示
+                for (final change in fielderChangesBefore)
+                  _FielderChangeBanner(event: change),
+                // 投手交代
+                for (final change in pitcherChangesBefore)
                   _PitcherChangeBanner(event: change),
                 if (atBat.isIncomplete)
                   widget.buildIncompleteAtBatRow(atBat)
@@ -124,6 +131,83 @@ class _InningDetailDialogState extends State<_InningDetailDialog> {
         ),
       ],
     );
+  }
+}
+
+/// 野手交代（代打/代走/守備固め）を示すバナー
+class _FielderChangeBanner extends StatelessWidget {
+  final FielderChangeEvent event;
+
+  const _FielderChangeBanner({required this.event});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.symmetric(vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: Colors.lightBlue.shade50,
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: Colors.lightBlue.shade700, width: 1),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.person_add_alt_1,
+                  size: 16, color: Colors.lightBlue.shade900),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text.rich(
+                  TextSpan(
+                    style: TextStyle(
+                        fontSize: 12, color: Colors.lightBlue.shade900),
+                    children: [
+                      TextSpan(
+                        text: '${event.type.displayName}: ',
+                        style: const TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                      TextSpan(text: event.outgoing.name),
+                      const TextSpan(text: ' → '),
+                      TextSpan(
+                        text: event.incoming.name,
+                        style: const TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+          if (event.hasDefensiveReshuffle ||
+              event.incomingNewPosition != null) ...[
+            const SizedBox(height: 2),
+            Padding(
+              padding: const EdgeInsets.only(left: 22),
+              child: Text(
+                _describeReshuffle(event),
+                style: TextStyle(
+                  fontSize: 11,
+                  color: Colors.lightBlue.shade800,
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  String _describeReshuffle(FielderChangeEvent e) {
+    final parts = <String>[];
+    if (e.incomingNewPosition != null) {
+      parts.add('${e.incoming.name} は ${e.incomingNewPosition!.displayName}');
+    }
+    for (final move in e.otherMoves) {
+      parts.add('${move.player.name} は ${move.to.displayName} へ');
+    }
+    return '守備: ${parts.join(', ')}';
   }
 }
 
@@ -257,6 +341,8 @@ class ScoreBoard extends StatelessWidget {
   }) {
     final hasPitcherChange =
         halfInning != null && halfInning.pitcherChanges.isNotEmpty;
+    final hasFielderChange =
+        halfInning != null && halfInning.fielderChanges.isNotEmpty;
 
     final textWidget = Padding(
       padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
@@ -273,9 +359,31 @@ class ScoreBoard extends StatelessWidget {
     );
 
     Widget cellContent = textWidget;
-    if (hasPitcherChange) {
-      // 投手交代があった場合は右上に小さな目印を表示
-      // Stackのalignmentをcenterにしてテキストの中央寄せを維持
+    if (hasPitcherChange || hasFielderChange) {
+      // 交代があった場合は右上に小さな目印を表示
+      // 投手交代=オレンジ、野手交代=水色（両方=両方の色を縦に並べて表示）
+      final dots = <Widget>[];
+      if (hasPitcherChange) {
+        dots.add(Container(
+          width: 8,
+          height: 8,
+          decoration: BoxDecoration(
+            color: Colors.amber.shade700,
+            shape: BoxShape.circle,
+          ),
+        ));
+      }
+      if (hasFielderChange) {
+        dots.add(Container(
+          width: 8,
+          height: 8,
+          decoration: BoxDecoration(
+            color: Colors.lightBlue.shade700,
+            shape: BoxShape.circle,
+          ),
+        ));
+      }
+
       cellContent = Stack(
         alignment: Alignment.center,
         clipBehavior: Clip.none,
@@ -284,13 +392,14 @@ class ScoreBoard extends StatelessWidget {
           Positioned(
             top: 2,
             right: 2,
-            child: Container(
-              width: 8,
-              height: 8,
-              decoration: BoxDecoration(
-                color: Colors.amber.shade700,
-                shape: BoxShape.circle,
-              ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                for (int i = 0; i < dots.length; i++) ...[
+                  if (i > 0) const SizedBox(height: 1),
+                  dots[i],
+                ],
+              ],
             ),
           ),
         ],

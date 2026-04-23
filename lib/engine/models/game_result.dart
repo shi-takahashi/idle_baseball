@@ -1,6 +1,8 @@
 import 'at_bat_result.dart';
 import 'base_runners.dart';
+import 'fielder_change.dart';
 import 'pitcher_change.dart';
+import 'team.dart';
 
 /// 1イニングの結果（表または裏）
 class HalfInningResult {
@@ -12,6 +14,7 @@ class HalfInningResult {
   final int stolenBases; // 盗塁成功数
   final int caughtStealing; // 盗塁失敗（刺殺）数
   final List<PitcherChangeEvent> pitcherChanges; // このイニング内で発生した投手交代
+  final List<FielderChangeEvent> fielderChanges; // このイニング内で発生した野手交代（代打・代走・守備固め）
 
   const HalfInningResult({
     required this.inning,
@@ -22,6 +25,7 @@ class HalfInningResult {
     this.stolenBases = 0,
     this.caughtStealing = 0,
     this.pitcherChanges = const [],
+    this.fielderChanges = const [],
   });
 }
 
@@ -38,21 +42,24 @@ class InningScore {
 
 /// 試合結果
 class GameResult {
-  final String homeTeamName;
-  final String awayTeamName;
+  final Team homeTeam;
+  final Team awayTeam;
   final List<InningScore> inningScores;
   final List<HalfInningResult> halfInnings;
   final int homeScore;
   final int awayScore;
 
   const GameResult({
-    required this.homeTeamName,
-    required this.awayTeamName,
+    required this.homeTeam,
+    required this.awayTeam,
     required this.inningScores,
     required this.halfInnings,
     required this.homeScore,
     required this.awayScore,
   });
+
+  String get homeTeamName => homeTeam.name;
+  String get awayTeamName => awayTeam.name;
 
   /// 勝者のチーム名（同点ならnull）
   String? get winner {
