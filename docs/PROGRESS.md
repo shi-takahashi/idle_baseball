@@ -1,6 +1,6 @@
 # 開発進捗
 
-## 最終更新: 2026-04-22
+## 最終更新: 2026-04-23
 
 ## 目標
 - 2〜3ヶ月でファーストリリース
@@ -123,6 +123,54 @@
 - [x] 投手スタミナ・疲労システム
 - [ ] 確率調整（リアルな成績分布になるよう）
 
+### Phase 1c: 選手交代システム（2026-04-23）
+
+**投手交代:**
+- [x] `PitcherChangeStrategy` 抽象クラス + `SimplePitcherChangeStrategy` 実装
+- [x] `TeamPitchingState` で投手の運用状態（現投手・投球数・失点・連打連続四球・ブルペン残り）を管理
+- [x] 交代判定条件の複合判断（100球超、5失点、3連打、3連続四球、終盤のピンチ）
+- [x] DH非採用のため投手交代時にラインナップの打順スロットも新投手に引き継ぎ（古い投手は試合から退場）
+- [x] スコアボードのオレンジバッジ + イニング詳細バナー
+
+**野手交代（代打・代走）:**
+- [x] `FielderChangeStrategy` 抽象クラス + `SimpleFielderChangeStrategy` 実装
+- [x] `TeamFieldingState` でラインナップ・守備配置・ベンチを管理
+- [x] 代打: 終盤に弱打者へ強打者ベンチから起用
+- [x] 代走: 終盤の接戦で鈍足ランナーを速いベンチ選手に交代
+- [x] スコアボードの水色バッジ + イニング詳細バナー
+
+**守備配置の再編（重要なアーキテクチャ）:**
+- [x] 攻撃面（代打・代走によるラインナップ変更）と守備面を分離
+- [x] `DefensiveChange` モデル: ハーフイニング開始時にまとめて確定される守備配置変更
+- [x] `TeamFieldingState.reconcileAlignmentBeforeDefense()`: 各ハーフ開始時に守備側チームで実行
+  - ラインナップと守備配置の差分を検出（退場選手の空き位置、未配置選手）
+  - 直接配置 → 既存野手とのスワップ → 強引な配置の順で解決
+- [x] UI: 守備配置変更は次の守備ハーフ冒頭にまとめて「守備配置」バナーとして表示
+- [x] 代打→代走で退場した選手の「割り当てられた位置」は守備配置バナーにも打撃成績にも出さない
+
+**打撃成績の表示改善:**
+- [x] 打順スロット単位で先発＋代替選手をグルーピング
+- [x] 位置列（(遊)等）を追加、代打・代走・投手交代はインデント＋バッジ表示
+- [x] 守備位置履歴（実際に守備についた位置のみ、(一、遊) のように推移を表示）
+
+**関連機能:**
+- [x] `canPlay`/`getFielding` の意味論明確化
+  - `fielding: null` = デフォルト5でどこでも守れる
+  - `fielding: {pos: 値}` = 列挙されたポジションのみ守れる（未列挙=守れない）
+
+### Phase 1d: 利き手・打席（2026-04-23）
+- [x] `Handedness` 列挙型（right / left / both）
+- [x] `Player.throws` / `Player.bats` フィールド
+- [x] 両打ち（switch hitter）は対投手の利き腕の逆で打席（`effectiveBatsAgainst(pitcher)`）
+- [x] プラトーン補正（左投手 vs 左打者のみ打者不利）
+  - ボール率 -1.5%、空振り率 +2%、インプレー時アウト率 +2%
+- [x] 左打者の一塁近さ補正
+  - 内野安打確率 ×1.15
+  - 併殺確率 -5%
+- [x] 打球方向バイアス（引っ張り傾向）
+  - 右打者: 三遊間・レフト寄り
+  - 左打者: 一二塁間・ライト寄り
+
 ### Phase 2: データ永続化
 - [ ] Hive または Isar でローカル保存
 - [ ] 6チーム分の初期データ作成
@@ -158,33 +206,39 @@
 
 ```
 lib/
-├── main.dart                      # エントリーポイント
+├── main.dart                          # エントリーポイント
 ├── screens/
-│   ├── home_screen.dart           # ホーム画面
-│   └── game_result_screen.dart    # 試合結果画面（タブ付き）
+│   ├── home_screen.dart               # ホーム画面
+│   └── game_result_screen.dart        # 試合結果画面（タブ付き）
 ├── widgets/
-│   ├── score_board.dart           # スコアボード
-│   ├── batting_stats.dart         # 打撃成績
-│   └── pitching_stats.dart        # 投手成績
+│   ├── score_board.dart               # スコアボード（投手交代/野手交代/守備配置バナー）
+│   ├── batting_stats.dart             # 打撃成績（打順スロット単位でグルーピング）
+│   └── pitching_stats.dart            # 投手成績
 └── engine/
     ├── models/
-    │   ├── enums.dart             # 列挙型（打球方向、守備位置等）
-    │   ├── player.dart            # 選手（能力パラメータ）
-    │   ├── team.dart              # チーム（守備配置）
-    │   ├── pitcher_condition.dart # 投手の調子
-    │   ├── base_runners.dart      # ランナー状態（盗塁含む）
-    │   ├── error_models.dart      # エラーモデル
-    │   ├── pitch_result.dart      # 投球結果
-    │   ├── at_bat_result.dart     # 打席結果
-    │   ├── game_result.dart       # 試合結果
-    │   └── models.dart            # エクスポート
+    │   ├── enums.dart                 # 列挙型（打球方向、守備位置、利き手等）
+    │   ├── player.dart                # 選手（能力パラメータ・利き手・打席）
+    │   ├── team.dart                  # チーム（スタメン・ブルペン・ベンチ）
+    │   ├── pitcher_condition.dart     # 投手の調子
+    │   ├── base_runners.dart          # ランナー状態（盗塁含む）
+    │   ├── error_models.dart          # エラーモデル
+    │   ├── pitch_result.dart          # 投球結果
+    │   ├── at_bat_result.dart         # 打席結果
+    │   ├── pitcher_change.dart        # 投手交代イベント
+    │   ├── fielder_change.dart        # 野手交代イベント + DefensiveChange
+    │   ├── game_result.dart           # 試合結果
+    │   └── models.dart                # エクスポート
     ├── simulation/
-    │   ├── at_bat_simulator.dart  # 打席シミュレーション
-    │   ├── game_simulator.dart    # 試合シミュレーション
-    │   ├── steal_simulator.dart   # 盗塁シミュレーション
-    │   ├── error_simulator.dart   # エラーシミュレーション
-    │   └── simulation.dart        # エクスポート
-    └── engine.dart                # エクスポート
+    │   ├── at_bat_simulator.dart      # 打席シミュレーション
+    │   ├── game_simulator.dart        # 試合シミュレーション
+    │   ├── steal_simulator.dart       # 盗塁シミュレーション
+    │   ├── error_simulator.dart       # エラーシミュレーション
+    │   ├── team_pitching_state.dart   # 投手運用状態
+    │   ├── team_fielding_state.dart   # 野手運用状態（ラインナップ・守備配置）
+    │   ├── pitcher_change_strategy.dart # 投手交代戦略
+    │   ├── fielder_change_strategy.dart # 野手交代戦略（代打・代走）
+    │   └── simulation.dart            # エクスポート
+    └── engine.dart                    # エクスポート
 
 docs/
 ├── SPEC.md              # 仕様書
@@ -680,11 +734,76 @@ docs/
 - 二塁打 [中堅] - 正しい（外野方向）
 - 内野安打 [遊撃] - 正しい（内野方向）
 
+### 2026-04-23 投手交代システム
+
+**実装内容:**
+- `PitcherChangeStrategy` 抽象クラス（後から拡張しやすい構造）
+- `SimplePitcherChangeStrategy` デフォルト実装
+  - 100球超、5失点、3連打、3連続四球、終盤のピンチなど複合条件で判定
+- `TeamPitchingState` で投手運用状態を可変管理
+- `PitcherChangeEvent` でイニング内の交代イベントを記録
+- スコアボードのオレンジドット + イニング詳細のバナー
+- DH非採用のため、投手交代時にラインナップの打順スロットも新投手に引き継ぎ
+
+**バグ修正:**
+- 「盗塁死でイニング終了」の未完了打席を `atBats` に記録するよう修正（未完了フラグ付き）
+- 投球回の過剰カウント修正（タッチアップ失敗の追加アウトの上限処理）
+
+### 2026-04-23 利き手・打席（プラトーン）
+
+**実装内容:**
+- `Handedness` 列挙型（right/left/both）
+- `Player.throws`, `Player.bats` フィールド
+- 両打ち: `effectiveBatsAgainst(pitcher)` で対戦投手の利き腕の逆を返す
+- **プラトーン補正**: 左投手 vs 左打者 のみ打者不利
+  - 空振り率 +2%、インプレー時アウト率 +2%、ボール率 -1.5%
+  - 右対右は実際の野球でも専門家交代がほぼないため補正なし
+- **左打者の一塁近さ**:
+  - 内野安打率 ×1.15
+  - 併殺確率 -5%
+- **打球方向バイアス**:
+  - 右打者: 三遊間・レフト方向寄り（引っ張り）
+  - 左打者: 一二塁間・ライト方向寄り（引っ張り）
+
+### 2026-04-23 野手交代（代打・代走）
+
+**実装内容:**
+- `FielderChangeStrategy` 抽象クラス + `SimpleFielderChangeStrategy` 実装
+- `TeamFieldingState` でラインナップ・守備配置・ベンチを管理
+- **代打**: 終盤・同点以下・弱打者に対してベンチの強打者を起用
+- **代走**: 終盤・接戦・鈍足ランナーに対してベンチの俊足を起用
+- 塁上の各ランナー（3塁→2塁→1塁の順）に対して独立に代走判定
+
+**守備配置の再編アーキテクチャ（重要）:**
+- **攻撃面（PH/PR）と守備面（配置変更）を完全分離**
+- PH/PR は `currentLineup` のみ更新、`currentAlignment` には触らない
+- `DefensiveChange` モデルを新設
+- `TeamFieldingState.reconcileAlignmentBeforeDefense()`:
+  - 各ハーフイニング開始時、守備側チームで自動実行
+  - ラインナップと守備配置の差分から必要な移動を計算
+  - 直接配置 → 既存野手とのスワップ → 強引な配置の順で解決
+- UI: 守備配置変更は次の守備ハーフ冒頭にまとめて「守備配置」バナーで表示
+- 代打→代走で退場した選手は、割り当てだけで実際には守備につかないため履歴に残さない
+
+**打撃成績の表示改善:**
+- 打順スロット単位で先発＋代替選手をグルーピング
+- 位置列（(遊)等）を追加、代替選手はインデント＋バッジ（代打/代走/投手）
+- 守備位置履歴: 実際に守備についた位置のみを順番に表示（「(一、遊)」など）
+
+**`canPlay`/`getFielding` の意味論修正:**
+- `fielding: null` → 全ポジションをデフォルト値5で守れる
+- `fielding: {pos: 値}` → 列挙されたポジションのみ守れる（未列挙=守れない）
+
 ---
 
 ## 次回の予定
 
-- 選手交代の実装
-  - 投手交代（リリーフ投手の起用）
-  - 代打・代走
-  - 守備固め
+### 延長戦の実装
+- 9回終了時点で同点の場合、10回以降に延長
+- 延長の上限（12回まで？15回まで？サスペンデッド？）は仕様検討
+- サヨナラ判定（9回裏・延長裏で勝ち越した時点でイニング終了）
+
+### その後の予定
+- 代走後・守備固めなど追加の野手交代パターン
+- 確率調整（リアルな成績分布になるよう）
+- Phase 2（データ永続化）

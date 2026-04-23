@@ -79,8 +79,15 @@ class BattingStats extends StatelessWidget {
         : '(${row.positions.map((p) => p.shortName).join('、')})';
     // 代替選手は位置の前にスペースを入れてインデント
     final posLabel = row.isStarter ? posText : '  $posText';
-    // 代替選手は名前の前に小さな種類ラベル（「代打」など）
-    final subTypeLabel = row.subType?.displayName;
+    // 代替選手は名前の前に小さな種類ラベル
+    // - subType あり: 代打/代走/守備固めを表示
+    // - subType なしで starter でない: 投手交代（DH非採用）で入った投手
+    String? subTypeLabel;
+    if (row.subType != null) {
+      subTypeLabel = row.subType!.displayName;
+    } else if (!row.isStarter) {
+      subTypeLabel = '投手';
+    }
 
     final nameStyle = TextStyle(
       fontSize: 11,
@@ -153,48 +160,69 @@ class BattingStats extends StatelessWidget {
 
   /// 打者行の一覧を構築する
   /// 打順スロット(0-8)ごとに先発→代替選手の順で並べる
-  /// 各選手の守備位置は「試合中に守った全てのポジションを順番に」表示
+  /// 各選手の守備位置は「そのチームが守備側だったハーフイニングで実際についた位置」だけを履歴に残す
+  /// → 代打→代走のように、割り当てられた守備位置に一度もつかずに退場した選手は履歴が空になる
   /// 例: 「(一、遊)」= 最初は一塁、途中から遊撃を守った
   List<_BatterRow> _computeRows(Team team, bool isAway) {
-    // このチームの野手交代イベント
-    final events = <FielderChangeEvent>[];
-    for (final h in gameResult.halfInnings) {
-      if (h.isTop == isAway) {
-        events.addAll(h.fielderChanges);
-      }
-    }
-
-    // 試合開始時の守備位置
-    final initialPositions = <String, FieldPosition>{};
+    // 現在の守備配置（選手ID → ポジション）
+    final playerPos = <String, FieldPosition>{};
     for (final pos in FieldPosition.values) {
       final p = team.getFielder(pos);
-      if (p != null) initialPositions[p.id] = pos;
+      if (p != null) playerPos[p.id] = pos;
     }
 
     // 各選手の守備位置履歴（同じポジションは重複させない）
     final positionHistory = <String, List<FieldPosition>>{};
-    for (final entry in initialPositions.entries) {
-      positionHistory[entry.key] = [entry.value];
-    }
-
-    void appendPosition(String playerId, FieldPosition pos) {
-      final history = positionHistory.putIfAbsent(playerId, () => []);
-      if (history.isEmpty || history.last != pos) {
-        history.add(pos);
+    void snapshot() {
+      // 現在の playerPos の全員分をそれぞれの履歴に追加
+      // 直前と同じポジションなら重複させない
+      for (final entry in playerPos.entries) {
+        final history = positionHistory.putIfAbsent(entry.key, () => []);
+        if (history.isEmpty || history.last != entry.value) {
+          history.add(entry.value);
+        }
       }
     }
 
-    // イベントを順番に適用
-    for (final event in events) {
-      // incoming は新しい位置に入る（履歴の先頭になる）
-      if (event.incomingNewPosition != null) {
-        appendPosition(event.incoming.id, event.incomingNewPosition!);
+    // このチームのスロット交代を発生順に収集（表示の並び順用）
+    // 代打・代走（攻撃ハーフ）と、投手交代（守備ハーフ）の両方を含める
+    final subs = <_SlotSub>[];
+
+    // ハーフイニングを順番に進めながら、守備半ではスナップショット、攻撃半では退場処理
+    for (final halfInning in gameResult.halfInnings) {
+      if (halfInning.isTop != isAway) {
+        // このチームが守備側のハーフ
+        // 1. ハーフ開始時の守備配置変更（前の攻撃ハーフの結果）を適用
+        for (final change in halfInning.defensiveChangesAtStart) {
+          playerPos[change.player.id] = change.toPosition;
+        }
+        // 2. ハーフ冒頭の状態をスナップショット
+        snapshot();
+        // 3. このハーフで発生した投手交代を適用＆スナップショット
+        for (final pc in halfInning.pitcherChanges) {
+          playerPos.remove(pc.oldPitcher.id);
+          playerPos[pc.newPitcher.id] = FieldPosition.pitcher;
+          snapshot();
+          subs.add(_SlotSub(
+            battingOrder: pc.battingOrder,
+            outgoing: pc.oldPitcher,
+            incoming: pc.newPitcher,
+            fielderType: null, // 投手交代
+          ));
+        }
+      } else {
+        // このチームが攻撃側のハーフ
+        // 代打・代走で退場した選手を playerPos から除外（履歴に残さないため）
+        for (final event in halfInning.fielderChanges) {
+          playerPos.remove(event.outgoing.id);
+          subs.add(_SlotSub(
+            battingOrder: event.battingOrder,
+            outgoing: event.outgoing,
+            incoming: event.incoming,
+            fielderType: event.type,
+          ));
+        }
       }
-      // 既存野手のポジション移動
-      for (final m in event.otherMoves) {
-        appendPosition(m.player.id, m.to);
-      }
-      // outgoing は退場。履歴はそのまま固定（追加なし）
     }
 
     // 打順スロットごとに選手の並びを構築
@@ -211,13 +239,13 @@ class BattingStats extends StatelessWidget {
       ));
 
       // このスロットで発生した交代を発生順に追加
-      for (final event in events.where((e) => e.battingOrder == slot)) {
+      for (final sub in subs.where((s) => s.battingOrder == slot)) {
         rows.add(_BatterRow(
           battingOrder: slot,
-          player: event.incoming,
-          positions: positionHistory[event.incoming.id] ?? const [],
+          player: sub.incoming,
+          positions: positionHistory[sub.incoming.id] ?? const [],
           isStarter: false,
-          subType: event.type,
+          subType: sub.fielderType,
           stats: _BatterGameStats(),
         ));
       }
@@ -304,7 +332,7 @@ class _BatterRow {
   // 例: [first, shortstop] = 最初は一塁、途中から遊撃を守った
   final List<FieldPosition> positions;
   final bool isStarter;
-  final FielderChangeType? subType; // starterの場合はnull
+  final FielderChangeType? subType; // starterや投手交代の場合はnull
   final _BatterGameStats stats;
 
   _BatterRow({
@@ -314,5 +342,20 @@ class _BatterRow {
     required this.isStarter,
     required this.subType,
     required this.stats,
+  });
+}
+
+/// 打順スロットの交代情報（代打・代走・投手交代を横断的に扱う）
+class _SlotSub {
+  final int battingOrder;
+  final Player outgoing;
+  final Player incoming;
+  final FielderChangeType? fielderType; // nullの場合は投手交代
+
+  const _SlotSub({
+    required this.battingOrder,
+    required this.outgoing,
+    required this.incoming,
+    required this.fielderType,
   });
 }

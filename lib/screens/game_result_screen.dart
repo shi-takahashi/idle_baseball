@@ -88,6 +88,20 @@ class _GameResultScreenState extends State<GameResultScreen>
             DefensePosition.outfield: 4,
           },
         ),
+        // 足のスペシャリスト（代走・守備要員）
+        const Player(
+          id: 'a_pr1',
+          name: '韋駄天',
+          number: 37,
+          meet: 4,
+          power: 2,
+          speed: 10,
+          bats: Handedness.right,
+          fielding: {
+            DefensePosition.outfield: 6,
+            DefensePosition.second: 5,
+          },
+        ),
       ],
       bullpen: [
         const Player(
@@ -182,6 +196,20 @@ class _GameResultScreenState extends State<GameResultScreen>
             DefensePosition.third: 6,
             DefensePosition.shortstop: 5,
             DefensePosition.outfield: 5,
+          },
+        ),
+        // 代走要員（足のスペシャリスト）
+        const Player(
+          id: 'b_pr1',
+          name: '快足',
+          number: 40,
+          meet: 4,
+          power: 2,
+          speed: 9,
+          bats: Handedness.left,
+          fielding: {
+            DefensePosition.outfield: 5,
+            DefensePosition.second: 4,
           },
         ),
       ],

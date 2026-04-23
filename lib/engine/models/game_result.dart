@@ -16,6 +16,11 @@ class HalfInningResult {
   final List<PitcherChangeEvent> pitcherChanges; // このイニング内で発生した投手交代
   final List<FielderChangeEvent> fielderChanges; // このイニング内で発生した野手交代（代打・代走・守備固め）
 
+  /// このハーフイニング開始時に確定した守備配置の変更
+  /// （前の攻撃ハーフでの代打・代走の結果、このハーフから有効になる守備配置）
+  /// 攻撃側の半イニングでは常に空
+  final List<DefensiveChange> defensiveChangesAtStart;
+
   const HalfInningResult({
     required this.inning,
     required this.isTop,
@@ -26,6 +31,7 @@ class HalfInningResult {
     this.caughtStealing = 0,
     this.pitcherChanges = const [],
     this.fielderChanges = const [],
+    this.defensiveChangesAtStart = const [],
   });
 }
 

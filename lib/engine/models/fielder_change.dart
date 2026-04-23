@@ -35,24 +35,18 @@ class FielderPositionChange {
   });
 }
 
-/// 野手交代イベント
-/// 代打/代走/守備固めを一つのモデルで表現する
+/// 野手交代イベント（攻撃面のみ）
+/// 代打/代走/守備固めの「誰と誰が入れ替わったか」だけを記録する
+/// 守備位置の変更は DefensiveChange で別途記録される（守備ハーフ開始時に確定）
 class FielderChangeEvent {
   final FielderChangeType type;
   final int inning;
   final bool isTop;
   final int atBatIndex; // この打席の前に発生
 
-  // メインの交代
   final Player outgoing; // 退く選手
   final Player incoming; // 入る選手
   final int battingOrder; // 打順（0-8）
-
-  // 守備再編（代打後の守備配置変更）
-  // incomingが本来のポジションを守れない場合に発生するスワップなど
-  final FieldPosition?
-      incomingNewPosition; // incomingが次の守備で守るポジション（nullは守備に付かない特殊ケース）
-  final List<FielderPositionChange> otherMoves; // 既存野手のポジション移動
 
   final String reason;
 
@@ -64,15 +58,41 @@ class FielderChangeEvent {
     required this.outgoing,
     required this.incoming,
     required this.battingOrder,
-    this.incomingNewPosition,
-    this.otherMoves = const [],
     required this.reason,
   });
-
-  /// 守備再編が発生したかどうか（incomingが元の位置とは異なるポジションに入った場合など）
-  bool get hasDefensiveReshuffle => otherMoves.isNotEmpty;
 
   @override
   String toString() =>
       '$inning回${isTop ? "表" : "裏"} ${type.displayName}: ${outgoing.name} → ${incoming.name}';
+}
+
+/// 守備配置の変更
+/// 守備ハーフイニングの開始時に確定する
+/// - 新しくフィールドに入った選手（代打・代走からの繰り上げ）
+/// - ポジション移動（既存選手が別の位置へ）
+class DefensiveChange {
+  final Player player;
+
+  /// 移動前のポジション（nullは試合に初めて出場する選手）
+  final FieldPosition? fromPosition;
+
+  /// 移動後のポジション
+  final FieldPosition toPosition;
+
+  const DefensiveChange({
+    required this.player,
+    required this.fromPosition,
+    required this.toPosition,
+  });
+
+  /// ベンチから新規出場したかどうか
+  bool get isNewOnField => fromPosition == null;
+
+  @override
+  String toString() {
+    if (fromPosition == null) {
+      return '${player.name} → ${toPosition.displayName}';
+    }
+    return '${player.name} ${fromPosition!.displayName} → ${toPosition.displayName}';
+  }
 }

@@ -152,6 +152,11 @@ class GameSimulator {
     BaseRunners runners = BaseRunners.empty;
     int currentBattingOrder = battingOrder;
 
+    // 守備側チーム（このハーフで守る側）のアライメントを確定させる
+    // 前の攻撃ハーフでの代打・代走の結果をここで反映する
+    final defensiveChangesAtStart =
+        pitchingFieldingState.reconcileAlignmentBeforeDefense();
+
     while (outs < 3) {
       // 代打判断（打者前に評価）
       final currentBatterBeforePH =
@@ -175,8 +180,6 @@ class GameSimulator {
           outgoing: phDecision.outgoing,
           incoming: phDecision.hitter,
           battingOrder: phDecision.battingOrder,
-          incomingNewPosition: phDecision.incomingPosition,
-          otherMoves: phDecision.otherMoves,
         );
         fielderChanges.add(FielderChangeEvent(
           type: FielderChangeType.pinchHit,
@@ -186,11 +189,22 @@ class GameSimulator {
           outgoing: phDecision.outgoing,
           incoming: phDecision.hitter,
           battingOrder: phDecision.battingOrder,
-          incomingNewPosition: phDecision.incomingPosition,
-          otherMoves: phDecision.otherMoves,
           reason: phDecision.reason,
         ));
       }
+
+      // 代走判断（塁上のランナーごとに評価）
+      runners = _applyPinchRunDecisions(
+        runners: runners,
+        battingFieldingState: battingFieldingState,
+        inning: inning,
+        isTop: isTop,
+        outs: outs,
+        attackingScore: opponentScoreAtStart + runs,
+        defendingScore: myTeamScore,
+        fielderChanges: fielderChanges,
+        atBatIndex: atBats.length,
+      );
 
       final batter = battingFieldingState.currentBatter(currentBattingOrder);
 
@@ -208,11 +222,19 @@ class GameSimulator {
       final decision = _pitcherChangeStrategy.decide(changeContext);
       if (decision != null) {
         final oldPitcher = pitchingState.currentPitcher;
+        // 旧投手の打順スロットを取得（setPitcher前にチェック）
+        int pitcherSlot = 0;
+        for (int i = 0; i < pitchingFieldingState.currentLineup.length; i++) {
+          if (pitchingFieldingState.currentLineup[i].id == oldPitcher.id) {
+            pitcherSlot = i;
+            break;
+          }
+        }
         pitchingState.changePitcher(
           decision.newPitcher,
           PitcherCondition.random(_random),
         );
-        // 守備配置の投手位置も同期
+        // 守備配置の投手位置も同期（DH非採用なのでラインナップも更新される）
         pitchingFieldingState.setPitcher(decision.newPitcher);
         pitcherChanges.add(PitcherChangeEvent(
           oldPitcher: oldPitcher,
@@ -220,6 +242,7 @@ class GameSimulator {
           inning: inning,
           isTop: isTop,
           atBatIndex: atBats.length,
+          battingOrder: pitcherSlot,
           reason: decision.reason,
         ));
       }
@@ -388,9 +411,81 @@ class GameSimulator {
         caughtStealing: caughtStealing,
         pitcherChanges: pitcherChanges,
         fielderChanges: fielderChanges,
+        defensiveChangesAtStart: defensiveChangesAtStart,
       ),
       nextBattingOrder: currentBattingOrder,
     );
+  }
+
+  /// 塁上のランナーごとに代走判定を行い、適用する
+  /// 戻り値は更新後の BaseRunners
+  BaseRunners _applyPinchRunDecisions({
+    required BaseRunners runners,
+    required TeamFieldingState battingFieldingState,
+    required int inning,
+    required bool isTop,
+    required int outs,
+    required int attackingScore,
+    required int defendingScore,
+    required List<FielderChangeEvent> fielderChanges,
+    required int atBatIndex,
+  }) {
+    // 3塁 → 2塁 → 1塁 の順で評価（前のランナーから）
+    final candidates = <(Base, Player)>[];
+    if (runners.third != null) candidates.add((Base.third, runners.third!));
+    if (runners.second != null) candidates.add((Base.second, runners.second!));
+    if (runners.first != null) candidates.add((Base.first, runners.first!));
+
+    var current = runners;
+    for (final (base, runner) in candidates) {
+      // ランナーの打順を特定
+      final battingOrder = _findBattingOrder(battingFieldingState, runner);
+      if (battingOrder == null) continue;
+
+      final ctx = PinchRunContext(
+        fieldingState: battingFieldingState,
+        inning: inning,
+        isTop: isTop,
+        outs: outs,
+        myTeamScore: attackingScore,
+        opponentScore: defendingScore,
+        base: base,
+        runner: runner,
+        battingOrder: battingOrder,
+        random: _random,
+      );
+      final decision = _fielderChangeStrategy.decidePinchRun(ctx);
+      if (decision == null) continue;
+
+      // 代走を適用（ラインナップのみ更新）
+      battingFieldingState.applyPinchRun(
+        outgoing: decision.outgoing,
+        incoming: decision.runner,
+        battingOrder: decision.battingOrder,
+      );
+      // 塁上のランナーを入れ替え
+      current = current.replaceRunner(base, decision.runner);
+
+      fielderChanges.add(FielderChangeEvent(
+        type: FielderChangeType.pinchRun,
+        inning: inning,
+        isTop: isTop,
+        atBatIndex: atBatIndex,
+        outgoing: decision.outgoing,
+        incoming: decision.runner,
+        battingOrder: decision.battingOrder,
+        reason: decision.reason,
+      ));
+    }
+    return current;
+  }
+
+  /// currentLineup の中から指定プレイヤーの打順を検索
+  int? _findBattingOrder(TeamFieldingState state, Player player) {
+    for (int i = 0; i < state.currentLineup.length; i++) {
+      if (state.currentLineup[i].id == player.id) return i;
+    }
+    return null;
   }
 
   /// 投球から盗塁イベントを記録

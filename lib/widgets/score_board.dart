@@ -79,19 +79,30 @@ class _InningDetailDialogState extends State<_InningDetailDialog> {
         width: double.maxFinite,
         child: ListView.builder(
           shrinkWrap: true,
-          itemCount: halfInning.atBats.length,
+          // +1 は先頭の守備配置バナー用スロット（表示対象がなければ空）
+          itemCount: halfInning.atBats.length + 1,
           itemBuilder: (context, index) {
-            final atBat = halfInning.atBats[index];
+            // index=0 は守備配置バナー（あれば）
+            if (index == 0) {
+              if (halfInning.defensiveChangesAtStart.isEmpty) {
+                return const SizedBox.shrink();
+              }
+              return _DefensiveChangesBanner(
+                changes: halfInning.defensiveChangesAtStart,
+              );
+            }
+            final atBatIndex = index - 1;
+            final atBat = halfInning.atBats[atBatIndex];
             // この打席の前に発生した投手交代・野手交代イベント
             final pitcherChangesBefore = halfInning.pitcherChanges
-                .where((c) => c.atBatIndex == index)
+                .where((c) => c.atBatIndex == atBatIndex)
                 .toList();
             final fielderChangesBefore = halfInning.fielderChanges
-                .where((c) => c.atBatIndex == index)
+                .where((c) => c.atBatIndex == atBatIndex)
                 .toList();
             // 通常打席の表示番号（未完了打席は除外した番号付け）
             final displayNumber = halfInning.atBats
-                    .take(index)
+                    .take(atBatIndex)
                     .where((a) => !a.isIncomplete)
                     .length +
                 1;
@@ -134,7 +145,8 @@ class _InningDetailDialogState extends State<_InningDetailDialog> {
   }
 }
 
-/// 野手交代（代打/代走/守備固め）を示すバナー
+/// 野手交代（代打/代走/守備固め）を示すバナー（攻撃面のみ）
+/// 守備配置の変更は別途、次の守備ハーフの冒頭に DefensiveChangesBanner で表示される
 class _FielderChangeBanner extends StatelessWidget {
   final FielderChangeEvent event;
 
@@ -150,64 +162,96 @@ class _FielderChangeBanner extends StatelessWidget {
         borderRadius: BorderRadius.circular(6),
         border: Border.all(color: Colors.lightBlue.shade700, width: 1),
       ),
+      child: Row(
+        children: [
+          Icon(Icons.person_add_alt_1,
+              size: 16, color: Colors.lightBlue.shade900),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text.rich(
+              TextSpan(
+                style:
+                    TextStyle(fontSize: 12, color: Colors.lightBlue.shade900),
+                children: [
+                  TextSpan(
+                    text: '${event.type.displayName}: ',
+                    style: const TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                  TextSpan(text: event.outgoing.name),
+                  const TextSpan(text: ' → '),
+                  TextSpan(
+                    text: event.incoming.name,
+                    style: const TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 守備ハーフ開始時の守備配置変更をまとめて表示するバナー
+/// 前の攻撃ハーフで代打・代走が入った結果、このハーフから適用される守備配置を示す
+class _DefensiveChangesBanner extends StatelessWidget {
+  final List<DefensiveChange> changes;
+
+  const _DefensiveChangesBanner({required this.changes});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.symmetric(vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: Colors.teal.shade50,
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: Colors.teal.shade600, width: 1),
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              Icon(Icons.person_add_alt_1,
-                  size: 16, color: Colors.lightBlue.shade900),
+              Icon(Icons.shield, size: 16, color: Colors.teal.shade800),
               const SizedBox(width: 6),
-              Expanded(
-                child: Text.rich(
-                  TextSpan(
-                    style: TextStyle(
-                        fontSize: 12, color: Colors.lightBlue.shade900),
-                    children: [
-                      TextSpan(
-                        text: '${event.type.displayName}: ',
-                        style: const TextStyle(fontWeight: FontWeight.bold),
-                      ),
-                      TextSpan(text: event.outgoing.name),
-                      const TextSpan(text: ' → '),
-                      TextSpan(
-                        text: event.incoming.name,
-                        style: const TextStyle(fontWeight: FontWeight.bold),
-                      ),
-                    ],
-                  ),
+              Text(
+                '守備配置',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Colors.teal.shade900,
+                  fontWeight: FontWeight.bold,
                 ),
               ),
             ],
           ),
-          if (event.hasDefensiveReshuffle ||
-              event.incomingNewPosition != null) ...[
-            const SizedBox(height: 2),
-            Padding(
-              padding: const EdgeInsets.only(left: 22),
-              child: Text(
-                _describeReshuffle(event),
-                style: TextStyle(
-                  fontSize: 11,
-                  color: Colors.lightBlue.shade800,
-                ),
-              ),
+          const SizedBox(height: 2),
+          Padding(
+            padding: const EdgeInsets.only(left: 22),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: changes.map((c) {
+                final label = c.fromPosition == null
+                    // 新規出場
+                    ? '${c.player.name} は ${c.toPosition.displayName}'
+                    // 移動
+                    : '${c.player.name} は ${c.fromPosition!.displayName} → ${c.toPosition.displayName}';
+                return Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 1),
+                  child: Text(
+                    label,
+                    style:
+                        TextStyle(fontSize: 11, color: Colors.teal.shade900),
+                  ),
+                );
+              }).toList(),
             ),
-          ],
+          ),
         ],
       ),
     );
-  }
-
-  String _describeReshuffle(FielderChangeEvent e) {
-    final parts = <String>[];
-    if (e.incomingNewPosition != null) {
-      parts.add('${e.incoming.name} は ${e.incomingNewPosition!.displayName}');
-    }
-    for (final move in e.otherMoves) {
-      parts.add('${move.player.name} は ${move.to.displayName} へ');
-    }
-    return '守備: ${parts.join(', ')}';
   }
 }
 

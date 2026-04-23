@@ -168,6 +168,21 @@ class BaseRunners {
     return BaseRunners(first: newFirst, second: newSecond, third: newThird);
   }
 
+  /// 代走でランナーを入れ替えた状態を取得
+  /// 指定された塁のランナーを新しい選手に置き換える
+  BaseRunners replaceRunner(Base base, Player newRunner) {
+    switch (base) {
+      case Base.first:
+        return BaseRunners(first: newRunner, second: second, third: third);
+      case Base.second:
+        return BaseRunners(first: first, second: newRunner, third: third);
+      case Base.third:
+        return BaseRunners(first: first, second: second, third: newRunner);
+      case Base.home:
+        return this; // ホームのランナーは存在しない
+    }
+  }
+
   /// 盗塁失敗後のランナー状況を取得（失敗したランナーを除去）
   BaseRunners afterFailedSteal(Player failedRunner, Base fromBase) {
     Player? newFirst = first;
