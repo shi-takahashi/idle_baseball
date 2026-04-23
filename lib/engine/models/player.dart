@@ -26,6 +26,13 @@ class Player {
   // 捕手専用能力
   final int? lead; // リード（1〜10）、捕手のみ、高いほど被打率が下がる（おまけ程度）
 
+  // 利き手・打席
+  // throws: 投手の利き腕（right/left）、野手やnullはright
+  // bats: 打者の打席（right/left/both）、投手やnullはright
+  //   both(両打ち)は投手の利き腕によって打席が決まる（対右投手→左、対左投手→右）
+  final Handedness? throws;
+  final Handedness? bats;
+
   // 守備能力（ポジションごと、0〜10）
   // 0: そのポジションは守れない
   // 1〜10: 守備力（高いほど良い）
@@ -51,10 +58,29 @@ class Player {
     this.arm,
     this.lead,
     this.fielding,
+    this.throws,
+    this.bats,
   });
 
   /// 投手かどうか
   bool get isPitcher => averageSpeed != null;
+
+  /// 利き腕（nullはright）
+  Handedness get effectiveThrows => throws ?? Handedness.right;
+
+  /// 打席の基本設定（nullはright、bothは両打ち）
+  Handedness get effectiveBatsBase => bats ?? Handedness.right;
+
+  /// 対指定投手のときの実際の打席
+  /// 両打ち(both)は投手の利き腕の逆（対右投手→左、対左投手→右）
+  /// それ以外は基本設定通り
+  Handedness effectiveBatsAgainst(Player pitcher) {
+    final base = effectiveBatsBase;
+    if (base != Handedness.both) return base;
+    return pitcher.effectiveThrows == Handedness.right
+        ? Handedness.left
+        : Handedness.right;
+  }
 
   /// 指定ポジションの守備力を取得（0〜10）
   /// 設定されていない場合はデフォルト値5を返す

@@ -47,15 +47,16 @@ class _GameResultScreenState extends State<GameResultScreen>
           slider: 6,    // スライダーも投げる
           splitter: 7,  // 決め球のスプリット
           speed: 4,
+          throws: Handedness.right,
         ),
-        const Player(id: 'a_1', name: '首位打者', number: 1, meet: 8, power: 5, speed: 9),  // 俊足巧打
-        const Player(id: 'a_2', name: '巧打者', number: 2, meet: 7, power: 4, speed: 8),    // 俊足
-        const Player(id: 'a_3', name: '強打者', number: 3, meet: 6, power: 8, speed: 5),    // パワータイプ
-        const Player(id: 'a_4', name: '四番打者', number: 4, meet: 7, power: 9, speed: 4),  // 主砲（鈍足）
-        const Player(id: 'a_5', name: '中堅打者', number: 5, meet: 6, power: 6, speed: 7),  // バランス
-        const Player(id: 'a_6', name: '堅実打者', number: 6, meet: 6, power: 5, speed: 6),  // バランス
-        const Player(id: 'a_7', name: '下位打者', number: 7, meet: 5, power: 4, speed: 8),  // 俊足
-        const Player(id: 'a_8', name: '守備職人', number: 8, meet: 4, power: 3, speed: 7),  // 守備型
+        const Player(id: 'a_1', name: '首位打者', number: 1, meet: 8, power: 5, speed: 9, bats: Handedness.left),  // 左の俊足巧打
+        const Player(id: 'a_2', name: '巧打者', number: 2, meet: 7, power: 4, speed: 8, bats: Handedness.both),    // スイッチヒッター
+        const Player(id: 'a_3', name: '強打者', number: 3, meet: 6, power: 8, speed: 5, bats: Handedness.right),   // 右のパワー
+        const Player(id: 'a_4', name: '四番打者', number: 4, meet: 7, power: 9, speed: 4, bats: Handedness.left),  // 左の主砲
+        const Player(id: 'a_5', name: '中堅打者', number: 5, meet: 6, power: 6, speed: 7, bats: Handedness.right),
+        const Player(id: 'a_6', name: '堅実打者', number: 6, meet: 6, power: 5, speed: 6, bats: Handedness.right),
+        const Player(id: 'a_7', name: '下位打者', number: 7, meet: 5, power: 4, speed: 8, bats: Handedness.left),
+        const Player(id: 'a_8', name: '守備職人', number: 8, meet: 4, power: 3, speed: 7, bats: Handedness.right),
       ],
       bullpen: [
         const Player(
@@ -67,6 +68,7 @@ class _GameResultScreenState extends State<GameResultScreen>
           control: 6,
           stamina: 4, // 中継ぎ型
           slider: 7,
+          throws: Handedness.left, // 左の中継ぎ
         ),
         const Player(
           id: 'a_rp2',
@@ -77,6 +79,7 @@ class _GameResultScreenState extends State<GameResultScreen>
           control: 7,
           stamina: 3,
           changeup: 7,
+          throws: Handedness.right,
         ),
         const Player(
           id: 'a_cp',
@@ -87,6 +90,7 @@ class _GameResultScreenState extends State<GameResultScreen>
           control: 7,
           stamina: 3, // クローザー型
           splitter: 8,
+          throws: Handedness.right,
         ),
       ],
     );
@@ -108,15 +112,16 @@ class _GameResultScreenState extends State<GameResultScreen>
           slider: 5,     // スライダーも
           changeup: 7,   // チェンジアップで緩急
           speed: 3,
+          throws: Handedness.left, // 技巧派左腕
         ),
-        const Player(id: 'b_1', name: '一番打者', number: 1, meet: 6, power: 4, speed: 7),  // 一番は俊足
-        const Player(id: 'b_2', name: '二番打者', number: 2, meet: 5, power: 3, speed: 6),
-        const Player(id: 'b_3', name: '三番打者', number: 3, meet: 6, power: 6, speed: 5),
-        const Player(id: 'b_4', name: '四番打者', number: 4, meet: 5, power: 7, speed: 3),  // 鈍足
-        const Player(id: 'b_5', name: '五番打者', number: 5, meet: 5, power: 5, speed: 4),
-        const Player(id: 'b_6', name: '六番打者', number: 6, meet: 4, power: 4, speed: 5),
-        const Player(id: 'b_7', name: '七番打者', number: 7, meet: 4, power: 3, speed: 5),
-        const Player(id: 'b_8', name: '八番打者', number: 8, meet: 3, power: 2, speed: 4),
+        const Player(id: 'b_1', name: '一番打者', number: 1, meet: 6, power: 4, speed: 7, bats: Handedness.left),
+        const Player(id: 'b_2', name: '二番打者', number: 2, meet: 5, power: 3, speed: 6, bats: Handedness.both),
+        const Player(id: 'b_3', name: '三番打者', number: 3, meet: 6, power: 6, speed: 5, bats: Handedness.right),
+        const Player(id: 'b_4', name: '四番打者', number: 4, meet: 5, power: 7, speed: 3, bats: Handedness.right),
+        const Player(id: 'b_5', name: '五番打者', number: 5, meet: 5, power: 5, speed: 4, bats: Handedness.left),
+        const Player(id: 'b_6', name: '六番打者', number: 6, meet: 4, power: 4, speed: 5, bats: Handedness.right),
+        const Player(id: 'b_7', name: '七番打者', number: 7, meet: 4, power: 3, speed: 5, bats: Handedness.right),
+        const Player(id: 'b_8', name: '八番打者', number: 8, meet: 3, power: 2, speed: 4, bats: Handedness.left),
       ],
       bullpen: [
         const Player(
@@ -128,6 +133,7 @@ class _GameResultScreenState extends State<GameResultScreen>
           control: 5,
           stamina: 6,
           curve: 5,
+          throws: Handedness.right,
         ),
         const Player(
           id: 'b_rp2',
@@ -138,6 +144,7 @@ class _GameResultScreenState extends State<GameResultScreen>
           control: 7,
           stamina: 3,
           slider: 8,
+          throws: Handedness.right,
         ),
         const Player(
           id: 'b_cp',
@@ -148,6 +155,7 @@ class _GameResultScreenState extends State<GameResultScreen>
           control: 8,
           stamina: 3,
           splitter: 9,
+          throws: Handedness.right,
         ),
       ],
     );

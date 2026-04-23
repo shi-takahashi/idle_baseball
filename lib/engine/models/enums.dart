@@ -1,3 +1,26 @@
+/// 利き手・打席
+/// - right: 右利き（投手）、右打ち（打者）
+/// - left: 左利き（投手）、左打ち（打者）
+/// - both: 両打ち（打者のみ有効）。投手の利き手によって打席が決まる
+enum Handedness {
+  right,
+  left,
+  both,
+}
+
+extension HandednessExtension on Handedness {
+  String get displayName {
+    switch (this) {
+      case Handedness.right:
+        return '右';
+      case Handedness.left:
+        return '左';
+      case Handedness.both:
+        return '両';
+    }
+  }
+}
+
 /// 1球の結果タイプ
 enum PitchResultType {
   ball, // ボール

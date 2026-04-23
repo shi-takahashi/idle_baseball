@@ -226,6 +226,18 @@ class AtBatSimulator {
   // 疲労時の被長打率増加（最大値）
   static const double _fatigueXbhModifier = 0.03;
 
+  // === プラトーン（左vs左=打者不利）補正 ===
+  // 左投手 vs 左打者 のみ打者に不利な補正を適用
+  // 右vs右は実際の野球でも専門家交代がほぼないため補正なし
+  static const double _platoonSwingModifier = 0.02; // 空振り率 +2%
+  static const double _platoonOutModifier = 0.02; // インプレー時のアウト率 +2%
+  static const double _platoonBallModifier = -0.015; // ボール率 -1.5%（制球しやすい）
+
+  // === 左打者の一塁ベース近さによる補正 ===
+  // 左打者は一塁に近い位置から走れるため、内野安打が増える
+  // （併殺率の補正は GameSimulator 側で適用）
+  static const double _leftBatterInfieldHitMultiplier = 1.15; // 内野安打率 ×1.15
+
   late final ErrorSimulator _errorSimulator;
 
   AtBatSimulator({Random? random}) : _random = random ?? Random() {
@@ -346,7 +358,9 @@ class AtBatSimulator {
   /// eye: 打者の選球眼（1-10、デフォルト5）
   /// power: 打者の長打力（1-10、デフォルト5）- 警戒されて四球増
   /// fatigue: 基本疲労度（0.0〜1.0、デフォルト0）
-  PitchResult simulatePitch(int balls, int strikes, int speed, int control, int meet, PitchType pitchType, int? pitchParam, {int eye = 5, int power = 5, double fatigue = 0.0}) {
+  /// isPlatoonDisadvantage: 利き手同士マッチアップで打者不利なら true
+  /// batterSide: 打者の実効打席（打球方向バイアス用）
+  PitchResult simulatePitch(int balls, int strikes, int speed, int control, int meet, PitchType pitchType, int? pitchParam, {int eye = 5, int power = 5, double fatigue = 0.0, bool isPlatoonDisadvantage = false, Handedness batterSide = Handedness.right}) {
     // 球種に応じた実効疲労度を計算
     final effectiveFatigue = _getEffectiveFatigue(fatigue, pitchType);
 
@@ -392,12 +406,16 @@ class AtBatSimulator {
     final fatigueBallIncrease = effectiveFatigue * _fatigueBallModifier;
     final fatigueSwingDecrease = effectiveFatigue * _fatigueSwingModifier;
 
+    // プラトーン補正（同じ手=投手有利）
+    final platoonBall = isPlatoonDisadvantage ? _platoonBallModifier : 0.0;
+    final platoonSwing = isPlatoonDisadvantage ? _platoonSwingModifier : 0.0;
+
     // 確率を調整
-    // ボール率: 球種固有 + 制球力 + パラメータ補正 + 疲労 + 選球眼 + 長打力警戒
-    final probBall = (_baseProbBall + pitchBallModifier - controlBallModifier - paramScaling * 0.5 + fatigueBallIncrease + eyeBallBonus + powerWalkBonus).clamp(0.20, 0.55);
+    // ボール率: 球種固有 + 制球力 + パラメータ補正 + 疲労 + 選球眼 + 長打力警戒 + プラトーン
+    final probBall = (_baseProbBall + pitchBallModifier - controlBallModifier - paramScaling * 0.5 + fatigueBallIncrease + eyeBallBonus + powerWalkBonus + platoonBall).clamp(0.20, 0.55);
     final probStrikeLooking = _baseProbStrikeLooking;
-    // 空振り率: 球種固有 + 球速（ストレートのみ）+ パラメータ補正 - ミート力 - 疲労
-    final probStrikeSwinging = (_baseProbStrikeSwinging + pitchSwingModifier + speedModifier + paramScaling - swingModifier - fatigueSwingDecrease).clamp(0.03, 0.30);
+    // 空振り率: 球種固有 + 球速（ストレートのみ）+ パラメータ補正 - ミート力 - 疲労 + プラトーン
+    final probStrikeSwinging = (_baseProbStrikeSwinging + pitchSwingModifier + speedModifier + paramScaling - swingModifier - fatigueSwingDecrease + platoonSwing).clamp(0.03, 0.30);
     final probFoul = _baseProbFoul;
     // インプレー確率は残り（他の結果にならなかった場合）
 
@@ -430,7 +448,7 @@ class AtBatSimulator {
 
     // インプレー
     final battedBallType = _randomBattedBallType();
-    final fieldPosition = _randomFieldPosition(battedBallType);
+    final fieldPosition = _randomFieldPosition(battedBallType, batterSide);
     return PitchResult(type: PitchResultType.inPlay, pitchType: pitchType, battedBallType: battedBallType, fieldPosition: fieldPosition, speed: speed);
   }
 
@@ -442,42 +460,109 @@ class AtBatSimulator {
     return BattedBallType.lineDrive;
   }
 
-  /// 打球方向をランダムに決定（打球の種類によって確率が変わる）
-  FieldPosition _randomFieldPosition(BattedBallType battedBallType) {
-    final roll = _random.nextDouble();
+  /// 打球方向をランダムに決定
+  /// 打球の種類と打者の打席（利き手）によって確率が変わる
+  /// 右打者はレフト方向・三遊間に引っ張りやすい
+  /// 左打者はライト方向・一二塁間に引っ張りやすい
+  FieldPosition _randomFieldPosition(
+      BattedBallType battedBallType, Handedness batterSide) {
+    final weights = _directionWeights(battedBallType, batterSide);
+    return _pickWeighted(weights);
+  }
 
+  /// 重み付きで FieldPosition を選択
+  FieldPosition _pickWeighted(Map<FieldPosition, double> weights) {
+    final total = weights.values.fold(0.0, (a, b) => a + b);
+    final roll = _random.nextDouble() * total;
+    double cumulative = 0;
+    for (final entry in weights.entries) {
+      cumulative += entry.value;
+      if (roll < cumulative) return entry.key;
+    }
+    return weights.keys.last;
+  }
+
+  /// 打球の種類と打者の打席から、各守備位置への打球確率（重み）を返す
+  /// 基本分布はbothの値で、右/左に応じて pull/opposite のシフトを適用
+  Map<FieldPosition, double> _directionWeights(
+      BattedBallType battedBallType, Handedness batterSide) {
     switch (battedBallType) {
       case BattedBallType.groundBall:
-        // ゴロは内野に飛ぶ（投手5%, 一塁25%, 二塁25%, 三塁20%, 遊撃25%）
-        if (roll < 0.05) return FieldPosition.pitcher;
-        if (roll < 0.30) return FieldPosition.first;
-        if (roll < 0.55) return FieldPosition.second;
-        if (roll < 0.75) return FieldPosition.third;
-        return FieldPosition.shortstop;
+        // 基本: 投手5, 一塁25, 二塁25, 三塁20, 遊撃25
+        // 右打者はサード/ショートに引っ張る、左打者はファースト/セカンドに引っ張る
+        double first = 25, second = 25, third = 20, shortstop = 25;
+        if (batterSide == Handedness.right) {
+          // 右打者: +左寄り
+          third += 5;
+          shortstop += 3;
+          first -= 5;
+          second -= 3;
+        } else if (batterSide == Handedness.left) {
+          // 左打者: +右寄り
+          first += 5;
+          second += 3;
+          third -= 5;
+          shortstop -= 3;
+        }
+        return {
+          FieldPosition.pitcher: 5,
+          FieldPosition.first: first,
+          FieldPosition.second: second,
+          FieldPosition.third: third,
+          FieldPosition.shortstop: shortstop,
+        };
 
       case BattedBallType.flyBall:
-        // フライは外野メイン、内野フライもある
-        // 捕手5%, 一塁5%, 二塁5%, 三塁5%, 遊撃5%, 左翼25%, 中堅30%, 右翼20%
-        if (roll < 0.05) return FieldPosition.catcher;
-        if (roll < 0.10) return FieldPosition.first;
-        if (roll < 0.15) return FieldPosition.second;
-        if (roll < 0.20) return FieldPosition.third;
-        if (roll < 0.25) return FieldPosition.shortstop;
-        if (roll < 0.50) return FieldPosition.left;
-        if (roll < 0.80) return FieldPosition.center;
-        return FieldPosition.right;
+        // 基本: 捕手5, 一塁5, 二塁5, 三塁5, 遊撃5, 左翼25, 中堅30, 右翼20
+        // 右打者はレフト方向、左打者はライト方向
+        double left = 25, center = 30, right = 20;
+        if (batterSide == Handedness.right) {
+          left += 8;
+          right -= 8;
+        } else if (batterSide == Handedness.left) {
+          right += 8;
+          left -= 8;
+        }
+        return {
+          FieldPosition.catcher: 5,
+          FieldPosition.first: 5,
+          FieldPosition.second: 5,
+          FieldPosition.third: 5,
+          FieldPosition.shortstop: 5,
+          FieldPosition.left: left,
+          FieldPosition.center: center,
+          FieldPosition.right: right,
+        };
 
       case BattedBallType.lineDrive:
-        // ライナーは全方向に分散
-        // 投手10%, 一塁10%, 二塁15%, 三塁10%, 遊撃15%, 左翼15%, 中堅15%, 右翼10%
-        if (roll < 0.10) return FieldPosition.pitcher;
-        if (roll < 0.20) return FieldPosition.first;
-        if (roll < 0.35) return FieldPosition.second;
-        if (roll < 0.45) return FieldPosition.third;
-        if (roll < 0.60) return FieldPosition.shortstop;
-        if (roll < 0.75) return FieldPosition.left;
-        if (roll < 0.90) return FieldPosition.center;
-        return FieldPosition.right;
+        // 基本: 投手10, 一塁10, 二塁15, 三塁10, 遊撃15, 左翼15, 中堅15, 右翼10
+        double first = 10, second = 15, third = 10, shortstop = 15;
+        double leftOf = 15, rightOf = 10;
+        if (batterSide == Handedness.right) {
+          third += 3;
+          shortstop += 2;
+          leftOf += 4;
+          first -= 3;
+          second -= 2;
+          rightOf -= 4;
+        } else if (batterSide == Handedness.left) {
+          first += 3;
+          second += 2;
+          rightOf += 4;
+          third -= 3;
+          shortstop -= 2;
+          leftOf -= 4;
+        }
+        return {
+          FieldPosition.pitcher: 10,
+          FieldPosition.first: first,
+          FieldPosition.second: second,
+          FieldPosition.third: third,
+          FieldPosition.shortstop: shortstop,
+          FieldPosition.left: leftOf,
+          FieldPosition.center: 15,
+          FieldPosition.right: rightOf,
+        };
     }
   }
 
@@ -488,7 +573,8 @@ class AtBatSimulator {
   /// batterSpeed: 打者の走力（1〜10）
   /// fieldPosition: 打球方向
   /// fielding: 守備力（1〜10）
-  double _calcInfieldHitProbability(int batterSpeed, FieldPosition fieldPosition, int fielding, int arm) {
+  /// isLeftBatter: 左打者なら一塁に近い分だけ有利
+  double _calcInfieldHitProbability(int batterSpeed, FieldPosition fieldPosition, int fielding, int arm, {bool isLeftBatter = false}) {
     // 基本確率: 走力 × 1.2%（走力10で12%）
     final baseProbability = batterSpeed * _infieldHitBaseRate;
 
@@ -526,7 +612,15 @@ class AtBatSimulator {
     // 肩5で1.0、肩10で0.85、肩1で1.12
     final armModifier = 1.0 - (arm - 5) * 0.03;
 
-    return (baseProbability * directionModifier * fieldingModifier * armModifier).clamp(0.0, 0.25);
+    // 左打者は一塁に近いため内野安打になりやすい
+    final leftBatterBonus = isLeftBatter ? _leftBatterInfieldHitMultiplier : 1.0;
+
+    return (baseProbability *
+            directionModifier *
+            fieldingModifier *
+            armModifier *
+            leftBatterBonus)
+        .clamp(0.0, 0.30);
   }
 
   /// インプレー結果の確率データ
@@ -540,6 +634,7 @@ class AtBatSimulator {
     required PitchType pitchType,
     required int pitchParam,
     required double fatigue,
+    bool isPlatoonDisadvantage = false,
   }) {
     // 球種に応じた実効疲労度を計算
     final effectiveFatigue = _getEffectiveFatigue(fatigue, pitchType);
@@ -584,14 +679,18 @@ class AtBatSimulator {
     final tripleModifier = powerDiff * _powerTripleModifier;
     final singleModifier = powerDiff * _powerSingleModifier;
 
-    // アウト率: 球種固有 + 球速（ストレートのみ）+ パラメータ + 制球力 + 守備力 + リード - 疲労
+    // プラトーン補正（同じ手=投手有利）
+    final platoonOut = isPlatoonDisadvantage ? _platoonOutModifier : 0.0;
+
+    // アウト率: 球種固有 + 球速（ストレートのみ）+ パラメータ + 制球力 + 守備力 + リード - 疲労 + プラトーン
     final outModifier = pitchOutModifier +
         speedModifier +
         paramScaling +
         controlModifier +
         fieldingModifierValue +
         leadModifierValue -
-        fatigueOutDecrease;
+        fatigueOutDecrease +
+        platoonOut;
     final probOut = (_baseProbOut + outModifier).clamp(0.45, 0.85);
 
     // 長打確率（長打力 + 球種効果 + 疲労で変動）
@@ -621,6 +720,7 @@ class AtBatSimulator {
     required int fielding,
     required int? batterSpeed,
     required int? fielderArm,
+    bool isLeftBatter = false,
   }) {
     // ゴロの場合、まずエラーチェック（内野のみ）
     if (fieldPosition != null && !fieldPosition.isOutfield) {
@@ -639,7 +739,13 @@ class AtBatSimulator {
     // エラーなし → 内野安打の可能性をチェック
     if (batterSpeed != null && fieldPosition != null) {
       final armValue = fielderArm ?? 5;
-      final infieldHitProb = _calcInfieldHitProbability(batterSpeed, fieldPosition, fielding, armValue);
+      final infieldHitProb = _calcInfieldHitProbability(
+        batterSpeed,
+        fieldPosition,
+        fielding,
+        armValue,
+        isLeftBatter: isLeftBatter,
+      );
       if (_random.nextDouble() < infieldHitProb) {
         return const InPlayResult(result: AtBatResultType.infieldHit);
       }
@@ -655,6 +761,8 @@ class AtBatSimulator {
   /// pitchType: 球種
   /// pitchParam: その球種のパラメータ値（1-10、nullは基準値5）
   /// fatigue: 基本疲労度（0.0〜1.0、デフォルト0）
+  /// isPlatoonDisadvantage: 利き手同士マッチアップで打者不利なら true
+  /// isLeftBatter: 左打者なら一塁に近い分だけ内野安打確率UP
   InPlayResult simulateInPlayResult(
     BattedBallType battedBallType,
     int speed,
@@ -668,6 +776,8 @@ class AtBatSimulator {
     PitchType pitchType = PitchType.fastball,
     int? pitchParam,
     double fatigue = 0.0,
+    bool isPlatoonDisadvantage = false,
+    bool isLeftBatter = false,
   }) {
     final fieldingValue = fielding ?? _baseFielding;
     final leadValue = catcherLead ?? 5;
@@ -683,6 +793,7 @@ class AtBatSimulator {
       pitchType: pitchType,
       pitchParam: paramValue,
       fatigue: fatigue,
+      isPlatoonDisadvantage: isPlatoonDisadvantage,
     );
 
     final roll = _random.nextDouble();
@@ -698,6 +809,7 @@ class AtBatSimulator {
             fielding: fieldingValue,
             batterSpeed: batterSpeed,
             fielderArm: fielderArm,
+            isLeftBatter: isLeftBatter,
           );
         case BattedBallType.flyBall:
           return const InPlayResult(result: AtBatResultType.flyOut);
@@ -798,6 +910,13 @@ class AtBatSimulator {
     final catcher = pitchingTeam.getFielder(FieldPosition.catcher);
     final catcherArm = catcher?.arm ?? 5;
 
+    // 打者の実効打席（両打ちは対投手で決まる）と利き手マッチアップ
+    final batterSide = batter.effectiveBatsAgainst(pitcher);
+    final isLeftBatter = batterSide == Handedness.left;
+    // プラトーン不利は左vs左のみ（右vs右は補正なし）
+    final isPlatoonDisadvantage =
+        pitcher.effectiveThrows == Handedness.left && isLeftBatter;
+
     int balls = 0;
     int strikes = 0;
     final pitches = <PitchResult>[];
@@ -831,7 +950,20 @@ class AtBatSimulator {
       final pitchType = _selectPitchType(pitcher, condition);
       final speed = _generatePitchSpeed(avgSpeed, pitchType);
       final pitchParam = _getPitchParam(pitcher, pitchType, condition);
-      var pitch = simulatePitch(balls, strikes, speed, control, meet, pitchType, pitchParam, eye: eye, power: power, fatigue: fatigue);
+      var pitch = simulatePitch(
+        balls,
+        strikes,
+        speed,
+        control,
+        meet,
+        pitchType,
+        pitchParam,
+        eye: eye,
+        power: power,
+        fatigue: fatigue,
+        isPlatoonDisadvantage: isPlatoonDisadvantage,
+        batterSide: batterSide,
+      );
       currentPitchCount++; // 投球数を増加
 
       // 2.5 ワイルドピッチ/パスボールチェック（ボール時のみ、ランナーがいる場合）
@@ -936,6 +1068,8 @@ class AtBatSimulator {
         pitchingTeam: pitchingTeam,
         pitchParam: pitchParam,
         fatigue: fatigue,
+        isPlatoonDisadvantage: isPlatoonDisadvantage,
+        isLeftBatter: isLeftBatter,
       );
 
       if (atBatEndCheck.isEnded) {
@@ -1023,6 +1157,8 @@ class AtBatSimulator {
     required Team pitchingTeam,
     required int? pitchParam,
     double fatigue = 0.0,
+    bool isPlatoonDisadvantage = false,
+    bool isLeftBatter = false,
   }) {
     switch (pitch.type) {
       case PitchResultType.ball:
@@ -1058,6 +1194,8 @@ class AtBatSimulator {
           pitchType: pitch.pitchType,
           pitchParam: pitchParam,
           fatigue: fatigue,
+          isPlatoonDisadvantage: isPlatoonDisadvantage,
+          isLeftBatter: isLeftBatter,
         );
         return AtBatEndCheckResult(
           result: inPlayResult.result,

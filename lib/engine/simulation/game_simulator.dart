@@ -263,7 +263,7 @@ class GameSimulator {
       // 条件: ゴロアウト、ランナー1塁がいる、アウト < 2
       if (resultType == AtBatResultType.groundOut &&
           _canAttemptDoublePlay(runners, outs) &&
-          _shouldDoublePlay(batter)) {
+          _shouldDoublePlay(batter, pitcher)) {
         resultType = AtBatResultType.doublePlay;
       }
 
@@ -362,21 +362,26 @@ class GameSimulator {
     return _random.nextDouble() < _extraAdvanceProbability(speed);
   }
 
-  /// 併殺成功率を計算（打者の走力に基づく）
+  /// 併殺成功率を計算（打者の走力と打席に基づく）
   /// 走力1: 94%, 走力5: 70%, 走力10: 40%
   /// 走力が高いほど併殺崩れが起きやすい
-  double _doublePlayProbability(int batterSpeed) {
+  /// 左打者は一塁に近い分、併殺率が下がる
+  double _doublePlayProbability(int batterSpeed, {bool isLeftBatter = false}) {
     const baseRate = 0.70;
     final speedModifier = (batterSpeed - 5) * 0.06;
-    return (baseRate - speedModifier).clamp(0.30, 0.95);
+    final leftPenalty = isLeftBatter ? 0.05 : 0.0;
+    return (baseRate - speedModifier - leftPenalty).clamp(0.30, 0.95);
   }
 
   /// 併殺が成立するかどうかを判定
   /// 条件: ランナー1塁がいる、アウト < 2、ゴロアウト
   /// 戻り値: true = 併殺成立、false = 併殺崩れ（通常のゴロアウト）
-  bool _shouldDoublePlay(Player batter) {
+  bool _shouldDoublePlay(Player batter, Player pitcher) {
     final batterSpeed = batter.speed ?? 5;
-    return _random.nextDouble() < _doublePlayProbability(batterSpeed);
+    final batterSide = batter.effectiveBatsAgainst(pitcher);
+    final isLeftBatter = batterSide == Handedness.left;
+    return _random.nextDouble() <
+        _doublePlayProbability(batterSpeed, isLeftBatter: isLeftBatter);
   }
 
   /// 併殺の条件を満たしているかチェック
