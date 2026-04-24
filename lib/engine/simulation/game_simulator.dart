@@ -57,6 +57,12 @@ class GameSimulator {
     return FieldPosition.right;
   }
 
+  /// 規定イニング数（9回で決着がつかなければ延長）
+  static const int regulationInnings = 9;
+
+  /// 延長戦の最終イニング（12回で同点なら引き分け）
+  static const int maxInnings = 12;
+
   /// 1試合をシミュレート
   GameResult simulate(Team homeTeam, Team awayTeam) {
     final inningScores = <InningScore>[];
@@ -83,7 +89,7 @@ class GameSimulator {
     final homeFieldingState = TeamFieldingState.fromTeam(homeTeam);
     final awayFieldingState = TeamFieldingState.fromTeam(awayTeam);
 
-    for (int inning = 1; inning <= 9; inning++) {
+    for (int inning = 1; inning <= maxInnings; inning++) {
       // 表（アウェイチームの攻撃、ホーム投手が投げる）
       final topResult = _simulateHalfInning(
         inning: inning,
@@ -98,6 +104,15 @@ class GameSimulator {
       halfInnings.add(topResult.halfInning);
       awayScore += topResult.halfInning.runs;
       awayBattingOrder = topResult.nextBattingOrder;
+
+      // 9回以降の表終了時点で後攻が勝っていれば、裏はやらずに試合終了
+      if (inning >= regulationInnings && homeScore > awayScore) {
+        inningScores.add(InningScore(
+          top: topResult.halfInning.runs,
+          bottom: null,
+        ));
+        break;
+      }
 
       // 裏（ホームチームの攻撃、アウェイ投手が投げる）
       final bottomResult = _simulateHalfInning(
@@ -118,6 +133,12 @@ class GameSimulator {
         top: topResult.halfInning.runs,
         bottom: bottomResult.halfInning.runs,
       ));
+
+      // 9回以降の裏終了時点で決着がついていれば試合終了
+      // （同点なら次のイニングへ、ただし12回終了時は引き分けで終了）
+      if (inning >= regulationInnings && homeScore != awayScore) {
+        break;
+      }
     }
 
     return GameResult(
@@ -398,6 +419,13 @@ class GameSimulator {
       );
 
       currentBattingOrder = (currentBattingOrder + 1) % 9;
+
+      // サヨナラ判定: 9回以降の裏で、攻撃側（ホーム）が勝ち越したら試合終了
+      if (!isTop && inning >= regulationInnings) {
+        final attackingScore = opponentScoreAtStart + runs;
+        final defendingScore = myTeamScore;
+        if (attackingScore > defendingScore) break;
+      }
     }
 
     return _HalfInningSimulationResult(

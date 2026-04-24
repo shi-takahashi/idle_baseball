@@ -22,7 +22,8 @@ class BattingStats extends StatelessWidget {
   }
 
   Widget _buildTeamStats(BuildContext context, Team team, bool isAway) {
-    final rows = _computeRows(team, isAway);
+    final inningCount = gameResult.inningScores.length;
+    final rows = _computeRows(team, isAway, inningCount);
 
     return Card(
       child: Column(
@@ -44,26 +45,20 @@ class BattingStats extends StatelessWidget {
               headingRowHeight: 32,
               dataRowMinHeight: 28,
               dataRowMaxHeight: 28,
-              columns: const [
-                DataColumn(label: Text('位置', style: TextStyle(fontSize: 11))),
-                DataColumn(label: Text('選手', style: TextStyle(fontSize: 11))),
-                DataColumn(label: Text('打数', style: TextStyle(fontSize: 11))),
-                DataColumn(label: Text('安打', style: TextStyle(fontSize: 11))),
-                DataColumn(label: Text('本塁打', style: TextStyle(fontSize: 11))),
-                DataColumn(label: Text('打点', style: TextStyle(fontSize: 11))),
-                DataColumn(label: Text('三振', style: TextStyle(fontSize: 11))),
-                DataColumn(label: Text('四球', style: TextStyle(fontSize: 11))),
-                DataColumn(label: Text('1回', style: TextStyle(fontSize: 11))),
-                DataColumn(label: Text('2回', style: TextStyle(fontSize: 11))),
-                DataColumn(label: Text('3回', style: TextStyle(fontSize: 11))),
-                DataColumn(label: Text('4回', style: TextStyle(fontSize: 11))),
-                DataColumn(label: Text('5回', style: TextStyle(fontSize: 11))),
-                DataColumn(label: Text('6回', style: TextStyle(fontSize: 11))),
-                DataColumn(label: Text('7回', style: TextStyle(fontSize: 11))),
-                DataColumn(label: Text('8回', style: TextStyle(fontSize: 11))),
-                DataColumn(label: Text('9回', style: TextStyle(fontSize: 11))),
+              columns: [
+                const DataColumn(label: Text('位置', style: TextStyle(fontSize: 11))),
+                const DataColumn(label: Text('選手', style: TextStyle(fontSize: 11))),
+                const DataColumn(label: Text('打数', style: TextStyle(fontSize: 11))),
+                const DataColumn(label: Text('安打', style: TextStyle(fontSize: 11))),
+                const DataColumn(label: Text('本塁打', style: TextStyle(fontSize: 11))),
+                const DataColumn(label: Text('打点', style: TextStyle(fontSize: 11))),
+                const DataColumn(label: Text('三振', style: TextStyle(fontSize: 11))),
+                const DataColumn(label: Text('四球', style: TextStyle(fontSize: 11))),
+                for (int i = 1; i <= inningCount; i++)
+                  DataColumn(
+                      label: Text('$i回', style: const TextStyle(fontSize: 11))),
               ],
-              rows: rows.map(_buildRow).toList(),
+              rows: rows.map((r) => _buildRow(r, inningCount)).toList(),
             ),
           ),
         ],
@@ -71,7 +66,7 @@ class BattingStats extends StatelessWidget {
     );
   }
 
-  DataRow _buildRow(_BatterRow row) {
+  DataRow _buildRow(_BatterRow row, int inningCount) {
     final stat = row.stats;
     // 位置表示: 履歴を「、」で連結。「(一)」「(一、遊)」など
     final posText = row.positions.isEmpty
@@ -131,7 +126,7 @@ class BattingStats extends StatelessWidget {
         DataCell(Text('${stat.rbi}', style: nameStyle)),
         DataCell(Text('${stat.strikeouts}', style: nameStyle)),
         DataCell(Text('${stat.walks}', style: nameStyle)),
-        ...List.generate(9,
+        ...List.generate(inningCount,
             (i) => DataCell(_buildResultCell(stat.inningResults[i], nameStyle))),
       ],
     );
@@ -163,7 +158,7 @@ class BattingStats extends StatelessWidget {
   /// 各選手の守備位置は「そのチームが守備側だったハーフイニングで実際についた位置」だけを履歴に残す
   /// → 代打→代走のように、割り当てられた守備位置に一度もつかずに退場した選手は履歴が空になる
   /// 例: 「(一、遊)」= 最初は一塁、途中から遊撃を守った
-  List<_BatterRow> _computeRows(Team team, bool isAway) {
+  List<_BatterRow> _computeRows(Team team, bool isAway, int inningCount) {
     // 現在の守備配置（選手ID → ポジション）
     final playerPos = <String, FieldPosition>{};
     for (final pos in FieldPosition.values) {
@@ -235,7 +230,7 @@ class BattingStats extends StatelessWidget {
         positions: positionHistory[starter.id] ?? const [],
         isStarter: true,
         subType: null,
-        stats: _BatterGameStats(),
+        stats: _BatterGameStats(inningCount),
       ));
 
       // このスロットで発生した交代を発生順に追加
@@ -246,7 +241,7 @@ class BattingStats extends StatelessWidget {
           positions: positionHistory[sub.incoming.id] ?? const [],
           isStarter: false,
           subType: sub.fielderType,
-          stats: _BatterGameStats(),
+          stats: _BatterGameStats(inningCount),
         ));
       }
     }
@@ -275,7 +270,7 @@ class BattingStats extends StatelessWidget {
     if (atBat.result == AtBatResultType.walk) stat.walks++;
 
     final inningIndex = inning - 1;
-    if (inningIndex >= 0 && inningIndex < 9) {
+    if (inningIndex >= 0 && inningIndex < stat.inningResults.length) {
       final current = stat.inningResults[inningIndex];
       final newResult = _resultShortName(atBat.result);
       stat.inningResults[inningIndex] =
@@ -321,7 +316,10 @@ class _BatterGameStats {
   int rbi = 0;
   int strikeouts = 0;
   int walks = 0;
-  List<String?> inningResults = List.filled(9, null);
+  final List<String?> inningResults;
+
+  _BatterGameStats(int inningCount)
+      : inningResults = List.filled(inningCount, null, growable: false);
 }
 
 /// 打撃成績の1行分のデータ

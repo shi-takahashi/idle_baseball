@@ -308,6 +308,8 @@ class ScoreBoard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // 延長戦も含めた全イニングを表示（通常は9、延長時は10〜12）
+    final inningCount = gameResult.inningScores.length;
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(8),
@@ -316,8 +318,9 @@ class ScoreBoard extends StatelessWidget {
           defaultVerticalAlignment: TableCellVerticalAlignment.middle,
           columnWidths: {
             0: const FixedColumnWidth(80), // チーム名
-            for (int i = 1; i <= 9; i++) i: const FixedColumnWidth(32), // 各イニング
-            10: const FixedColumnWidth(40), // 計
+            for (int i = 1; i <= inningCount; i++)
+              i: const FixedColumnWidth(32), // 各イニング
+            inningCount + 1: const FixedColumnWidth(40), // 計
           },
           children: [
             // ヘッダー行
@@ -325,7 +328,7 @@ class ScoreBoard extends StatelessWidget {
               decoration: BoxDecoration(color: Colors.grey.shade200),
               children: [
                 _cell(context, '', null),
-                for (int i = 1; i <= 9; i++) _cell(context, '$i', null),
+                for (int i = 1; i <= inningCount; i++) _cell(context, '$i', null),
                 _cell(context, '計', null),
               ],
             ),
@@ -333,7 +336,7 @@ class ScoreBoard extends StatelessWidget {
             TableRow(
               children: [
                 _cell(context, gameResult.awayTeamName, null, isTeamName: true),
-                for (int i = 0; i < gameResult.inningScores.length; i++)
+                for (int i = 0; i < inningCount; i++)
                   _cell(
                     context,
                     '${gameResult.inningScores[i].top ?? "-"}',
@@ -347,7 +350,7 @@ class ScoreBoard extends StatelessWidget {
             TableRow(
               children: [
                 _cell(context, gameResult.homeTeamName, null, isTeamName: true),
-                for (int i = 0; i < gameResult.inningScores.length; i++)
+                for (int i = 0; i < inningCount; i++)
                   _cell(
                     context,
                     gameResult.inningScores[i].bottom != null
