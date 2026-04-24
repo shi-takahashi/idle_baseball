@@ -4,6 +4,7 @@ import '../engine/engine.dart';
 import '../widgets/batting_stats.dart';
 import '../widgets/pitching_stats.dart';
 import '../widgets/score_board.dart';
+import 'game_result_screen.dart';
 
 /// 1日の試合結果画面
 ///
@@ -166,7 +167,11 @@ class _DailyScreenState extends State<DailyScreen>
       margin: const EdgeInsets.symmetric(vertical: 4),
       child: InkWell(
         onTap: () {
-          // TODO(Step 4c): 詳細スコアボード画面へ遷移
+          Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (_) => GameResultScreen(gameResult: result),
+            ),
+          );
         },
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
