@@ -5,6 +5,7 @@ import '../widgets/batting_stats.dart';
 import '../widgets/pitching_stats.dart';
 import '../widgets/score_board.dart';
 import 'game_result_screen.dart';
+import 'standings_screen.dart';
 
 /// 1日の試合結果画面
 ///
@@ -91,6 +92,18 @@ class _DailyScreenState extends State<DailyScreen>
         title: Text('Day ${c.currentDay} / ${c.totalDays}'),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
         actions: [
+          IconButton(
+            icon: const Icon(Icons.leaderboard),
+            tooltip: '順位表',
+            onPressed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) =>
+                      StandingsScreen(controller: widget.controller),
+                ),
+              );
+            },
+          ),
           IconButton(
             icon: const Icon(Icons.fast_forward),
             tooltip: '残り全日を一括シミュレート（デバッグ）',
