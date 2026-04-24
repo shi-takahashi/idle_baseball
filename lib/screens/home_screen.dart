@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
-import 'game_result_screen.dart';
+
+import '../engine/engine.dart';
+import 'daily_screen.dart';
 
 /// ホーム画面
 class HomeScreen extends StatelessWidget {
@@ -27,17 +29,20 @@ class HomeScreen extends StatelessWidget {
             const SizedBox(height: 48),
             ElevatedButton(
               onPressed: () {
+                final controller = SeasonController.newSeason();
                 Navigator.of(context).push(
                   MaterialPageRoute(
-                    builder: (context) => const GameResultScreen(),
+                    builder: (context) =>
+                        DailyScreen(controller: controller),
                   ),
                 );
               },
               style: ElevatedButton.styleFrom(
-                padding: const EdgeInsets.symmetric(horizontal: 48, vertical: 16),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 48, vertical: 16),
               ),
               child: const Text(
-                '試合開始',
+                'シーズン開始',
                 style: TextStyle(fontSize: 20),
               ),
             ),
