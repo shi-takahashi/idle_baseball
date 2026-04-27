@@ -11,8 +11,13 @@ import '../engine/engine.dart';
 /// 自チームの選手は青色太字でハイライト。
 class IndividualStatsScreen extends StatefulWidget {
   final SeasonController controller;
+  final Listenable listenable;
 
-  const IndividualStatsScreen({super.key, required this.controller});
+  const IndividualStatsScreen({
+    super.key,
+    required this.controller,
+    required this.listenable,
+  });
 
   @override
   State<IndividualStatsScreen> createState() =>
@@ -38,7 +43,7 @@ class _IndividualStatsScreenState extends State<IndividualStatsScreen>
   @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
-      listenable: widget.controller,
+      listenable: widget.listenable,
       builder: (context, _) {
         return Scaffold(
           appBar: AppBar(

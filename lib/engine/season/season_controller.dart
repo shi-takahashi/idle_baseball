@@ -1,7 +1,5 @@
 import 'dart:math';
 
-import 'package:flutter/foundation.dart';
-
 import '../generators/generators.dart';
 import '../models/models.dart';
 import '../simulation/simulation.dart';
@@ -23,9 +21,14 @@ import 'standings.dart';
 /// - `currentDay == N (1〜totalDays)` → N日目まで消化済み
 /// - `isSeasonOver == true` → 全日消化済み
 ///
-/// [ChangeNotifier] を継承しているため、進行操作（advanceDay/advanceAll）を呼ぶと
-/// UI 側が `ListenableBuilder` 経由で再ビルドできる。
-class SeasonController extends ChangeNotifier {
+/// engine 層を Flutter に依存させないため、独自の listener API を持つ:
+/// - `addListener(void Function())`
+/// - `removeListener(void Function())`
+/// - 進行操作の度に登録済みリスナーが呼ばれる
+///
+/// UI 側は `Listenable` に変換するアダプタ（lib/screens/season_listenable.dart）を
+/// 経由して `ListenableBuilder` で購読する。
+class SeasonController {
   final List<Team> teams;
   final Schedule schedule;
   final String myTeamId;
@@ -36,6 +39,26 @@ class SeasonController extends ChangeNotifier {
   final Map<int, GameResult> _results = {};
 
   int _currentDay = 0;
+
+  /// 進行通知を受け取るリスナー
+  final List<void Function()> _listeners = [];
+
+  /// 進行通知のリスナー登録
+  void addListener(void Function() listener) {
+    _listeners.add(listener);
+  }
+
+  /// 進行通知のリスナー解除
+  void removeListener(void Function() listener) {
+    _listeners.remove(listener);
+  }
+
+  void _notify() {
+    // リスナー内で removeListener が呼ばれても安全に走るようコピー
+    for (final l in List<void Function()>.of(_listeners)) {
+      l();
+    }
+  }
 
   SeasonController({
     required this.teams,
@@ -124,7 +147,7 @@ class SeasonController extends ChangeNotifier {
       _aggregator.recordGame(result);
       results.add(result);
     }
-    notifyListeners();
+    _notify();
     return results;
   }
 

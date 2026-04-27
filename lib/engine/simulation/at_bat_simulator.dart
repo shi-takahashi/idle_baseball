@@ -1027,6 +1027,27 @@ class AtBatSimulator {
         additionalOuts += result.additionalOuts;
         recordedSteals.addAll(result.recordedSteals);
 
+        // フォアボール（ball 4）時は盗塁ではなく四球による進塁が優先される。
+        // 走者位置は applyStealResult で既に進めた状態のままにするが、
+        // pitch.steals に残る成功盗塁は SB として記録されないよう success=false に書き換える
+        // （UI 上もフォアボール時の盗塁チップを表示しない）。
+        // 盗塁失敗（CS）は実際にアウトが発生しているので、そのまま残す。
+        final isBall4 =
+            pitch.type == PitchResultType.ball && balls >= 3;
+        final pitchSteals = isBall4
+            ? stealAttempts
+                .map((a) => a.success
+                    ? StealAttempt(
+                        runner: a.runner,
+                        fromBase: a.fromBase,
+                        toBase: a.toBase,
+                        success: false,
+                        isOut: false,
+                      )
+                    : a)
+                .toList()
+            : stealAttempts;
+
         // 盗塁結果を投球に付加して記録（バッテリーエラーも保持）
         pitches.add(
           PitchResult(
@@ -1035,7 +1056,7 @@ class AtBatSimulator {
             battedBallType: pitch.battedBallType,
             fieldPosition: pitch.fieldPosition,
             speed: pitch.speed,
-            steals: stealAttempts,
+            steals: pitchSteals,
             batteryError: pitch.batteryError,
           ),
         );
@@ -1117,32 +1138,15 @@ class AtBatSimulator {
     // 成功した盗塁を記録するかどうか判定
     for (final attempt in stealAttempts) {
       if (attempt.success) {
-        // 四球時、押し出し対象のランナーは盗塁記録なし
-        if (isBall4 && _isForceAdvance(attempt.fromBase, currentRunners)) {
-          // 押し出し対象なので盗塁記録なし
-          continue;
-        }
-        // それ以外は盗塁成功として記録
+        // フォアボール（ball 4）時は盗塁としてカウントしない
+        // 押し出されない走者の進塁も「フォアボール優先」で SB クレジットを付けない
+        if (isBall4) continue;
         recordedSteals.add(attempt);
       }
       // 失敗した盗塁は記録しない（caught stealingは別途カウント）
     }
 
     return _StealPitchResult(newRunners: newRunners, additionalOuts: additionalOuts, recordedSteals: recordedSteals);
-  }
-
-  /// ランナーが押し出し対象かどうか
-  bool _isForceAdvance(Base fromBase, BaseRunners runners) {
-    switch (fromBase) {
-      case Base.first:
-        return true; // 1塁ランナーは常に押し出し対象
-      case Base.second:
-        return runners.first != null; // 1塁にランナーがいれば押し出し
-      case Base.third:
-        return runners.first != null && runners.second != null; // 満塁なら押し出し
-      case Base.home:
-        return false;
-    }
   }
 
   /// 打席終了条件をチェック

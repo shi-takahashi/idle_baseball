@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../engine/engine.dart';
 import 'daily_screen.dart';
 import 'individual_stats_screen.dart';
+import 'season_listenable.dart';
 import 'standings_screen.dart';
 
 /// シーズン中の主画面
@@ -34,13 +35,24 @@ class _MainSeasonScreenState extends State<MainSeasonScreen> {
     GlobalKey<NavigatorState>(),
   ];
 
+  /// SeasonController の通知を Listenable に変換するアダプタ
+  /// 子画面・ListenableBuilder で共有する
+  late final SeasonListenable _listenable;
+
   @override
   void initState() {
     super.initState();
+    _listenable = SeasonListenable(widget.controller);
     // シーズン開始直後なら自動的に Day 1 をシミュレート
     if (widget.controller.currentDay == 0) {
       widget.controller.advanceDay();
     }
+  }
+
+  @override
+  void dispose() {
+    _listenable.dispose();
+    super.dispose();
   }
 
   void _onSelect(int index) {
@@ -92,15 +104,24 @@ class _MainSeasonScreenState extends State<MainSeasonScreen> {
           children: [
             _buildTabNavigator(
               0,
-              DailyScreen(controller: widget.controller),
+              DailyScreen(
+                controller: widget.controller,
+                listenable: _listenable,
+              ),
             ),
             _buildTabNavigator(
               1,
-              StandingsScreen(controller: widget.controller),
+              StandingsScreen(
+                controller: widget.controller,
+                listenable: _listenable,
+              ),
             ),
             _buildTabNavigator(
               2,
-              IndividualStatsScreen(controller: widget.controller),
+              IndividualStatsScreen(
+                controller: widget.controller,
+                listenable: _listenable,
+              ),
             ),
           ],
         ),
@@ -110,7 +131,7 @@ class _MainSeasonScreenState extends State<MainSeasonScreen> {
             // 自チーム戦績 + 翌日へ + 早送り
             // controller の通知で再ビルドする
             ListenableBuilder(
-              listenable: widget.controller,
+              listenable: _listenable,
               builder: (context, _) => _buildAdvanceBar(),
             ),
             NavigationBar(

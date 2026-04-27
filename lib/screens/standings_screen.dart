@@ -8,13 +8,18 @@ import '../engine/engine.dart';
 /// 左：順位 + チーム名（固定） / 右：戦績・打率・本塁打・盗塁・防御率・失策（横スクロール）
 class StandingsScreen extends StatelessWidget {
   final SeasonController controller;
+  final Listenable listenable;
 
-  const StandingsScreen({super.key, required this.controller});
+  const StandingsScreen({
+    super.key,
+    required this.controller,
+    required this.listenable,
+  });
 
   @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
-      listenable: controller,
+      listenable: listenable,
       builder: (context, _) {
         final sorted = controller.standings.sorted;
         final leader = sorted.isEmpty ? null : sorted.first;

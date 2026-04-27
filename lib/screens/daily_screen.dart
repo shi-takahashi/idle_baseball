@@ -16,8 +16,13 @@ import 'game_result_screen.dart';
 /// でラップしている。
 class DailyScreen extends StatefulWidget {
   final SeasonController controller;
+  final Listenable listenable;
 
-  const DailyScreen({super.key, required this.controller});
+  const DailyScreen({
+    super.key,
+    required this.controller,
+    required this.listenable,
+  });
 
   @override
   State<DailyScreen> createState() => _DailyScreenState();
@@ -68,7 +73,7 @@ class _DailyScreenState extends State<DailyScreen>
   @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
-      listenable: widget.controller,
+      listenable: widget.listenable,
       builder: (context, _) {
         final c = widget.controller;
         final myGame = _myGameResult();

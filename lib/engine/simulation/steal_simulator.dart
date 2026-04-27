@@ -5,14 +5,17 @@ import '../models/models.dart';
 class StealSimulator {
   final Random _random;
 
-  // 盗塁を試みる基本確率（盗塁可能な状況で）
-  static const double _baseStealAttemptRate = 0.08; // 8%
+  // 盗塁を試みる基本確率（盗塁可能な状況で、1球あたり）
+  // NPB の 1チーム年間 ~50 盗塁 (143試合) 水準を狙ってチューニング:
+  // 30試合シーズンなら 1チーム ~10 盗塁前後を想定
+  static const double _baseStealAttemptRate = 0.015; // 1.5%
 
   // 基準走力
   static const int _baseSpeed = 5;
 
   // 走力による盗塁試行確率補正（1あたり）
-  static const double _speedAttemptModifier = 0.02;
+  // 走力1: 約0.5%、走力5: 1.5%、走力10: 約4%
+  static const double _speedAttemptModifier = 0.005;
 
   // 盗塁成功の基本確率
   static const double _baseStealSuccessRate = 0.70; // 70%
@@ -48,7 +51,9 @@ class StealSimulator {
     final runnerSpeed = keyRunner.$1.speed ?? _baseSpeed;
 
     final speedDiff = runnerSpeed - _baseSpeed;
-    final attemptRate = (_baseStealAttemptRate + speedDiff * _speedAttemptModifier).clamp(0.01, 0.20);
+    final attemptRate =
+        (_baseStealAttemptRate + speedDiff * _speedAttemptModifier)
+            .clamp(0.002, 0.05);
 
     if (_random.nextDouble() >= attemptRate) {
       return []; // 盗塁を試みない
