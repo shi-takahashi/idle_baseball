@@ -86,4 +86,21 @@ void main() {
     print('  中$naka日: $count 件 ($pct%)');
   }
   print('  合計 $totalGaps 件');
+  print('');
+
+  // リリーフ投手の登板分布
+  print('=== ブルペン使用状況 ===');
+  for (final team in teams) {
+    print('--- ${team.name} ---');
+    for (final p in team.bullpen) {
+      final stats = controller.pitcherStats[p.id];
+      if (stats == null) continue;
+      print('  ${p.name} (stamina ${p.stamina ?? "-"}) '
+          'games=${stats.games} '
+          'IP=${stats.inningsPitchedDisplay} '
+          '${stats.wins}勝${stats.losses}敗 '
+          '失点=${stats.runsAllowed} '
+          'fresh=${controller.pitcherFreshness(p.id)}');
+    }
+  }
 }

@@ -80,15 +80,22 @@ abstract class PitcherChangeStrategy {
 
 /// デフォルトの単純な戦略
 ///
-/// 以下の条件のいずれかを満たすと交代する（上から優先度順にチェック）:
-/// - ブルペンがいれば、投球数が100球以上
-/// - 現投手が5失点以上
-/// - 3連打以上を打たれた
-/// - 3連続四球
-/// - 7回以降、同点以下、得点圏ランナーありかつ50球以上投げている
+/// 先発投手の場合（`usedPitchers.first` がマウンドにいる場合）:
+/// - 投球数が `pitchCountThreshold`（100球）以上
+/// - `runsAllowedThreshold`（5）失点以上
+/// - 3連打、3連続四球
+/// - 7回以降、同点以下、得点圏ありかつ50球以上
+///
+/// リリーフ投手の場合:
+/// - イニング境界（outs == 0）かつ既に `relieverPitchCountThreshold`（25球）以上
+///   → 1イニング前後で次の投手にスイッチ。NPB の中継ぎ・抑えの一般的な使い方
+/// - 上記スターターと同じ「失点しすぎ・連打・連続四球」も適用
 class SimplePitcherChangeStrategy implements PitcherChangeStrategy {
-  /// 投球数による交代の閾値
+  /// 先発の球数による交代の閾値
   final int pitchCountThreshold;
+
+  /// リリーフの球数による交代の閾値（イニング境界で適用）
+  final int relieverPitchCountThreshold;
 
   /// 失点による交代の閾値
   final int runsAllowedThreshold;
@@ -101,6 +108,7 @@ class SimplePitcherChangeStrategy implements PitcherChangeStrategy {
 
   const SimplePitcherChangeStrategy({
     this.pitchCountThreshold = 100,
+    this.relieverPitchCountThreshold = 25,
     this.runsAllowedThreshold = 5,
     this.hitsStreakThreshold = 3,
     this.walksStreakThreshold = 3,
@@ -112,26 +120,35 @@ class SimplePitcherChangeStrategy implements PitcherChangeStrategy {
     // ブルペンに残っている投手がいなければ交代不可
     if (state.bullpen.isEmpty) return null;
 
+    final isStarter = state.currentPitcher.id == state.usedPitchers.first.id;
+
     String? reason;
 
-    // 1. 球数超過
-    if (state.pitchCount >= pitchCountThreshold) {
+    // リリーフ投手はイニング境界で短い登板で降ろす
+    if (!isStarter &&
+        context.outs == 0 &&
+        state.pitchCount >= relieverPitchCountThreshold) {
+      reason = 'イニング終了';
+    }
+    // 先発の球数超過
+    else if (isStarter && state.pitchCount >= pitchCountThreshold) {
       reason = '${state.pitchCount}球';
     }
-    // 2. 大量失点
+    // 大量失点（先発・リリーフ共通）
     else if (state.runsAllowed >= runsAllowedThreshold) {
       reason = '${state.runsAllowed}失点';
     }
-    // 3. 連打
+    // 連打
     else if (state.hitsAllowedStreak >= hitsStreakThreshold) {
       reason = '${state.hitsAllowedStreak}連打';
     }
-    // 4. 連続四球
+    // 連続四球
     else if (state.walksStreak >= walksStreakThreshold) {
       reason = '${state.walksStreak}連続四球';
     }
-    // 5. 終盤のピンチ（7回以降、同点以下、得点圏、50球超）
-    else if (context.inning >= 7 &&
+    // 終盤のピンチ（先発のみ）
+    else if (isStarter &&
+        context.inning >= 7 &&
         context.scoreDiff <= 0 &&
         (context.runners.second != null || context.runners.third != null) &&
         state.pitchCount >= 50) {
@@ -140,13 +157,13 @@ class SimplePitcherChangeStrategy implements PitcherChangeStrategy {
 
     if (reason == null) return null;
 
-    // 拡張ポイント: ここで役割（セットアッパー/クローザー）を考慮した選択ができる
     final newPitcher = _selectReliever(context);
     return PitcherChangeDecision(newPitcher: newPitcher, reason: reason);
   }
 
   /// 交代先の投手を選択する
-  /// デフォルトはブルペンの先頭投手を起用（登録順 = 起用優先順）
+  /// デフォルトはブルペンの先頭投手を起用（SeasonController が事前に
+  /// コンディション順に並び替えて渡している前提）
   Player _selectReliever(PitcherChangeContext context) {
     return context.availableRelievers.first;
   }

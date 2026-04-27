@@ -79,6 +79,12 @@ class SeasonController {
   // ローテ周期にズレが生じて、同じ投手の投げ合いが固定化しない。
   static const int _starterReadyThreshold = 100;
 
+  // リリーフ投手は短い登板が多いので、コンディション 80 を「使用可能」とみなす。
+  // - 1イニング登板（~15球）→ 翌日には 100 近くまで戻り、翌々日に出せる
+  // - 2イニング登板（~30球）→ 1日休み必要
+  // - 3イニング以上 → 2日以上休み必要
+  static const int _relieverReadyThreshold = 80;
+
   /// 先発選出時のローテ揺らぎ用 RNG。
   /// 完全に決定論的に「最終登板日が古い順」で選ぶと 100% 中5日に固定されるため、
   /// 微小な揺らぎを与えて現実の中4日／中6日が混ざるようにする。
@@ -93,9 +99,9 @@ class SeasonController {
   })  : _aggregator = SeasonAggregator(teams),
         _gameSimulator = gameSimulator ?? GameSimulator(random: random),
         _rotationRandom = random ?? Random() {
-    // 開幕時、ローテ全員フレッシュ（100）でスタート
+    // 開幕時、SP・RP 全員フレッシュ（100）でスタート
     for (final team in teams) {
-      for (final p in team.startingRotation) {
+      for (final p in [...team.startingRotation, ...team.bullpen]) {
         _pitcherFreshness[p.id] = 100;
       }
     }
@@ -181,15 +187,16 @@ class SeasonController {
       // 各チームの今日の先発を選出
       final homeSP = _selectStarter(sg.homeTeam);
       final awaySP = _selectStarter(sg.awayTeam);
-      final homeForGame = _withSP(sg.homeTeam, homeSP);
-      final awayForGame = _withSP(sg.awayTeam, awaySP);
+      final homeForGame = _withGameLineup(sg.homeTeam, homeSP);
+      final awayForGame = _withGameLineup(sg.awayTeam, awaySP);
 
       final result = _gameSimulator.simulate(homeForGame, awayForGame);
       _results[sg.gameNumber] = result;
       _aggregator.recordGame(result);
 
-      // 球数に応じて先発のコンディションを消費
+      // 球数に応じてコンディションを消費（先発・リリーフそれぞれ）
       _depleteStarterFreshness(result);
+      _depleteRelieverFreshness(result);
 
       results.add(result);
     }
@@ -207,12 +214,12 @@ class SeasonController {
 
   // ---- 投手スタミナ管理 ----
 
-  /// 1日分の回復をローテ全 SP に適用
+  /// 1日分の回復を全投手（SP + RP）に適用
   /// 回復量は素 stamina パラメータで決まる:
   /// stamina 1 → 15/日, stamina 5 → 17/日, stamina 10 → 20/日
   void _recoverPitcherFreshness() {
     for (final team in teams) {
-      for (final p in team.startingRotation) {
+      for (final p in [...team.startingRotation, ...team.bullpen]) {
         final current = _pitcherFreshness[p.id] ?? 100;
         if (current >= 100) continue;
         final stamina = p.stamina ?? 5;
@@ -226,8 +233,6 @@ class SeasonController {
   void _depleteStarterFreshness(GameResult game) {
     for (final team in [game.homeTeam, game.awayTeam]) {
       final sp = team.pitcher;
-      // この試合での先発の球数を集計
-      // 試合途中で交代している場合もあるが、本人が投げた打席のみ集計
       int pitches = 0;
       for (final half in game.halfInnings) {
         for (final ab in half.atBats) {
@@ -241,6 +246,50 @@ class SeasonController {
       _pitcherFreshness[sp.id] = (current - depletion).clamp(0, 100);
       _pitcherLastStartDay[sp.id] = _currentDay;
     }
+  }
+
+  /// 試合のリリーフ投手から、球数に応じてコンディションを消費する
+  /// 各 RP の試合内合計投球数を集計して、それぞれ深ぴ depletion を適用
+  void _depleteRelieverFreshness(GameResult game) {
+    for (final team in [game.homeTeam, game.awayTeam]) {
+      final starterId = team.pitcher.id;
+      // 各リリーフ投手の球数を集計
+      final pitchesByReliever = <String, int>{};
+      for (final half in game.halfInnings) {
+        for (final ab in half.atBats) {
+          final id = ab.pitcher.id;
+          if (id == starterId) continue;
+          pitchesByReliever[id] =
+              (pitchesByReliever[id] ?? 0) + ab.pitches.length;
+        }
+      }
+      for (final entry in pitchesByReliever.entries) {
+        final pitches = entry.value;
+        final depletion = (pitches * 100 / _completeGamePitches).round();
+        final current = _pitcherFreshness[entry.key] ?? 100;
+        _pitcherFreshness[entry.key] =
+            (current - depletion).clamp(0, 100);
+      }
+    }
+  }
+
+  /// その日のブルペンを「使用可能な順」に並び替えて返す
+  /// - コンディション 80 以上を「フレッシュな RP」として優先
+  /// - その中でも残コンディションが高い順に並べる（フレッシュ順）
+  /// - フレッシュな RP が 3 人未満なら、全員から残コンディション順で並べる
+  List<Player> _availableBullpen(Team team) {
+    final all = team.bullpen.toList();
+    final fresh = all
+        .where((p) =>
+            (_pitcherFreshness[p.id] ?? 100) >= _relieverReadyThreshold)
+        .toList();
+    final pool = fresh.length >= 3 ? fresh : all;
+    pool.sort((a, b) {
+      final fa = _pitcherFreshness[a.id] ?? 100;
+      final fb = _pitcherFreshness[b.id] ?? 100;
+      return fb.compareTo(fa);
+    });
+    return pool;
   }
 
   /// 今日の先発を選出する
@@ -333,13 +382,22 @@ class SeasonController {
     return (speedNorm + controlNorm + fastballNorm + bestPitch) / 4.0;
   }
 
-  /// 指定 SP を players[0] に差し替えた per-game team を返す
-  Team _withSP(Team team, Player sp) {
-    if (team.players.isNotEmpty && team.players[0].id == sp.id) {
-      return team;
-    }
-    return team.copyWith(players: [sp, ...team.players.skip(1)]);
+  /// 1試合分の Team を構築する：
+  /// - players[0] を当日の先発 SP に差し替え
+  /// - bullpen をフレッシュな RP 順に並び替え（疲労した RP は除外）
+  Team _withGameLineup(Team team, Player sp) {
+    final newPlayers = team.players.isNotEmpty && team.players[0].id == sp.id
+        ? team.players
+        : [sp, ...team.players.skip(1)];
+    return team.copyWith(
+      players: newPlayers,
+      bullpen: _availableBullpen(team),
+    );
   }
+
+  /// 投手のコンディション参照（UI 用）
+  // pitcherLastStartDay は既存定義あり。pitcherFreshness は既存。
+  // ここでは追加 API なし。
 
   /// 投手のコンディション参照（UI 用）
   int? pitcherFreshness(String pitcherId) => _pitcherFreshness[pitcherId];
