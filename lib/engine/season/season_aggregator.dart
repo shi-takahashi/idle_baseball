@@ -59,6 +59,17 @@ class SeasonAggregator {
       homeRecord.ties++;
       awayRecord.ties++;
     }
+
+    // 失策（フィールディングエラー）の集計
+    // 守備側 = halfInning.isTop なら home（home が守る）/ そうでなければ away
+    for (final half in game.halfInnings) {
+      final fieldingRecord = half.isTop ? homeRecord : awayRecord;
+      for (final ab in half.atBats) {
+        if (ab.fieldingError != null) {
+          fieldingRecord.errors++;
+        }
+      }
+    }
   }
 
   // ---- 勝ち投手・負け投手 ----

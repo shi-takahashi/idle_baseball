@@ -77,6 +77,38 @@ class SeasonController extends ChangeNotifier {
   /// 指定 gameNumber の結果（未実行なら null）
   GameResult? resultFor(int gameNumber) => _results[gameNumber];
 
+  /// 指定チームの打撃集計（順位表での 打率・本塁打・盗塁 用）
+  ({int hits, int atBats, int homeRuns, int stolenBases}) teamBattingTotals(
+      String teamId) {
+    int hits = 0, atBats = 0, homeRuns = 0, stolenBases = 0;
+    for (final s in _aggregator.batterStats.values) {
+      if (s.team.id != teamId) continue;
+      hits += s.hits;
+      atBats += s.atBats;
+      homeRuns += s.homeRuns;
+      stolenBases += s.stolenBases;
+    }
+    return (
+      hits: hits,
+      atBats: atBats,
+      homeRuns: homeRuns,
+      stolenBases: stolenBases,
+    );
+  }
+
+  /// 指定チームの投手集計（順位表での防御率用）
+  /// outsRecorded: 投手が奪ったアウト合計（投球回 = outs / 3）
+  /// runsAllowed: 投手が記録した失点合計
+  ({int outsRecorded, int runsAllowed}) teamPitchingTotals(String teamId) {
+    int outs = 0, runs = 0;
+    for (final s in _aggregator.pitcherStats.values) {
+      if (s.team.id != teamId) continue;
+      outs += s.outsRecorded;
+      runs += s.runsAllowed;
+    }
+    return (outsRecorded: outs, runsAllowed: runs);
+  }
+
   // ---- 進行操作 ----
 
   /// 1日分（3試合）をシミュレート

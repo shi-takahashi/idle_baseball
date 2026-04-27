@@ -9,6 +9,9 @@ class TeamRecord {
   int ties = 0;
   int runsScored = 0;
   int runsAllowed = 0;
+  // 守備失策（フィールディングエラー）数
+  // バッテリーエラー（暴投・パスボール）はチーム失策には含めない
+  int errors = 0;
 
   TeamRecord(this.team);
 
