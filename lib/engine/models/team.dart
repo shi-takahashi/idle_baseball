@@ -7,14 +7,17 @@ class Team {
   final String name;
   // スコアボード等の狭い表示領域で使う英字1〜2文字の略称（例: フェニックス → "P"）
   final String shortName;
-  final List<Player> players; // 9人（先発メンバー、players[0]は先発投手）
+  final List<Player> players; // 9人（players[0]=今日の先発、players[1..8]=スタメン野手）
 
-  // 控え投手（救援投手）
-  // 先発投手はplayers[0]として扱い、ここには含めない
+  // 先発ローテーション（6人想定）
+  // players[0] はこのリストの中から日々選出される。
+  // 既存テストコード等の互換のため省略可能（空なら従来どおり players[0] が固定の先発）
+  final List<Player> startingRotation;
+
+  // 救援投手（中継ぎ + 抑え、7人想定）
   final List<Player> bullpen;
 
-  // 控え野手（代打・代走・守備固め要員）
-  // スタメンはplayers[0..8]として扱い、ここには含めない
+  // 控え野手（代打・代走・守備固め要員、8人想定）
   final List<Player> bench;
 
   // 守備配置（FieldPosition -> Player）
@@ -27,10 +30,31 @@ class Team {
     required this.name,
     this.shortName = '',
     required this.players,
+    this.startingRotation = const [],
     this.bullpen = const [],
     this.bench = const [],
     this.defenseAlignment,
   });
+
+  /// 主に「その日の先発を差し替える」用途で使う複製ヘルパ
+  Team copyWith({
+    List<Player>? players,
+    List<Player>? startingRotation,
+    List<Player>? bullpen,
+    List<Player>? bench,
+    Map<FieldPosition, Player>? defenseAlignment,
+  }) {
+    return Team(
+      id: id,
+      name: name,
+      shortName: shortName,
+      players: players ?? this.players,
+      startingRotation: startingRotation ?? this.startingRotation,
+      bullpen: bullpen ?? this.bullpen,
+      bench: bench ?? this.bench,
+      defenseAlignment: defenseAlignment ?? this.defenseAlignment,
+    );
+  }
 
   /// 打順からプレイヤーを取得（0-indexed）
   Player getBatter(int battingOrder) {

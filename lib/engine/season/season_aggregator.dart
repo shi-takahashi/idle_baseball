@@ -19,7 +19,18 @@ class SeasonAggregator {
         batterStats = {},
         pitcherStats = {} {
     for (final team in teams) {
-      for (final p in [...team.players, ...team.bullpen, ...team.bench]) {
+      // チーム保有選手（players + 先発ローテ + 救援 + 控え）
+      // 重複を避けるため id ベースで集約
+      final all = <String, Player>{};
+      for (final p in [
+        ...team.players,
+        ...team.startingRotation,
+        ...team.bullpen,
+        ...team.bench,
+      ]) {
+        all[p.id] = p;
+      }
+      for (final p in all.values) {
         if (p.isPitcher) {
           pitcherStats[p.id] = PitcherSeasonStats(player: p, team: team);
         } else {

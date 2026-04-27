@@ -3,12 +3,14 @@ import 'dart:math';
 import '../models/models.dart';
 import '../simulation/simulation.dart';
 import 'schedule.dart';
-import 'season_aggregator.dart';
+import 'season_controller.dart';
 import 'season_result.dart';
 
 /// シーズン全試合を一括でシミュレートする
 ///
-/// 日ごとに進めたい場合は `SeasonController` を使う。
+/// 日ごとに進めたい場合は `SeasonController` を直接使う。
+/// 内部実装としても、先発ローテーションなどの状態管理を共通化するために
+/// `SeasonController.advanceAll` に委譲している。
 class SeasonSimulator {
   final GameSimulator _gameSimulator;
 
@@ -17,19 +19,27 @@ class SeasonSimulator {
 
   /// 指定チーム・日程でシーズン全試合をシミュレート
   SeasonResult simulate(List<Team> teams, Schedule schedule) {
-    final aggregator = SeasonAggregator(teams);
-    final results = <GameResult>[];
-    for (final sg in schedule.games) {
-      final result = _gameSimulator.simulate(sg.homeTeam, sg.awayTeam);
-      results.add(result);
-      aggregator.recordGame(result);
-    }
+    final controller = SeasonController(
+      teams: teams,
+      schedule: schedule,
+      myTeamId: teams.first.id,
+      gameSimulator: _gameSimulator,
+    );
+    controller.advanceAll();
+
+    // schedule.games の並びで結果を集める
+    final results = <GameResult>[
+      for (final sg in schedule.games)
+        if (controller.resultFor(sg.gameNumber) != null)
+          controller.resultFor(sg.gameNumber)!,
+    ];
+
     return SeasonResult(
       schedule: schedule,
       games: results,
-      standings: aggregator.standings,
-      batterStats: aggregator.batterStats,
-      pitcherStats: aggregator.pitcherStats,
+      standings: controller.standings,
+      batterStats: controller.batterStats,
+      pitcherStats: controller.pitcherStats,
     );
   }
 }

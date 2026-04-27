@@ -60,6 +60,30 @@ class SeasonController {
     }
   }
 
+  // ---- 投手スタミナ（試合間） ----
+  // 各先発投手のコンディション（0-100）。試合で消費・1日経過で回復する。
+  // pitcher.id をキーに保持。
+  final Map<String, int> _pitcherFreshness = {};
+
+  // 各投手の最終登板日。中4日縛りの判定に使う。
+  // 未登板は -100 とみなす（実装上は entry なしで処理）。
+  final Map<String, int> _pitcherLastStartDay = {};
+
+  // 完投 1試合 ≒ 120球で full depletion (-100)
+  static const double _completeGamePitches = 120;
+  // 中4日（5日空ける）以上空いていない投手は原則先発しない
+  static const int _minDaysBetweenStarts = 5;
+  // 先発として「フル回復」とみなす閾値
+  // ここを 100 にすることで「完全回復するまで先発させない」運用にし、
+  // 投球数（=消耗の重さ）次第で次の登板までの間隔が変わる → 各チームの
+  // ローテ周期にズレが生じて、同じ投手の投げ合いが固定化しない。
+  static const int _starterReadyThreshold = 100;
+
+  /// 先発選出時のローテ揺らぎ用 RNG。
+  /// 完全に決定論的に「最終登板日が古い順」で選ぶと 100% 中5日に固定されるため、
+  /// 微小な揺らぎを与えて現実の中4日／中6日が混ざるようにする。
+  final Random _rotationRandom;
+
   SeasonController({
     required this.teams,
     required this.schedule,
@@ -67,7 +91,15 @@ class SeasonController {
     GameSimulator? gameSimulator,
     Random? random,
   })  : _aggregator = SeasonAggregator(teams),
-        _gameSimulator = gameSimulator ?? GameSimulator(random: random);
+        _gameSimulator = gameSimulator ?? GameSimulator(random: random),
+        _rotationRandom = random ?? Random() {
+    // 開幕時、ローテ全員フレッシュ（100）でスタート
+    for (final team in teams) {
+      for (final p in team.startingRotation) {
+        _pitcherFreshness[p.id] = 100;
+      }
+    }
+  }
 
   /// 6チームを自動生成して新しいシーズンを開始するファクトリ
   factory SeasonController.newSeason({
@@ -139,12 +171,26 @@ class SeasonController {
   List<GameResult> advanceDay() {
     if (isSeasonOver) return const [];
     _currentDay++;
+
+    // 1日経過分の回復（全 SP 対象）
+    _recoverPitcherFreshness();
+
     final games = scheduledGamesOnDay(_currentDay);
     final results = <GameResult>[];
     for (final sg in games) {
-      final result = _gameSimulator.simulate(sg.homeTeam, sg.awayTeam);
+      // 各チームの今日の先発を選出
+      final homeSP = _selectStarter(sg.homeTeam);
+      final awaySP = _selectStarter(sg.awayTeam);
+      final homeForGame = _withSP(sg.homeTeam, homeSP);
+      final awayForGame = _withSP(sg.awayTeam, awaySP);
+
+      final result = _gameSimulator.simulate(homeForGame, awayForGame);
       _results[sg.gameNumber] = result;
       _aggregator.recordGame(result);
+
+      // 球数に応じて先発のコンディションを消費
+      _depleteStarterFreshness(result);
+
       results.add(result);
     }
     _notify();
@@ -158,4 +204,147 @@ class SeasonController {
       advanceDay();
     }
   }
+
+  // ---- 投手スタミナ管理 ----
+
+  /// 1日分の回復をローテ全 SP に適用
+  /// 回復量は素 stamina パラメータで決まる:
+  /// stamina 1 → 15/日, stamina 5 → 17/日, stamina 10 → 20/日
+  void _recoverPitcherFreshness() {
+    for (final team in teams) {
+      for (final p in team.startingRotation) {
+        final current = _pitcherFreshness[p.id] ?? 100;
+        if (current >= 100) continue;
+        final stamina = p.stamina ?? 5;
+        final recovery = (14 + stamina * 0.6).round();
+        _pitcherFreshness[p.id] = (current + recovery).clamp(0, 100);
+      }
+    }
+  }
+
+  /// 試合の先発投手から、球数に応じてコンディションを消費する
+  void _depleteStarterFreshness(GameResult game) {
+    for (final team in [game.homeTeam, game.awayTeam]) {
+      final sp = team.pitcher;
+      // この試合での先発の球数を集計
+      // 試合途中で交代している場合もあるが、本人が投げた打席のみ集計
+      int pitches = 0;
+      for (final half in game.halfInnings) {
+        for (final ab in half.atBats) {
+          if (ab.pitcher.id == sp.id) {
+            pitches += ab.pitches.length;
+          }
+        }
+      }
+      final depletion = (pitches * 100 / _completeGamePitches).round();
+      final current = _pitcherFreshness[sp.id] ?? 100;
+      _pitcherFreshness[sp.id] = (current - depletion).clamp(0, 100);
+      _pitcherLastStartDay[sp.id] = _currentDay;
+    }
+  }
+
+  /// 今日の先発を選出する
+  /// 1. ローテが空なら従来通り players[0] を使用（後方互換）
+  /// 2. 中4日以上空いている SP に絞る（hard min）
+  /// 3. その中でコンディション 100 のフル回復 SP がいれば、登板から最も空いている者
+  /// 4. フル回復者がいなければ、最も登板から空いている者（コンディションは二次基準）
+  /// 5. 中4日縛りで誰もいなければ、最も登板から日数が空いている者にフォールバック
+  ///
+  /// タイブレーカーを「最終登板日が古い順」にすることで、ローテ全員が均等に
+  /// 回るようになる。また閾値 100（フル回復必須）にしたことで、消耗の重い
+  /// 試合の翌登板が遅れ、各チームのローテ周期が試合内容に応じて自然にズレる。
+  Player _selectStarter(Team team) {
+    final rotation = team.startingRotation;
+    if (rotation.isEmpty) return team.pitcher;
+
+    final restEligible = rotation.where((sp) {
+      final last = _pitcherLastStartDay[sp.id];
+      if (last == null) return true; // 未登板
+      return (_currentDay - last) >= _minDaysBetweenStarts;
+    }).toList();
+
+    if (restEligible.isEmpty) {
+      // 全員が中4日経っていない異常時 → 最も休んでいる SP
+      final sorted = rotation.toList()..sort(_compareByJitteredLastStart());
+      return sorted.first;
+    }
+
+    final fullyRecovered = restEligible
+        .where((sp) =>
+            (_pitcherFreshness[sp.id] ?? 100) >= _starterReadyThreshold)
+        .toList();
+
+    final pool =
+        fullyRecovered.isNotEmpty ? fullyRecovered : restEligible;
+    pool.sort(_compareByJitteredLastStart());
+    return pool.first;
+  }
+
+  /// 先発スコアを最終登板日 + 能力ボーナス + ジッターで計算するコンパレータを返す。
+  /// 値が小さい方が先頭に来る（より早く先発に立つ）。
+  ///
+  /// - 最終登板日: 大きいほど最近登板したので不利（順送り）
+  /// - 能力ボーナス: 高エース（[0..1] スコア）ほど -1 までスコアを下げる → 優先
+  /// - ジッター: [0, 2) の揺らぎでローテに自然なズレを発生させる
+  ///
+  /// 結果として：
+  /// - 同じくらい休んでいる場合、能力が高い投手（エース）が選ばれやすい
+  /// - 「エースは中4日でも投げる」「下位投手は中6日空ける」という現実の動きを再現
+  /// - 大きく休養日が違う場合は揺らぎ無関係に休んでいる方が選ばれる（破綻しない）
+  int Function(Player a, Player b) _compareByJitteredLastStart() {
+    final scoreCache = <String, double>{};
+    return (a, b) {
+      final sa = _starterScore(a, scoreCache);
+      final sb = _starterScore(b, scoreCache);
+      final c = sa.compareTo(sb);
+      if (c != 0) return c;
+      final fa = _pitcherFreshness[a.id] ?? 100;
+      final fb = _pitcherFreshness[b.id] ?? 100;
+      return fb.compareTo(fa);
+    };
+  }
+
+  double _starterScore(Player p, Map<String, double> cache) {
+    return cache.putIfAbsent(p.id, () {
+      final last = (_pitcherLastStartDay[p.id] ?? -1000).toDouble();
+      final ace = _aceScore(p); // 0..1
+      // ace ボーナスは [0, 1.5] のレンジで効かせる：
+      // ジッター範囲 [0, 2) と組み合わさって、エース差が大きい場合は
+      // 中4日や中6日の振り分けが「能力差」によりはっきり寄る。
+      return last - ace * 1.5 + _rotationRandom.nextDouble() * 2;
+    });
+  }
+
+  /// 先発候補の「エース度」を [0, 1] で返す。
+  /// 球速・制球・ストレートの質・変化球の最高値の平均を使う簡易版。
+  /// 既存の stamina パラメータは別途回復速度に使っているので、ここには含めない。
+  double _aceScore(Player p) {
+    final speed = ((p.averageSpeed ?? 145) - 130) / 25;
+    final speedNorm = speed.clamp(0.0, 1.0);
+    final controlNorm = (p.control ?? 5) / 10.0;
+    final fastballNorm = (p.fastball ?? 5) / 10.0;
+    final pitches = <int>[
+      p.slider ?? 0,
+      p.curve ?? 0,
+      p.splitter ?? 0,
+      p.changeup ?? 0,
+    ];
+    final bestPitch = pitches.reduce((a, b) => a > b ? a : b) / 10.0;
+    return (speedNorm + controlNorm + fastballNorm + bestPitch) / 4.0;
+  }
+
+  /// 指定 SP を players[0] に差し替えた per-game team を返す
+  Team _withSP(Team team, Player sp) {
+    if (team.players.isNotEmpty && team.players[0].id == sp.id) {
+      return team;
+    }
+    return team.copyWith(players: [sp, ...team.players.skip(1)]);
+  }
+
+  /// 投手のコンディション参照（UI 用）
+  int? pitcherFreshness(String pitcherId) => _pitcherFreshness[pitcherId];
+
+  /// 投手の最終登板日参照（UI 用）
+  int? pitcherLastStartDay(String pitcherId) =>
+      _pitcherLastStartDay[pitcherId];
 }

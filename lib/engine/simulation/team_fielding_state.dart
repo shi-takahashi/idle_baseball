@@ -48,6 +48,7 @@ class TeamFieldingState {
       name: originalTeam.name,
       shortName: originalTeam.shortName,
       players: List.of(currentLineup),
+      startingRotation: originalTeam.startingRotation,
       bullpen: originalTeam.bullpen,
       bench: List.of(bench),
       defenseAlignment: Map.of(currentAlignment),

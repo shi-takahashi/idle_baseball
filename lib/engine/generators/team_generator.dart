@@ -4,16 +4,18 @@ import 'player_generator.dart';
 
 /// チームを自動生成する
 ///
-/// 1チーム25人構成:
-/// - 先発投手 1 (players[0])
+/// 1チーム29人構成:
+/// - 先発ローテ 6 (startingRotation、うち1人が試合ごとに players[0] に入る)
 /// - スタメン野手 8 (players[1..8]: 捕/一/二/三/遊/左/中/右)
-/// - 救援投手 4 (bullpen)
-/// - 控え野手 12 (bench: 控え捕手1・内野UT4・外野UT4・万能UT3)
+/// - 救援投手 7 (bullpen: 中継6 + 抑え1)
+/// - 控え野手 8 (bench: 控え捕手1・内野UT3・外野UT2・万能UT2)
 class TeamGenerator {
   final PlayerGenerator _playerGen;
+  final Random _random;
 
   TeamGenerator({Random? random})
-      : _playerGen = PlayerGenerator(random: random);
+      : _random = random ?? Random(),
+        _playerGen = PlayerGenerator(random: random);
 
   /// 6チームを一括生成
   List<Team> generateLeague() {
@@ -53,16 +55,28 @@ class TeamGenerator {
       ));
     }
 
-    // ---- 先発投手 (players[0]) ----
-    final startingPitcher = _playerGen.generateStartingPitcher(number: 18);
+    // ---- 先発ローテ 6人 ----
+    // players[0] には rotation[0] を初期値として入れておく（最初の試合の先発）。
+    // 以降は SeasonController が日々選んで差し替える。
+    //
+    // 並び順をランダムにシャッフルする狙い:
+    // チームごとのローテ周期は 6日で同期しているため、もし全チームが
+    // rotation[0] からスタートすると「常に A0 が B のローテ位置 X 番目と
+    // 当たる」という固定マッチアップになってしまう。シャッフルすることで
+    // チーム間の cycle phase がズレ、対戦カードに変化が生まれる。
+    final rotation = <Player>[
+      for (int i = 0; i < 6; i++)
+        _playerGen.generateStartingPitcher(number: 11 + i),
+    ];
+    rotation.shuffle(_random);
 
-    // ---- 救援投手 4人 ----
+    // ---- 救援投手 7人（中継6 + 抑え1） ----
     final bullpen = <Player>[
-      for (int i = 0; i < 4; i++)
+      for (int i = 0; i < 7; i++)
         _playerGen.generateReliefPitcher(number: 21 + i),
     ];
 
-    // ---- 控え野手 12人 ----
+    // ---- 控え野手 8人 ----
     final bench = <Player>[];
     int benchNumber = 30;
 
@@ -72,11 +86,10 @@ class TeamGenerator {
       positions: [DefensePosition.catcher, DefensePosition.first],
     ));
 
-    // 内野UT 4人（2〜3ポジション守れる）
+    // 内野UT 3人（2〜3ポジション守れる）
     final infieldCombos = [
       [DefensePosition.first, DefensePosition.third],
       [DefensePosition.second, DefensePosition.shortstop],
-      [DefensePosition.first, DefensePosition.second, DefensePosition.third],
       [DefensePosition.second, DefensePosition.shortstop, DefensePosition.third],
     ];
     for (final combo in infieldCombos) {
@@ -86,12 +99,10 @@ class TeamGenerator {
       ));
     }
 
-    // 外野UT 4人（外野 + 1ポジション）
+    // 外野UT 2人
     final outfieldCombos = [
       [DefensePosition.outfield],
       [DefensePosition.outfield, DefensePosition.first],
-      [DefensePosition.outfield, DefensePosition.third],
-      [DefensePosition.outfield],
     ];
     for (final combo in outfieldCombos) {
       bench.add(_playerGen.generateBenchFielder(
@@ -100,7 +111,7 @@ class TeamGenerator {
       ));
     }
 
-    // 万能UT 3人（内外野複数ポジション）
+    // 万能UT 2人（内外野複数ポジション）
     final utilityCombos = [
       [
         DefensePosition.second,
@@ -111,11 +122,6 @@ class TeamGenerator {
         DefensePosition.third,
         DefensePosition.first,
         DefensePosition.outfield
-      ],
-      [
-        DefensePosition.outfield,
-        DefensePosition.second,
-        DefensePosition.third
       ],
     ];
     for (final combo in utilityCombos) {
@@ -129,7 +135,8 @@ class TeamGenerator {
       id: id,
       name: name,
       shortName: shortName,
-      players: [startingPitcher, ...starters],
+      players: [rotation[0], ...starters],
+      startingRotation: rotation,
       bullpen: bullpen,
       bench: bench,
     );
