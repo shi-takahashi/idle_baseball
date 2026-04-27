@@ -38,42 +38,65 @@ class BattingStats extends StatelessWidget {
               style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
             ),
           ),
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: DataTable(
-              columnSpacing: 10,
-              headingRowHeight: 32,
-              dataRowMinHeight: 28,
-              dataRowMaxHeight: 28,
-              columns: [
-                const DataColumn(label: Text('位置', style: TextStyle(fontSize: 11))),
-                const DataColumn(label: Text('選手', style: TextStyle(fontSize: 11))),
-                const DataColumn(label: Text('打数', style: TextStyle(fontSize: 11))),
-                const DataColumn(label: Text('安打', style: TextStyle(fontSize: 11))),
-                const DataColumn(label: Text('本塁打', style: TextStyle(fontSize: 11))),
-                const DataColumn(label: Text('打点', style: TextStyle(fontSize: 11))),
-                const DataColumn(label: Text('三振', style: TextStyle(fontSize: 11))),
-                const DataColumn(label: Text('四球', style: TextStyle(fontSize: 11))),
-                for (int i = 1; i <= inningCount; i++)
-                  DataColumn(
-                      label: Text('$i回', style: const TextStyle(fontSize: 11))),
-              ],
-              rows: rows.map((r) => _buildRow(r, inningCount)).toList(),
-            ),
+          // 左：選手列（固定） / 右：位置〜イニング別（横スクロール）
+          // 行ごとに高さを固定して左右テーブルの行を揃える
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _buildPlayerColumn(rows),
+              Expanded(
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: _buildStatsTable(rows, inningCount),
+                ),
+              ),
+            ],
           ),
         ],
       ),
     );
   }
 
-  DataRow _buildRow(_BatterRow row, int inningCount) {
-    final stat = row.stats;
-    // 位置表示: 履歴を「、」で連結。「(一)」「(一、遊)」など
-    final posText = row.positions.isEmpty
-        ? ''
-        : '(${row.positions.map((p) => p.shortName).join('、')})';
-    // 代替選手は位置の前にスペースを入れてインデント
-    final posLabel = row.isStarter ? posText : '  $posText';
+  /// 左固定の「選手」列。行高は右側のテーブルと揃えるため固定値を使う。
+  Widget _buildPlayerColumn(List<_BatterRow> rows) {
+    return DataTable(
+      columnSpacing: 10,
+      horizontalMargin: 8,
+      headingRowHeight: 32,
+      dataRowMinHeight: 28,
+      dataRowMaxHeight: 28,
+      columns: const [
+        DataColumn(label: Text('選手', style: TextStyle(fontSize: 11))),
+      ],
+      rows: rows.map((r) => DataRow(cells: [DataCell(_buildPlayerCell(r))])).toList(),
+    );
+  }
+
+  /// 右側の横スクロールテーブル。位置〜イニング別の全列をまとめる。
+  Widget _buildStatsTable(List<_BatterRow> rows, int inningCount) {
+    return DataTable(
+      columnSpacing: 10,
+      horizontalMargin: 8,
+      headingRowHeight: 32,
+      dataRowMinHeight: 28,
+      dataRowMaxHeight: 28,
+      columns: [
+        const DataColumn(label: Text('位置', style: TextStyle(fontSize: 11))),
+        const DataColumn(label: Text('打数', style: TextStyle(fontSize: 11))),
+        const DataColumn(label: Text('安打', style: TextStyle(fontSize: 11))),
+        const DataColumn(label: Text('本塁打', style: TextStyle(fontSize: 11))),
+        const DataColumn(label: Text('打点', style: TextStyle(fontSize: 11))),
+        const DataColumn(label: Text('三振', style: TextStyle(fontSize: 11))),
+        const DataColumn(label: Text('四球', style: TextStyle(fontSize: 11))),
+        for (int i = 1; i <= inningCount; i++)
+          DataColumn(label: Text('$i回', style: const TextStyle(fontSize: 11))),
+      ],
+      rows: rows.map((r) => _buildStatsRow(r, inningCount)).toList(),
+    );
+  }
+
+  /// 選手列のセル（代替選手のインデント・種類バッジ含む）
+  Widget _buildPlayerCell(_BatterRow row) {
     // 代替選手は名前の前に小さな種類ラベル
     // - subType あり: 代打/代走/守備固めを表示
     // - subType なしで starter でない: 投手交代（DH非採用）で入った投手
@@ -89,37 +112,49 @@ class BattingStats extends StatelessWidget {
       color: row.isStarter ? null : Colors.grey.shade700,
     );
 
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (!row.isStarter) const SizedBox(width: 12),
+        if (subTypeLabel != null) ...[
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+            decoration: BoxDecoration(
+              color: Colors.lightBlue.shade100,
+              borderRadius: BorderRadius.circular(3),
+            ),
+            child: Text(
+              subTypeLabel,
+              style: TextStyle(
+                fontSize: 9,
+                color: Colors.lightBlue.shade900,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+          const SizedBox(width: 4),
+        ],
+        Text(row.player.name, style: nameStyle),
+      ],
+    );
+  }
+
+  /// 右テーブルの1行分（位置〜イニング別）
+  DataRow _buildStatsRow(_BatterRow row, int inningCount) {
+    final stat = row.stats;
+    // 位置表示: 履歴を「、」で連結。「(一)」「(一、遊)」など
+    final posText = row.positions.isEmpty
+        ? ''
+        : '(${row.positions.map((p) => p.shortName).join('、')})';
+
+    final nameStyle = TextStyle(
+      fontSize: 11,
+      color: row.isStarter ? null : Colors.grey.shade700,
+    );
+
     return DataRow(
       cells: [
-        DataCell(Text(posLabel, style: nameStyle)),
-        DataCell(
-          Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (!row.isStarter) const SizedBox(width: 12),
-              if (subTypeLabel != null) ...[
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-                  decoration: BoxDecoration(
-                    color: Colors.lightBlue.shade100,
-                    borderRadius: BorderRadius.circular(3),
-                  ),
-                  child: Text(
-                    subTypeLabel,
-                    style: TextStyle(
-                      fontSize: 9,
-                      color: Colors.lightBlue.shade900,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 4),
-              ],
-              Text(row.player.name, style: nameStyle),
-            ],
-          ),
-        ),
+        DataCell(Text(posText, style: nameStyle)),
         DataCell(Text('${stat.atBats}', style: nameStyle)),
         DataCell(Text('${stat.hits}', style: nameStyle)),
         DataCell(Text('${stat.homeRuns}', style: nameStyle)),

@@ -128,6 +128,10 @@ class _DailyScreenState extends State<DailyScreen>
                 Expanded(
                   child: TabBarView(
                     controller: _tabController,
+                    // 横スワイプでタブ切り替えを起こさないようにする。
+                    // スコアボード側の横スクロール（延長戦）と干渉するため、
+                    // タブ切り替えは上部の TabBar タップに統一する。
+                    physics: const NeverScrollableScrollPhysics(),
                     children: [
                       _buildScoreTab(myGame, otherGames),
                       _buildBattingTab(myGame),

@@ -5,6 +5,8 @@ import 'enums.dart';
 class Team {
   final String id;
   final String name;
+  // スコアボード等の狭い表示領域で使う英字1〜2文字の略称（例: フェニックス → "P"）
+  final String shortName;
   final List<Player> players; // 9人（先発メンバー、players[0]は先発投手）
 
   // 控え投手（救援投手）
@@ -23,6 +25,7 @@ class Team {
   const Team({
     required this.id,
     required this.name,
+    this.shortName = '',
     required this.players,
     this.bullpen = const [],
     this.bench = const [],

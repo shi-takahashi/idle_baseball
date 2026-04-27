@@ -38,37 +38,68 @@ class PitchingStats extends StatelessWidget {
               style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
             ),
           ),
-          // テーブル
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: DataTable(
-              columnSpacing: 16,
-              headingRowHeight: 36,
-              dataRowMinHeight: 32,
-              dataRowMaxHeight: 32,
-              columns: const [
-                DataColumn(label: Text('選手', style: TextStyle(fontSize: 12))),
-                DataColumn(label: Text('投球回', style: TextStyle(fontSize: 12))),
-                DataColumn(label: Text('投球数', style: TextStyle(fontSize: 12))),
-                DataColumn(label: Text('打者', style: TextStyle(fontSize: 12))),
-                DataColumn(label: Text('被安打', style: TextStyle(fontSize: 12))),
-                DataColumn(label: Text('被本塁打', style: TextStyle(fontSize: 12))),
-                DataColumn(label: Text('奪三振', style: TextStyle(fontSize: 12))),
-                DataColumn(label: Text('与四球', style: TextStyle(fontSize: 12))),
-                DataColumn(label: Text('失点', style: TextStyle(fontSize: 12))),
-              ],
-              rows: pitcherStats.map((stat) => _buildPitcherRow(stat)).toList(),
-            ),
+          // 左：選手列（固定） / 右：投球回〜失点（横スクロール）
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _buildPlayerColumn(pitcherStats),
+              Expanded(
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: _buildStatsTable(pitcherStats),
+                ),
+              ),
+            ],
           ),
         ],
       ),
     );
   }
 
+  /// 左固定の「選手」列。行高は右テーブルと揃えるため固定値を使う。
+  Widget _buildPlayerColumn(List<_PitcherGameStats> stats) {
+    return DataTable(
+      columnSpacing: 16,
+      horizontalMargin: 8,
+      headingRowHeight: 36,
+      dataRowMinHeight: 32,
+      dataRowMaxHeight: 32,
+      columns: const [
+        DataColumn(label: Text('選手', style: TextStyle(fontSize: 12))),
+      ],
+      rows: stats
+          .map((s) => DataRow(cells: [
+                DataCell(Text(s.playerName, style: const TextStyle(fontSize: 12))),
+              ]))
+          .toList(),
+    );
+  }
+
+  /// 右側の横スクロールテーブル。投球回〜失点をまとめる。
+  Widget _buildStatsTable(List<_PitcherGameStats> stats) {
+    return DataTable(
+      columnSpacing: 16,
+      horizontalMargin: 8,
+      headingRowHeight: 36,
+      dataRowMinHeight: 32,
+      dataRowMaxHeight: 32,
+      columns: const [
+        DataColumn(label: Text('投球回', style: TextStyle(fontSize: 12))),
+        DataColumn(label: Text('投球数', style: TextStyle(fontSize: 12))),
+        DataColumn(label: Text('打者', style: TextStyle(fontSize: 12))),
+        DataColumn(label: Text('被安打', style: TextStyle(fontSize: 12))),
+        DataColumn(label: Text('被本塁打', style: TextStyle(fontSize: 12))),
+        DataColumn(label: Text('奪三振', style: TextStyle(fontSize: 12))),
+        DataColumn(label: Text('与四球', style: TextStyle(fontSize: 12))),
+        DataColumn(label: Text('失点', style: TextStyle(fontSize: 12))),
+      ],
+      rows: stats.map((stat) => _buildPitcherRow(stat)).toList(),
+    );
+  }
+
   DataRow _buildPitcherRow(_PitcherGameStats stat) {
     return DataRow(
       cells: [
-        DataCell(Text(stat.playerName, style: const TextStyle(fontSize: 12))),
         DataCell(Text(stat.inningsPitchedDisplay, style: const TextStyle(fontSize: 12))),
         DataCell(Text('${stat.pitchCount}', style: const TextStyle(fontSize: 12))),
         DataCell(Text('${stat.battersFaced}', style: const TextStyle(fontSize: 12))),

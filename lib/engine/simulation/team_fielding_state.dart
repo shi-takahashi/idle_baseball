@@ -46,6 +46,7 @@ class TeamFieldingState {
     return Team(
       id: originalTeam.id,
       name: originalTeam.name,
+      shortName: originalTeam.shortName,
       players: List.of(currentLineup),
       bullpen: originalTeam.bullpen,
       bench: List.of(bench),

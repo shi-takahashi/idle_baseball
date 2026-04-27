@@ -18,17 +18,20 @@ class TeamGenerator {
   /// 6チームを一括生成
   List<Team> generateLeague() {
     const teamInfos = [
-      (id: 'team_phoenix', name: 'フェニックス'),
-      (id: 'team_dragoons', name: 'ドラグーンズ'),
-      (id: 'team_comets', name: 'コメッツ'),
-      (id: 'team_auroras', name: 'オーロラズ'),
-      (id: 'team_thunders', name: 'サンダーズ'),
-      (id: 'team_blizzards', name: 'ブリザーズ'),
+      (id: 'team_phoenix', name: 'フェニックス', shortName: 'P'),
+      (id: 'team_dragoons', name: 'ドラグーンズ', shortName: 'D'),
+      (id: 'team_comets', name: 'コメッツ', shortName: 'C'),
+      (id: 'team_auroras', name: 'オーロラズ', shortName: 'A'),
+      (id: 'team_thunders', name: 'サンダーズ', shortName: 'T'),
+      (id: 'team_blizzards', name: 'ブリザーズ', shortName: 'B'),
     ];
-    return [for (final info in teamInfos) _generateTeam(info.id, info.name)];
+    return [
+      for (final info in teamInfos)
+        _generateTeam(info.id, info.name, info.shortName),
+    ];
   }
 
-  Team _generateTeam(String id, String name) {
+  Team _generateTeam(String id, String name, String shortName) {
     // ---- スタメン野手8人（打順1〜8、players[1..8]の順序でデフォルト守備位置に対応） ----
     // Teamのデフォルト配置:
     // players[1]=捕 / [2]=一 / [3]=二 / [4]=三 / [5]=遊 / [6]=左 / [7]=中 / [8]=右
@@ -125,6 +128,7 @@ class TeamGenerator {
     return Team(
       id: id,
       name: name,
+      shortName: shortName,
       players: [startingPitcher, ...starters],
       bullpen: bullpen,
       bench: bench,

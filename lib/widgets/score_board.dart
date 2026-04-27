@@ -306,66 +306,189 @@ class ScoreBoard extends StatelessWidget {
 
   const ScoreBoard({super.key, required this.gameResult});
 
+  // 延長戦も含めた全イニングを表示（通常は9、延長時は10〜12）
+  // 9回が収まる範囲では単一テーブルで描画し、収まらない場合は
+  // 左:チーム略称 / 中央:イニング(横スクロール) / 右:合計 の3分割レイアウトに切り替える。
+  static const double _teamColWidth = 36;
+  static const double _inningColWidth = 30;
+  static const double _totalColWidth = 40;
+
   @override
   Widget build(BuildContext context) {
-    // 延長戦も含めた全イニングを表示（通常は9、延長時は10〜12）
     final inningCount = gameResult.inningScores.length;
+    final fullWidth =
+        _teamColWidth + _inningColWidth * inningCount + _totalColWidth;
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(8),
-        child: Table(
-          border: TableBorder.all(color: Colors.grey.shade300),
-          defaultVerticalAlignment: TableCellVerticalAlignment.middle,
-          columnWidths: {
-            0: const FixedColumnWidth(80), // チーム名
-            for (int i = 1; i <= inningCount; i++)
-              i: const FixedColumnWidth(32), // 各イニング
-            inningCount + 1: const FixedColumnWidth(40), // 計
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            // 親から有限の幅が渡らない場合は単一テーブルで描画
+            // （延長戦の幅超過は LayoutBuilder で初めて判定できる）。
+            final fits = !constraints.hasBoundedWidth ||
+                fullWidth <= constraints.maxWidth;
+            if (fits) {
+              return _buildFullTable(context, inningCount);
+            }
+            return _buildSplitTable(context, inningCount);
           },
-          children: [
-            // ヘッダー行
-            TableRow(
-              decoration: BoxDecoration(color: Colors.grey.shade200),
-              children: [
-                _cell(context, '', null),
-                for (int i = 1; i <= inningCount; i++) _cell(context, '$i', null),
-                _cell(context, '計', null),
-              ],
-            ),
-            // アウェイチーム（先攻）
-            TableRow(
-              children: [
-                _cell(context, gameResult.awayTeamName, null, isTeamName: true),
-                for (int i = 0; i < inningCount; i++)
-                  _cell(
-                    context,
-                    '${gameResult.inningScores[i].top ?? "-"}',
-                    _getHalfInning(i + 1, true),
-                    isClickable: true,
-                  ),
-                _cell(context, '${gameResult.awayScore}', null, isBold: true),
-              ],
-            ),
-            // ホームチーム（後攻）
-            TableRow(
-              children: [
-                _cell(context, gameResult.homeTeamName, null, isTeamName: true),
-                for (int i = 0; i < inningCount; i++)
-                  _cell(
-                    context,
-                    gameResult.inningScores[i].bottom != null
-                        ? '${gameResult.inningScores[i].bottom}'
-                        : 'X',
-                    _getHalfInning(i + 1, false),
-                    isClickable: gameResult.inningScores[i].bottom != null,
-                  ),
-                _cell(context, '${gameResult.homeScore}', null, isBold: true),
-              ],
-            ),
-          ],
         ),
       ),
     );
+  }
+
+  /// 9回までで横幅に収まるケース：1枚のテーブルにまとめて描画
+  Widget _buildFullTable(BuildContext context, int inningCount) {
+    final awayShort = _displayShortName(gameResult.awayTeam);
+    final homeShort = _displayShortName(gameResult.homeTeam);
+    return Table(
+      border: TableBorder.all(color: Colors.grey.shade300),
+      defaultVerticalAlignment: TableCellVerticalAlignment.middle,
+      columnWidths: {
+        0: const FixedColumnWidth(_teamColWidth),
+        for (int i = 1; i <= inningCount; i++)
+          i: const FixedColumnWidth(_inningColWidth),
+        inningCount + 1: const FixedColumnWidth(_totalColWidth),
+      },
+      children: [
+        TableRow(
+          decoration: BoxDecoration(color: Colors.grey.shade200),
+          children: [
+            _cell(context, '', null),
+            for (int i = 1; i <= inningCount; i++) _cell(context, '$i', null),
+            _cell(context, '計', null),
+          ],
+        ),
+        TableRow(
+          children: [
+            _cell(context, awayShort, null, isTeamName: true),
+            for (int i = 0; i < inningCount; i++)
+              _cell(
+                context,
+                '${gameResult.inningScores[i].top ?? "-"}',
+                _getHalfInning(i + 1, true),
+                isClickable: true,
+              ),
+            _cell(context, '${gameResult.awayScore}', null, isBold: true),
+          ],
+        ),
+        TableRow(
+          children: [
+            _cell(context, homeShort, null, isTeamName: true),
+            for (int i = 0; i < inningCount; i++)
+              _cell(
+                context,
+                gameResult.inningScores[i].bottom != null
+                    ? '${gameResult.inningScores[i].bottom}'
+                    : 'X',
+                _getHalfInning(i + 1, false),
+                isClickable: gameResult.inningScores[i].bottom != null,
+              ),
+            _cell(context, '${gameResult.homeScore}', null, isBold: true),
+          ],
+        ),
+      ],
+    );
+  }
+
+  /// 横幅に収まらないケース（延長戦など）：2分割レイアウト
+  /// - 左：チーム略称（固定）
+  /// - 右：各イニング＋合計（横スクロール）
+  /// 右側テーブルは左の縦罫線を持たず、隣接する固定列の罫線と重ならないようにしている。
+  Widget _buildSplitTable(BuildContext context, int inningCount) {
+    final borderColor = Colors.grey.shade300;
+    final headerBg = BoxDecoration(color: Colors.grey.shade200);
+    final awayShort = _displayShortName(gameResult.awayTeam);
+    final homeShort = _displayShortName(gameResult.homeTeam);
+
+    final leftTable = Table(
+      border: TableBorder.all(color: borderColor),
+      defaultVerticalAlignment: TableCellVerticalAlignment.middle,
+      columnWidths: const {0: FixedColumnWidth(_teamColWidth)},
+      children: [
+        TableRow(decoration: headerBg, children: [_cell(context, '', null)]),
+        TableRow(children: [
+          _cell(context, awayShort, null, isTeamName: true),
+        ]),
+        TableRow(children: [
+          _cell(context, homeShort, null, isTeamName: true),
+        ]),
+      ],
+    );
+
+    // 右側＝イニング＋合計をまとめて横スクロールさせる
+    final scrollTable = Table(
+      // 左の外枠を描かない（左の固定テーブル側の罫線と重ねるため）
+      border: TableBorder(
+        top: BorderSide(color: borderColor),
+        right: BorderSide(color: borderColor),
+        bottom: BorderSide(color: borderColor),
+        horizontalInside: BorderSide(color: borderColor),
+        verticalInside: BorderSide(color: borderColor),
+      ),
+      defaultVerticalAlignment: TableCellVerticalAlignment.middle,
+      columnWidths: {
+        for (int i = 0; i < inningCount; i++)
+          i: const FixedColumnWidth(_inningColWidth),
+        inningCount: const FixedColumnWidth(_totalColWidth),
+      },
+      children: [
+        TableRow(
+          decoration: headerBg,
+          children: [
+            for (int i = 1; i <= inningCount; i++) _cell(context, '$i', null),
+            _cell(context, '計', null),
+          ],
+        ),
+        TableRow(
+          children: [
+            for (int i = 0; i < inningCount; i++)
+              _cell(
+                context,
+                '${gameResult.inningScores[i].top ?? "-"}',
+                _getHalfInning(i + 1, true),
+                isClickable: true,
+              ),
+            _cell(context, '${gameResult.awayScore}', null, isBold: true),
+          ],
+        ),
+        TableRow(
+          children: [
+            for (int i = 0; i < inningCount; i++)
+              _cell(
+                context,
+                gameResult.inningScores[i].bottom != null
+                    ? '${gameResult.inningScores[i].bottom}'
+                    : 'X',
+                _getHalfInning(i + 1, false),
+                isClickable: gameResult.inningScores[i].bottom != null,
+              ),
+            _cell(context, '${gameResult.homeScore}', null, isBold: true),
+          ],
+        ),
+      ],
+    );
+
+    return IntrinsicHeight(
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          leftTable,
+          Expanded(
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: scrollTable,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// チーム略称（未設定なら名前先頭1文字を fallback として使用）
+  String _displayShortName(Team team) {
+    if (team.shortName.isNotEmpty) return team.shortName;
+    return team.name.isNotEmpty ? team.name.substring(0, 1) : '';
   }
 
   HalfInningResult? _getHalfInning(int inning, bool isTop) {
@@ -386,12 +509,7 @@ class ScoreBoard extends StatelessWidget {
     bool isBold = false,
     bool isClickable = false,
   }) {
-    final hasPitcherChange =
-        halfInning != null && halfInning.pitcherChanges.isNotEmpty;
-    final hasFielderChange =
-        halfInning != null && halfInning.fielderChanges.isNotEmpty;
-
-    final textWidget = Padding(
+    final cellContent = Padding(
       padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
       child: Text(
         text,
@@ -404,54 +522,6 @@ class ScoreBoard extends StatelessWidget {
         ),
       ),
     );
-
-    Widget cellContent = textWidget;
-    if (hasPitcherChange || hasFielderChange) {
-      // 交代があった場合は右上に小さな目印を表示
-      // 投手交代=オレンジ、野手交代=水色（両方=両方の色を縦に並べて表示）
-      final dots = <Widget>[];
-      if (hasPitcherChange) {
-        dots.add(Container(
-          width: 8,
-          height: 8,
-          decoration: BoxDecoration(
-            color: Colors.amber.shade700,
-            shape: BoxShape.circle,
-          ),
-        ));
-      }
-      if (hasFielderChange) {
-        dots.add(Container(
-          width: 8,
-          height: 8,
-          decoration: BoxDecoration(
-            color: Colors.lightBlue.shade700,
-            shape: BoxShape.circle,
-          ),
-        ));
-      }
-
-      cellContent = Stack(
-        alignment: Alignment.center,
-        clipBehavior: Clip.none,
-        children: [
-          textWidget,
-          Positioned(
-            top: 2,
-            right: 2,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                for (int i = 0; i < dots.length; i++) ...[
-                  if (i > 0) const SizedBox(height: 1),
-                  dots[i],
-                ],
-              ],
-            ),
-          ),
-        ],
-      );
-    }
 
     if (isClickable && halfInning != null) {
       return GestureDetector(
