@@ -1,5 +1,7 @@
 import 'dart:math';
 
+import 'package:flutter/foundation.dart';
+
 import '../generators/generators.dart';
 import '../models/models.dart';
 import '../simulation/simulation.dart';
@@ -20,7 +22,10 @@ import 'standings.dart';
 /// - `currentDay == 0` → シーズン開始前（まだ1試合も消化していない）
 /// - `currentDay == N (1〜totalDays)` → N日目まで消化済み
 /// - `isSeasonOver == true` → 全日消化済み
-class SeasonController {
+///
+/// [ChangeNotifier] を継承しているため、進行操作（advanceDay/advanceAll）を呼ぶと
+/// UI 側が `ListenableBuilder` 経由で再ビルドできる。
+class SeasonController extends ChangeNotifier {
   final List<Team> teams;
   final Schedule schedule;
   final String myTeamId;
@@ -87,10 +92,12 @@ class SeasonController {
       _aggregator.recordGame(result);
       results.add(result);
     }
+    notifyListeners();
     return results;
   }
 
   /// 残り全日を一括シミュレート（デバッグ用）
+  /// 内部で advanceDay を呼ぶたびに通知が走るため、ここでは追加通知しない
   void advanceAll() {
     while (!isSeasonOver) {
       advanceDay();

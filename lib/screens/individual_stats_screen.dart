@@ -37,25 +37,31 @@ class _IndividualStatsScreenState extends State<IndividualStatsScreen>
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('個人成績'),
-        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-        bottom: TabBar(
-          controller: _tabController,
-          tabs: const [
-            Tab(text: '打撃'),
-            Tab(text: '投手'),
-          ],
-        ),
-      ),
-      body: TabBarView(
-        controller: _tabController,
-        children: [
-          _buildBattingTab(),
-          _buildPitchingTab(),
-        ],
-      ),
+    return ListenableBuilder(
+      listenable: widget.controller,
+      builder: (context, _) {
+        return Scaffold(
+          appBar: AppBar(
+            title: const Text('個人成績'),
+            backgroundColor: Theme.of(context).colorScheme.inversePrimary,
+            automaticallyImplyLeading: false,
+            bottom: TabBar(
+              controller: _tabController,
+              tabs: const [
+                Tab(text: '打撃'),
+                Tab(text: '投手'),
+              ],
+            ),
+          ),
+          body: TabBarView(
+            controller: _tabController,
+            children: [
+              _buildBattingTab(),
+              _buildPitchingTab(),
+            ],
+          ),
+        );
+      },
     );
   }
 

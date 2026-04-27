@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../engine/engine.dart';
-import 'daily_screen.dart';
+import 'main_season_screen.dart';
 
 /// ホーム画面
 class HomeScreen extends StatelessWidget {
@@ -33,7 +33,7 @@ class HomeScreen extends StatelessWidget {
                 Navigator.of(context).push(
                   MaterialPageRoute(
                     builder: (context) =>
-                        DailyScreen(controller: controller),
+                        MainSeasonScreen(controller: controller),
                   ),
                 );
               },

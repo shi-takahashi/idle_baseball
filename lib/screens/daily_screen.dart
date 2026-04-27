@@ -5,14 +5,15 @@ import '../widgets/batting_stats.dart';
 import '../widgets/pitching_stats.dart';
 import '../widgets/score_board.dart';
 import 'game_result_screen.dart';
-import 'standings_screen.dart';
 
 /// 1日の試合結果画面
 ///
 /// - メイン: 自チームの試合（スコアボード/打撃/投手 の3タブ）
-/// - 下部: 他2試合のサマリー（スコア表示、Step 4c で詳細遷移を追加予定）
-/// - [翌日へ] ボタンで次の日をシミュレート
-/// - AppBar の早送りアイコンで残り全日を一括シミュレート（デバッグ用）
+/// - 下部: 他2試合のサマリー（カードタップで詳細画面に遷移）
+///
+/// 「翌日へ」「早送り」など進行系操作は親の [MainSeasonScreen] に移譲。
+/// controller の更新通知に追従して再ビルドするため、build を [ListenableBuilder]
+/// でラップしている。
 class DailyScreen extends StatefulWidget {
   final SeasonController controller;
 
@@ -30,28 +31,12 @@ class _DailyScreenState extends State<DailyScreen>
   void initState() {
     super.initState();
     _tabController = TabController(length: 3, vsync: this);
-    // シーズン開始直後なら自動的に Day 1 をシミュレート
-    if (widget.controller.currentDay == 0) {
-      widget.controller.advanceDay();
-    }
   }
 
   @override
   void dispose() {
     _tabController.dispose();
     super.dispose();
-  }
-
-  void _advanceDay() {
-    setState(() {
-      widget.controller.advanceDay();
-    });
-  }
-
-  void _advanceAll() {
-    setState(() {
-      widget.controller.advanceAll();
-    });
   }
 
   /// 現在の日の自チーム試合結果
@@ -82,66 +67,47 @@ class _DailyScreenState extends State<DailyScreen>
 
   @override
   Widget build(BuildContext context) {
-    final c = widget.controller;
-    final ended = c.isSeasonOver;
-    final myGame = _myGameResult();
-    final otherGames = _otherGameResults();
+    return ListenableBuilder(
+      listenable: widget.controller,
+      builder: (context, _) {
+        final c = widget.controller;
+        final myGame = _myGameResult();
+        final otherGames = _otherGameResults();
 
-    return Scaffold(
-      appBar: AppBar(
-        title: Text('Day ${c.currentDay} / ${c.totalDays}'),
-        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.leaderboard),
-            tooltip: '順位表',
-            onPressed: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(
-                  builder: (_) =>
-                      StandingsScreen(controller: widget.controller),
-                ),
-              );
-            },
-          ),
-          IconButton(
-            icon: const Icon(Icons.fast_forward),
-            tooltip: '残り全日を一括シミュレート（デバッグ）',
-            onPressed: ended ? null : _advanceAll,
-          ),
-        ],
-        bottom: myGame == null
-            ? null
-            : TabBar(
-                controller: _tabController,
-                tabs: const [
-                  Tab(text: 'スコア'),
-                  Tab(text: '打撃成績'),
-                  Tab(text: '投手成績'),
-                ],
-              ),
-      ),
-      body: myGame == null
-          ? const Center(child: Text('試合がありません'))
-          : Column(
-              children: [
-                Expanded(
-                  child: TabBarView(
+        return Scaffold(
+          appBar: AppBar(
+            title: Text('Day ${c.currentDay} / ${c.totalDays}'),
+            backgroundColor: Theme.of(context).colorScheme.inversePrimary,
+            // 戻るボタンは親の MainSeasonScreen が PopScope で扱う想定なので
+            // ここは明示的に無効化する（IndexedStack の各タブでルートのため）
+            automaticallyImplyLeading: false,
+            bottom: myGame == null
+                ? null
+                : TabBar(
                     controller: _tabController,
-                    // 横スワイプでタブ切り替えを起こさないようにする。
-                    // スコアボード側の横スクロール（延長戦）と干渉するため、
-                    // タブ切り替えは上部の TabBar タップに統一する。
-                    physics: const NeverScrollableScrollPhysics(),
-                    children: [
-                      _buildScoreTab(myGame, otherGames),
-                      _buildBattingTab(myGame),
-                      _buildPitchingTab(myGame),
+                    tabs: const [
+                      Tab(text: 'スコア'),
+                      Tab(text: '打撃成績'),
+                      Tab(text: '投手成績'),
                     ],
                   ),
+          ),
+          body: myGame == null
+              ? const Center(child: Text('試合がありません'))
+              : TabBarView(
+                  controller: _tabController,
+                  // 横スワイプでタブ切り替えを起こさないようにする。
+                  // スコアボード側の横スクロール（延長戦）と干渉するため、
+                  // タブ切り替えは上部の TabBar タップに統一する。
+                  physics: const NeverScrollableScrollPhysics(),
+                  children: [
+                    _buildScoreTab(myGame, otherGames),
+                    _buildBattingTab(myGame),
+                    _buildPitchingTab(myGame),
+                  ],
                 ),
-                _buildBottomBar(c, ended),
-              ],
-            ),
+        );
+      },
     );
   }
 
@@ -235,49 +201,6 @@ class _DailyScreenState extends State<DailyScreen>
     return Padding(
       padding: const EdgeInsets.all(8),
       child: PitchingStats(gameResult: myGame),
-    );
-  }
-
-  Widget _buildBottomBar(SeasonController c, bool ended) {
-    final rec =
-        c.standings.records.firstWhere((r) => r.team.id == c.myTeamId);
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Colors.grey.shade50,
-        border: Border(top: BorderSide(color: Colors.grey.shade300)),
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  c.myTeam.name,
-                  style: const TextStyle(fontWeight: FontWeight.bold),
-                ),
-                Text(
-                  '${rec.wins}勝 ${rec.losses}敗 ${rec.ties}分 '
-                  '(${rec.winningPct.toStringAsFixed(3)})',
-                  style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
-                ),
-              ],
-            ),
-          ),
-          ElevatedButton(
-            onPressed: ended ? null : _advanceDay,
-            style: ElevatedButton.styleFrom(
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-            ),
-            child: Text(
-              ended ? 'シーズン終了' : '翌日へ',
-              style: const TextStyle(fontSize: 16),
-            ),
-          ),
-        ],
-      ),
     );
   }
 }

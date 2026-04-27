@@ -1,12 +1,10 @@
 import 'package:flutter/material.dart';
 
 import '../engine/engine.dart';
-import 'individual_stats_screen.dart';
 
 /// 順位表画面
 ///
 /// 現時点の6チームの順位を表示。自チームは太字ハイライト。
-/// 下部ボタンから個人成績画面へ遷移できる。
 class StandingsScreen extends StatelessWidget {
   final SeasonController controller;
 
@@ -14,39 +12,45 @@ class StandingsScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final sorted = controller.standings.sorted;
-    final leader = sorted.isEmpty ? null : sorted.first;
+    return ListenableBuilder(
+      listenable: controller,
+      builder: (context, _) {
+        final sorted = controller.standings.sorted;
+        final leader = sorted.isEmpty ? null : sorted.first;
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('順位表'),
-        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-      ),
-      body: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            child: Align(
-              alignment: Alignment.centerLeft,
-              child: Text(
-                'Day ${controller.currentDay} / ${controller.totalDays} 終了時点',
-                style: TextStyle(
-                    fontSize: 13, color: Colors.grey.shade700),
-              ),
-            ),
+        return Scaffold(
+          appBar: AppBar(
+            title: const Text('順位表'),
+            backgroundColor: Theme.of(context).colorScheme.inversePrimary,
+            automaticallyImplyLeading: false,
           ),
-          Expanded(
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: SingleChildScrollView(
-                scrollDirection: Axis.vertical,
-                child: _buildTable(context, sorted, leader),
+          body: Column(
+            children: [
+              Padding(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    'Day ${controller.currentDay} / ${controller.totalDays} 終了時点',
+                    style:
+                        TextStyle(fontSize: 13, color: Colors.grey.shade700),
+                  ),
+                ),
               ),
-            ),
+              Expanded(
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: SingleChildScrollView(
+                    scrollDirection: Axis.vertical,
+                    child: _buildTable(context, sorted, leader),
+                  ),
+                ),
+              ),
+            ],
           ),
-          _buildBottomBar(context),
-        ],
-      ),
+        );
+      },
     );
   }
 
@@ -109,31 +113,4 @@ class StandingsScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildBottomBar(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Colors.grey.shade50,
-        border: Border(top: BorderSide(color: Colors.grey.shade300)),
-      ),
-      child: SizedBox(
-        width: double.infinity,
-        child: ElevatedButton.icon(
-          onPressed: () {
-            Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (_) =>
-                    IndividualStatsScreen(controller: controller),
-              ),
-            );
-          },
-          icon: const Icon(Icons.person),
-          label: const Text('個人成績を見る'),
-          style: ElevatedButton.styleFrom(
-            padding: const EdgeInsets.symmetric(vertical: 12),
-          ),
-        ),
-      ),
-    );
-  }
 }
