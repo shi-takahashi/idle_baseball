@@ -173,6 +173,11 @@ class GameSimulator {
     BaseRunners runners = BaseRunners.empty;
     int currentBattingOrder = battingOrder;
 
+    // 走者責任投手の追跡（player.id → 責任投手 player.id）
+    // インヘリット走者（前任投手が出した走者）の失点を正しく前任投手に計上するため
+    // ハーフイニング全体で管理する。
+    final runnerResponsibility = <String, String>{};
+
     // 守備側チーム（このハーフで守る側）のアライメントを確定させる
     // 前の攻撃ハーフでの代打・代走の結果をここで反映する
     final defensiveChangesAtStart =
@@ -225,6 +230,7 @@ class GameSimulator {
         defendingScore: myTeamScore,
         fielderChanges: fielderChanges,
         atBatIndex: atBats.length,
+        runnerResponsibility: runnerResponsibility,
       );
 
       final batter = battingFieldingState.currentBatter(currentBattingOrder);
@@ -338,6 +344,10 @@ class GameSimulator {
         break;
       }
 
+      // 失点の責任投手追跡用: 打席開始時点でのランナー責任マップをスナップショット
+      // （バッテリーエラー・打席結果による生還で、生還した走者の責任投手を引く）
+      final responsibilitySnapshot = Map<String, String>.from(runnerResponsibility);
+
       // ランナー状態を更新（盗塁結果を反映）
       runners = atBatResult.updatedRunners;
       outs += atBatResult.additionalOuts;
@@ -404,6 +414,37 @@ class GameSimulator {
       // タッチアップ失敗などによる追加アウト
       outs += advanceResult.additionalOuts;
 
+      // 失点の責任投手別配分を算出
+      // 全ての生還した走者（バッテリーエラー + 打席結果）について、
+      // 打席開始前のスナップショット responsibility から投手を引く。
+      // 打者自身が生還（HR等）した場合は現在の投手の責任。
+      final runsByPitcher = <String, int>{};
+      for (final scorer in atBatResult.batteryErrorScorers) {
+        final responsibleId = responsibilitySnapshot[scorer.id] ?? pitcher.id;
+        runsByPitcher[responsibleId] = (runsByPitcher[responsibleId] ?? 0) + 1;
+      }
+      for (final scorer in advanceResult.scoringRunners) {
+        // 打者自身（HR）は現在の投手の責任
+        // 走者の場合は responsibilitySnapshot から責任投手を引く
+        final responsibleId = scorer.id == batter.id
+            ? pitcher.id
+            : (responsibilitySnapshot[scorer.id] ?? pitcher.id);
+        runsByPitcher[responsibleId] = (runsByPitcher[responsibleId] ?? 0) + 1;
+      }
+
+      // 次打席のために責任投手マップを更新
+      // 新しいランナー状態 (runners) に残っていない走者は除去（生還 or アウト）
+      // 新たに塁上に出た打者（= 既存マップにいない player）は現在の投手の責任で記録
+      final newRunnersIds = <String>{
+        if (runners.first != null) runners.first!.id,
+        if (runners.second != null) runners.second!.id,
+        if (runners.third != null) runners.third!.id,
+      };
+      runnerResponsibility.removeWhere((id, _) => !newRunnersIds.contains(id));
+      for (final id in newRunnersIds) {
+        runnerResponsibility.putIfAbsent(id, () => pitcher.id);
+      }
+
       final completedAtBat = AtBatResult(
         batter: batter,
         pitcher: pitcher,
@@ -417,6 +458,7 @@ class GameSimulator {
         runnersBefore: runnersBefore,
         tagUps: advanceResult.tagUps.isNotEmpty ? advanceResult.tagUps : null,
         fieldingError: atBatResult.fieldingError,
+        runsByPitcher: runsByPitcher,
       );
       atBats.add(completedAtBat);
 
@@ -465,6 +507,7 @@ class GameSimulator {
     required int defendingScore,
     required List<FielderChangeEvent> fielderChanges,
     required int atBatIndex,
+    required Map<String, String> runnerResponsibility,
   }) {
     // 3塁 → 2塁 → 1塁 の順で評価（前のランナーから）
     final candidates = <(Base, Player)>[];
@@ -501,6 +544,11 @@ class GameSimulator {
       );
       // 塁上のランナーを入れ替え
       current = current.replaceRunner(base, decision.runner);
+      // 責任投手を引き継ぎ: 元の走者 → 代走者
+      final originalResponsibility = runnerResponsibility.remove(runner.id);
+      if (originalResponsibility != null) {
+        runnerResponsibility[decision.runner.id] = originalResponsibility;
+      }
 
       fielderChanges.add(FielderChangeEvent(
         type: FielderChangeType.pinchRun,
@@ -626,7 +674,7 @@ class GameSimulator {
   }) {
     switch (result) {
       case AtBatResultType.homeRun:
-        return _advanceOnHomeRun(runners);
+        return _advanceOnHomeRun(runners, batter);
       case AtBatResultType.triple:
         return _advanceOnTriple(runners, batter);
       case AtBatResultType.double_:
@@ -651,58 +699,67 @@ class GameSimulator {
   }
 
   /// ホームラン時の走塁
-  _RunnerAdvanceResult _advanceOnHomeRun(BaseRunners runners) {
+  _RunnerAdvanceResult _advanceOnHomeRun(BaseRunners runners, Player batter) {
+    final scorers = <Player>[];
+    if (runners.third != null) scorers.add(runners.third!);
+    if (runners.second != null) scorers.add(runners.second!);
+    if (runners.first != null) scorers.add(runners.first!);
+    scorers.add(batter); // 打者自身もホームイン
     return _RunnerAdvanceResult(
-      runsScored: 1 + runners.count,
       newRunners: BaseRunners.empty,
+      scoringRunners: scorers,
     );
   }
 
   /// 三塁打時の走塁
   _RunnerAdvanceResult _advanceOnTriple(BaseRunners runners, Player batter) {
+    final scorers = <Player>[];
+    if (runners.third != null) scorers.add(runners.third!);
+    if (runners.second != null) scorers.add(runners.second!);
+    if (runners.first != null) scorers.add(runners.first!);
     return _RunnerAdvanceResult(
-      runsScored: runners.count,
       newRunners: BaseRunners(third: batter),
+      scoringRunners: scorers,
     );
   }
 
   /// 二塁打時の走塁
   _RunnerAdvanceResult _advanceOnDouble(BaseRunners runners, Player batter) {
-    int runsScored = 0;
+    final scorers = <Player>[];
     Player? newThird;
 
     // 3塁ランナー・2塁ランナーはホーム
-    if (runners.third != null) runsScored++;
-    if (runners.second != null) runsScored++;
+    if (runners.third != null) scorers.add(runners.third!);
+    if (runners.second != null) scorers.add(runners.second!);
 
     // 1塁ランナー: 基本3塁、走力次第でホーム
     if (runners.first != null) {
       if (_shouldExtraAdvance(runners.first!)) {
-        runsScored++;
+        scorers.add(runners.first!);
       } else {
         newThird = runners.first;
       }
     }
 
     return _RunnerAdvanceResult(
-      runsScored: runsScored,
       newRunners: BaseRunners(second: batter, third: newThird),
+      scoringRunners: scorers,
     );
   }
 
   /// 単打・内野安打時の走塁
   _RunnerAdvanceResult _advanceOnSingle(BaseRunners runners, Player batter) {
-    int runsScored = 0;
+    final scorers = <Player>[];
     Player? newSecond;
     Player? newThird;
 
     // 3塁ランナーはホーム
-    if (runners.third != null) runsScored++;
+    if (runners.third != null) scorers.add(runners.third!);
 
     // 2塁ランナー: 基本3塁、走力次第でホーム
     if (runners.second != null) {
       if (_shouldExtraAdvance(runners.second!)) {
-        runsScored++;
+        scorers.add(runners.second!);
       } else {
         newThird = runners.second;
       }
@@ -718,21 +775,21 @@ class GameSimulator {
     }
 
     return _RunnerAdvanceResult(
-      runsScored: runsScored,
       newRunners: BaseRunners(first: batter, second: newSecond, third: newThird),
+      scoringRunners: scorers,
     );
   }
 
   /// 四球時の走塁（押し出し判定含む）
   _RunnerAdvanceResult _advanceOnWalk(BaseRunners runners, Player batter) {
-    int runsScored = 0;
+    final scorers = <Player>[];
     Player? newFirst = batter;
     Player? newSecond = runners.second;
     Player? newThird = runners.third;
 
     if (runners.isLoaded) {
-      // 満塁: 押し出し
-      runsScored = 1;
+      // 満塁: 押し出し（3塁ランナーが生還）
+      scorers.add(runners.third!);
       newThird = runners.second;
       newSecond = runners.first;
     } else if (runners.first != null && runners.second != null) {
@@ -746,8 +803,8 @@ class GameSimulator {
     // それ以外は打者が1塁に出るだけ
 
     return _RunnerAdvanceResult(
-      runsScored: runsScored,
       newRunners: BaseRunners(first: newFirst, second: newSecond, third: newThird),
+      scoringRunners: scorers,
     );
   }
 
@@ -755,19 +812,16 @@ class GameSimulator {
   _RunnerAdvanceResult _advanceOnGroundOut(BaseRunners runners, int outs) {
     // 2アウト時は3アウトチェンジ、走者進塁なし
     if (outs >= 2) {
-      return _RunnerAdvanceResult(
-        runsScored: 0,
-        newRunners: BaseRunners.empty,
-      );
+      return const _RunnerAdvanceResult(newRunners: BaseRunners.empty);
     }
 
     // 0-1アウト: 走者進塁
-    int runsScored = 0;
-    if (runners.third != null) runsScored++;
+    final scorers = <Player>[];
+    if (runners.third != null) scorers.add(runners.third!);
 
     return _RunnerAdvanceResult(
-      runsScored: runsScored,
       newRunners: BaseRunners(second: runners.first, third: runners.second),
+      scoringRunners: scorers,
     );
   }
 
@@ -775,17 +829,17 @@ class GameSimulator {
   _RunnerAdvanceResult _advanceOnDoublePlay(BaseRunners runners, int outs) {
     // 併殺で3アウトになるかどうか
     final willBeThreeOuts = outs == 1;
-    int runsScored = 0;
+    final scorers = <Player>[];
 
     // 満塁の場合、3塁ランナーがホームへ（ただし3アウトにならない場合のみ）
     if (runners.isLoaded && !willBeThreeOuts) {
-      runsScored++;
+      scorers.add(runners.third!);
     }
 
     // 2塁ランナーは3塁へ、1塁・2塁は空く
     return _RunnerAdvanceResult(
-      runsScored: runsScored,
       newRunners: BaseRunners(third: runners.second),
+      scoringRunners: scorers,
     );
   }
 
@@ -814,7 +868,7 @@ class GameSimulator {
     FieldPosition fieldPosition,
     Team? pitchingTeam,
   ) {
-    int runsScored = 0;
+    final scorers = <Player>[];
     int tagUpOuts = 0;
     final tagUpAttempts = <TagUpAttempt>[];
 
@@ -834,7 +888,7 @@ class GameSimulator {
       thirdRunnerTaggedUp = true;
       if (_isTagUpSuccessful(runners.third!, outfielderArm)) {
         thirdRunnerScored = true;
-        runsScored++;
+        scorers.add(runners.third!);
         newThird = null;
         tagUpAttempts.add(TagUpAttempt(
           runner: runners.third!,
@@ -893,38 +947,34 @@ class GameSimulator {
     }
 
     // タッチアップ失敗で3アウトになった場合、得点は無効
-    if (outs + 1 + tagUpOuts >= 3) {
-      runsScored = 0;
-    }
+    final inningEnds = outs + 1 + tagUpOuts >= 3;
+    final finalScorers = inningEnds ? <Player>[] : scorers;
 
     return _RunnerAdvanceResult(
-      runsScored: runsScored,
       newRunners: BaseRunners(first: newFirst, second: newSecond, third: newThird),
       additionalOuts: tagUpOuts,
       tagUps: tagUpAttempts,
+      scoringRunners: finalScorers,
     );
   }
 
   /// ランナー変化なし（三振・ライナーアウト）
   _RunnerAdvanceResult _advanceOnNoChange(BaseRunners runners) {
-    return _RunnerAdvanceResult(
-      runsScored: 0,
-      newRunners: runners,
-    );
+    return _RunnerAdvanceResult(newRunners: runners);
   }
 
   /// エラー出塁時の走塁
   _RunnerAdvanceResult _advanceOnError(BaseRunners runners, Player batter) {
-    int runsScored = 0;
-    if (runners.third != null) runsScored++;
+    final scorers = <Player>[];
+    if (runners.third != null) scorers.add(runners.third!);
 
     return _RunnerAdvanceResult(
-      runsScored: runsScored,
       newRunners: BaseRunners(
         first: batter,
         second: runners.first,
         third: runners.second,
       ),
+      scoringRunners: scorers,
     );
   }
 }
@@ -942,15 +992,20 @@ class _HalfInningSimulationResult {
 
 /// 走塁結果
 class _RunnerAdvanceResult {
-  final int runsScored;
   final BaseRunners newRunners;
   final int additionalOuts; // タッチアップ失敗などによる追加アウト
   final List<TagUpAttempt> tagUps; // タッチアップの試み
 
+  /// この走塁で生還した選手（責任投手の特定に使用）
+  /// 打席結果による得点（HR で打者自身が含まれる場合もある）。
+  final List<Player> scoringRunners;
+
   const _RunnerAdvanceResult({
-    required this.runsScored,
     required this.newRunners,
     this.additionalOuts = 0,
     this.tagUps = const [],
+    this.scoringRunners = const [],
   });
+
+  int get runsScored => scoringRunners.length;
 }

@@ -24,6 +24,11 @@ class AtBatResult {
   /// 用途: batting統計では打席として数えない。pitching統計では投球数・盗塁死のみ計上
   final bool isIncomplete;
 
+  /// この打席で記録された失点を投手別に分配したもの（pitcher.id → 失点数）
+  /// インヘリット走者（前任投手が出した走者）が生還した場合、その失点は前任投手に
+  /// 計上される。打席で生還した走者の責任投手を追跡して算出する。
+  final Map<String, int> runsByPitcher;
+
   const AtBatResult({
     required this.batter,
     required this.pitcher,
@@ -38,6 +43,7 @@ class AtBatResult {
     this.tagUps,
     this.fieldingError,
     this.isIncomplete = false,
+    this.runsByPitcher = const {},
   });
 
   /// 球数

@@ -318,13 +318,14 @@ class SeasonAggregator {
           if (ab.result == AtBatResultType.strikeout) {
             pStats.strikeoutsRecorded++;
           }
-          // 失点: 打点分 + バッテリーエラー得点分
-          // （簡略化: この打席を投げた投手にそのまま計上。インヘリット走者の扱いは無視）
-          pStats.runsAllowed += ab.rbiCount;
-          for (final pitch in ab.pitches) {
-            if (pitch.batteryError != null) {
-              pStats.runsAllowed += pitch.batteryError!.runsScored;
-            }
+        }
+
+        // 失点（runsByPitcher）: 打席で生還した走者の責任投手に分配済みのマップを使用
+        // インヘリット走者（前任投手が出した走者）の生還は前任投手の失点になる
+        for (final entry in ab.runsByPitcher.entries) {
+          final responsibleStats = pitcherStats[entry.key];
+          if (responsibleStats != null) {
+            responsibleStats.runsAllowed += entry.value;
           }
         }
       }

@@ -39,6 +39,10 @@ class AtBatSimulationResult {
   final FieldingError? fieldingError; // フィールディングエラー
   final int batteryErrorRuns; // バッテリーエラーによる得点
 
+  /// バッテリーエラー（WP/PB）で生還した走者
+  /// 失点の責任投手を特定するために必要（インヘリット走者の場合は前任投手の責任）
+  final List<Player> batteryErrorScorers;
+
   const AtBatSimulationResult({
     required this.result,
     required this.pitches,
@@ -47,6 +51,7 @@ class AtBatSimulationResult {
     this.additionalOuts = 0,
     this.fieldingError,
     this.batteryErrorRuns = 0,
+    this.batteryErrorScorers = const [],
   });
 }
 
@@ -925,6 +930,7 @@ class AtBatSimulator {
     int additionalOuts = 0;
     int currentPitchCount = pitchCount; // 打席中の投球数を追跡
     int batteryErrorRuns = 0; // バッテリーエラーによる得点
+    final batteryErrorScorers = <Player>[]; // WP/PB で生還した走者
     // 捕手の守備力（パスボール判定に使用）
     final catcherFielding = catcher?.getFielding(DefensePosition.catcher) ?? 5;
 
@@ -938,6 +944,7 @@ class AtBatSimulator {
           updatedRunners: currentRunners,
           additionalOuts: additionalOuts,
           batteryErrorRuns: batteryErrorRuns,
+          batteryErrorScorers: batteryErrorScorers,
         );
       }
 
@@ -971,12 +978,16 @@ class AtBatSimulator {
       if (pitch.type == PitchResultType.ball && currentRunners.hasRunners) {
         // ワイルドピッチチェック（投手の制球力と球種に依存）
         if (_errorSimulator.checkWildPitch(control, pitchType)) {
+          final scorer = currentRunners.third; // 3塁ランナーが生還
           final errorResult = _errorSimulator.applyBatteryError(
             ErrorType.wildPitch,
             currentRunners,
           );
           currentRunners = _errorSimulator.applyBatteryErrorToRunners(currentRunners);
           batteryErrorRuns += errorResult.runsScored;
+          if (errorResult.runsScored > 0 && scorer != null) {
+            batteryErrorScorers.add(scorer);
+          }
           currentBatteryError = BatteryError(
             type: BatteryErrorType.wildPitch,
             runsScored: errorResult.runsScored,
@@ -984,12 +995,16 @@ class AtBatSimulator {
         }
         // ワイルドピッチでなければパスボールチェック（捕手の守備力と球種に依存）
         else if (_errorSimulator.checkPassedBall(catcherFielding, pitchType)) {
+          final scorer = currentRunners.third;
           final errorResult = _errorSimulator.applyBatteryError(
             ErrorType.passedBall,
             currentRunners,
           );
           currentRunners = _errorSimulator.applyBatteryErrorToRunners(currentRunners);
           batteryErrorRuns += errorResult.runsScored;
+          if (errorResult.runsScored > 0 && scorer != null) {
+            batteryErrorScorers.add(scorer);
+          }
           currentBatteryError = BatteryError(
             type: BatteryErrorType.passedBall,
             runsScored: errorResult.runsScored,
@@ -1070,6 +1085,7 @@ class AtBatSimulator {
             updatedRunners: currentRunners,
             additionalOuts: additionalOuts,
             batteryErrorRuns: batteryErrorRuns,
+            batteryErrorScorers: batteryErrorScorers,
           );
         }
       } else {
@@ -1102,6 +1118,7 @@ class AtBatSimulator {
           additionalOuts: additionalOuts,
           fieldingError: atBatEndCheck.fieldingError,
           batteryErrorRuns: batteryErrorRuns,
+          batteryErrorScorers: batteryErrorScorers,
         );
       }
 
