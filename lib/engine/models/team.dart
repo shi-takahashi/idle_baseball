@@ -1,8 +1,6 @@
 import 'player.dart';
 import 'enums.dart';
 
-const Object _sentinel = Object();
-
 /// チーム
 class Team {
   final String id;
@@ -16,13 +14,10 @@ class Team {
   // 既存テストコード等の互換のため省略可能（空なら従来どおり players[0] が固定の先発）
   final List<Player> startingRotation;
 
-  // 救援投手（中継ぎ + 抑え、7人想定）
+  // 救援投手（8人想定: 抑え1 + セットアッパー1 + 中継ぎ2 + ワンポイント1 + ロング1 + 敗戦処理2）
+  // 各 Player に reliefRole が割り当てられている。
+  // 試合用に SeasonController が疲労した投手を除外して並び替えたリストを渡す。
   final List<Player> bullpen;
-
-  // 抑え投手（クローザー）
-  // bullpen の中の1人を指名。セーブ機会で優先的に登板する。
-  // null の場合は抑え未指名（=従来どおり、フレッシュな順で起用）。
-  final Player? closer;
 
   // 控え野手（代打・代走・守備固め要員、8人想定）
   final List<Player> bench;
@@ -39,7 +34,6 @@ class Team {
     required this.players,
     this.startingRotation = const [],
     this.bullpen = const [],
-    this.closer,
     this.bench = const [],
     this.defenseAlignment,
   });
@@ -49,7 +43,6 @@ class Team {
     List<Player>? players,
     List<Player>? startingRotation,
     List<Player>? bullpen,
-    Object? closer = _sentinel,
     List<Player>? bench,
     Map<FieldPosition, Player>? defenseAlignment,
   }) {
@@ -60,11 +53,40 @@ class Team {
       players: players ?? this.players,
       startingRotation: startingRotation ?? this.startingRotation,
       bullpen: bullpen ?? this.bullpen,
-      closer: identical(closer, _sentinel) ? this.closer : closer as Player?,
       bench: bench ?? this.bench,
       defenseAlignment: defenseAlignment ?? this.defenseAlignment,
     );
   }
+
+  // ---- ブルペン内のロール別 getter ----
+  // 試合用 Team の bullpen は SeasonController で疲労していない投手のみ含むため、
+  // ここで「fresh で利用可能なロール担当」を引ける。
+  Player? _firstWithRole(ReliefRole role) {
+    for (final p in bullpen) {
+      if (p.reliefRole == role) return p;
+    }
+    return null;
+  }
+
+  /// 抑え投手（fresh で当日使えれば）
+  Player? get closer => _firstWithRole(ReliefRole.closer);
+
+  /// セットアッパー
+  Player? get setupPitcher => _firstWithRole(ReliefRole.setup);
+
+  /// 中継ぎ（勝ちパ）
+  List<Player> get middleRelievers =>
+      [for (final p in bullpen) if (p.reliefRole == ReliefRole.middle) p];
+
+  /// ワンポイント（左投手）
+  Player? get situationalLefty => _firstWithRole(ReliefRole.situational);
+
+  /// ロングリリーフ
+  Player? get longReliever => _firstWithRole(ReliefRole.long);
+
+  /// 敗戦処理
+  List<Player> get mopUpRelievers =>
+      [for (final p in bullpen) if (p.reliefRole == ReliefRole.mopUp) p];
 
   /// 打順からプレイヤーを取得（0-indexed）
   Player getBatter(int battingOrder) {

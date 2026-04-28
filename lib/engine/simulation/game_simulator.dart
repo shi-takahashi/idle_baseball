@@ -245,6 +245,7 @@ class GameSimulator {
         opponentScore: opponentScoreAtStart + runs,
         runners: runners,
         closer: isCloserAvailable ? closerCandidate : null,
+        batter: batter,
         random: _random,
       );
       final decision = _pitcherChangeStrategy.decide(changeContext);

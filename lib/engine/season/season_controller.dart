@@ -385,25 +385,17 @@ class SeasonController {
   /// 1試合分の Team を構築する：
   /// - players[0] を当日の先発 SP に差し替え
   /// - bullpen をフレッシュな RP 順に並び替え（疲労した RP は除外）
-  /// - closer のコンディションが落ちていれば当日は外す（連投回避）
+  ///
+  /// ロール別の getter（team.closer / setupPitcher など）は bullpen 内を
+  /// reliefRole で検索するため、疲労した投手はここで bullpen から外れることで
+  /// 自動的に「当日不在」扱いになる（連投回避）。
   Team _withGameLineup(Team team, Player sp) {
     final newPlayers = team.players.isNotEmpty && team.players[0].id == sp.id
         ? team.players
         : [sp, ...team.players.skip(1)];
-    final availableBullpen = _availableBullpen(team);
-    // 抑えがフレッシュ（≥80）かつブルペンに入っている場合のみ採用
-    Player? activeCloser;
-    if (team.closer != null) {
-      final fresh =
-          (_pitcherFreshness[team.closer!.id] ?? 100) >= _relieverReadyThreshold;
-      final inBullpen =
-          availableBullpen.any((p) => p.id == team.closer!.id);
-      if (fresh && inBullpen) activeCloser = team.closer;
-    }
     return team.copyWith(
       players: newPlayers,
-      bullpen: availableBullpen,
-      closer: activeCloser,
+      bullpen: _availableBullpen(team),
     );
   }
 

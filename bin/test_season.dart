@@ -102,6 +102,9 @@ void main() {
   _printPitcherRanking('最多セーブ', result.pitcherStats.values.toList(),
       (p) => p.saves.toDouble(), (v) => v.toInt().toString(),
       min: 1);
+  _printPitcherRanking('最多ホールド', result.pitcherStats.values.toList(),
+      (p) => p.holds.toDouble(), (v) => v.toInt().toString(),
+      min: 1);
   _printPitcherRanking('WHIP', qualifiedPitchers, (p) => p.whip,
       (v) => v.toStringAsFixed(2),
       ascending: true);
@@ -189,10 +192,12 @@ void _printPitcherRanking(
   print('-- $title --');
   for (int i = 0; i < top.length; i++) {
     final p = top[i];
+    final role = p.player.reliefRole?.displayName ?? '先発';
     print('  ${(i + 1).toString().padLeft(2)}. '
         '${format(getValue(p)).padLeft(6)}  '
         '${p.player.name.padRight(8)} '
-        '(${p.team.name}, ${p.wins}勝${p.losses}敗${p.saves}S '
+        '[${role.padRight(6)}] '
+        '(${p.team.name}, ${p.wins}勝${p.losses}敗${p.saves}S${p.holds}H '
         '${p.inningsPitchedDisplay}回 ${p.strikeoutsRecorded}K)');
   }
 }

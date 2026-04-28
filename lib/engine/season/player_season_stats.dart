@@ -55,6 +55,7 @@ class PitcherSeasonStats {
   int wins = 0; // 勝利
   int losses = 0; // 敗戦
   int saves = 0; // セーブ
+  int holds = 0; // ホールド
   int outsRecorded = 0; // 奪ったアウト数（投球回×3）
   int hitsAllowed = 0; // 被安打
   int homeRunsAllowed = 0; // 被本塁打

@@ -70,16 +70,53 @@ class TeamGenerator {
     ];
     rotation.shuffle(_random);
 
-    // ---- 救援投手 7人（中継6 + 抑え1） ----
+    // ---- 救援投手 8人（ロール別構成） ----
+    //   抑え 1 / セットアッパー 1 / 中継ぎ 2 / ワンポイント 1 / ロング 1 / 敗戦処理 2
+    // ロールごとに能力ブースト・利き腕・スタミナ下限を調整して生成。
     final bullpen = <Player>[
-      for (int i = 0; i < 7; i++)
-        _playerGen.generateReliefPitcher(number: 21 + i),
+      _playerGen.generateReliefPitcher(
+        number: 21,
+        reliefRole: ReliefRole.closer,
+        abilityBoost: 1.5, // チーム最強級のリリーフ
+      ),
+      _playerGen.generateReliefPitcher(
+        number: 22,
+        reliefRole: ReliefRole.setup,
+        abilityBoost: 1.0,
+      ),
+      _playerGen.generateReliefPitcher(
+        number: 23,
+        reliefRole: ReliefRole.middle,
+        abilityBoost: 0.5,
+      ),
+      _playerGen.generateReliefPitcher(
+        number: 24,
+        reliefRole: ReliefRole.middle,
+        abilityBoost: 0.5,
+      ),
+      _playerGen.generateReliefPitcher(
+        number: 25,
+        reliefRole: ReliefRole.situational,
+        abilityBoost: 0.0,
+        forcedThrows: Handedness.left, // ワンポイントは左投手
+      ),
+      _playerGen.generateReliefPitcher(
+        number: 26,
+        reliefRole: ReliefRole.long,
+        abilityBoost: 0.0,
+        minStamina: 7, // ロングは長いイニングを投げる必要がある
+      ),
+      _playerGen.generateReliefPitcher(
+        number: 27,
+        reliefRole: ReliefRole.mopUp,
+        abilityBoost: -0.5,
+      ),
+      _playerGen.generateReliefPitcher(
+        number: 28,
+        reliefRole: ReliefRole.mopUp,
+        abilityBoost: -0.5,
+      ),
     ];
-    // 抑え投手の指名: 能力スコアが最も高いリリーフを抑えに
-    // （球速・制球・ストレートの質・最高変化球の平均）
-    final closer = bullpen.reduce(
-      (a, b) => _pitcherScore(a) >= _pitcherScore(b) ? a : b,
-    );
 
     // ---- 控え野手 8人 ----
     final bench = <Player>[];
@@ -143,25 +180,7 @@ class TeamGenerator {
       players: [rotation[0], ...starters],
       startingRotation: rotation,
       bullpen: bullpen,
-      closer: closer,
       bench: bench,
     );
-  }
-
-  /// 投手の能力スコア（0〜1）。抑え指名・先発エース判定で使う簡易指標。
-  /// 球速・制球・ストレートの質・最高変化球の平均。
-  double _pitcherScore(Player p) {
-    final speed = ((p.averageSpeed ?? 145) - 130) / 25;
-    final speedNorm = speed.clamp(0.0, 1.0);
-    final controlNorm = (p.control ?? 5) / 10.0;
-    final fastballNorm = (p.fastball ?? 5) / 10.0;
-    final pitches = <int>[
-      p.slider ?? 0,
-      p.curve ?? 0,
-      p.splitter ?? 0,
-      p.changeup ?? 0,
-    ];
-    final bestPitch = pitches.reduce((a, b) => a > b ? a : b) / 10.0;
-    return (speedNorm + controlNorm + fastballNorm + bestPitch) / 4.0;
   }
 }

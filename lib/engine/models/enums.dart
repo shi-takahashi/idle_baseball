@@ -8,6 +8,41 @@ enum Handedness {
   both,
 }
 
+/// 救援投手のロール
+/// - closer: 抑え。基本9回限定でセーブ機会担当
+/// - setup: セットアッパー。8回でリードを守る
+/// - middle: 中継ぎ（勝ちパ）。6〜7回のリード/同点で投げる
+/// - situational: ワンポイント。左打者へのマッチアップ用（左投手）
+/// - long: ロングリリーフ。先発早期降板や延長戦で長いイニングを投げる
+/// - mopUp: 敗戦処理。負け試合・大差での消耗を引き受ける
+enum ReliefRole {
+  closer,
+  setup,
+  middle,
+  situational,
+  long,
+  mopUp,
+}
+
+extension ReliefRoleExtension on ReliefRole {
+  String get displayName {
+    switch (this) {
+      case ReliefRole.closer:
+        return '抑え';
+      case ReliefRole.setup:
+        return 'セットアッパー';
+      case ReliefRole.middle:
+        return '中継ぎ';
+      case ReliefRole.situational:
+        return 'ワンポイント';
+      case ReliefRole.long:
+        return 'ロング';
+      case ReliefRole.mopUp:
+        return '敗戦処理';
+    }
+  }
+}
+
 extension HandednessExtension on Handedness {
   String get displayName {
     switch (this) {

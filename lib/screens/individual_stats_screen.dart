@@ -162,6 +162,20 @@ class _IndividualStatsScreenState extends State<IndividualStatsScreen>
           min: 1,
         ),
         _buildPitcherRanking(
+          '最多ホールド',
+          all,
+          (p) => p.holds.toDouble(),
+          (v) => v.toInt().toString(),
+          min: 1,
+        ),
+        _buildPitcherRanking(
+          '最優秀中継ぎ (HP=ホールド+救援勝利)',
+          all,
+          (p) => (p.holds + (p.starts == 0 ? p.wins : 0)).toDouble(),
+          (v) => v.toInt().toString(),
+          min: 1,
+        ),
+        _buildPitcherRanking(
           'WHIP',
           qualified,
           (p) => p.whip,
@@ -362,7 +376,7 @@ class _IndividualStatsScreenState extends State<IndividualStatsScreen>
                 ),
                 Text(
                   '${p.inningsPitchedDisplay}回  '
-                  '${p.wins}勝${p.losses}敗${p.saves}S  '
+                  '${p.wins}勝${p.losses}敗${p.saves}S${p.holds}H  '
                   '${p.strikeoutsRecorded}K  '
                   '${p.walksAllowed}四  '
                   '被${p.hitsAllowed}安  失${p.runsAllowed}',

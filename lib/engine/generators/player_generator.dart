@@ -20,18 +20,49 @@ class PlayerGenerator {
   }
 
   /// 救援投手を生成
-  Player generateReliefPitcher({required int number}) {
-    return _generatePitcher(number: number, isStarter: false);
+  ///
+  /// - [reliefRole]: 救援ロール（指定すれば Player.reliefRole にセットされる）
+  /// - [abilityBoost]: 能力値の平均オフセット（+1.0 でエース級、-1.0 で控え級）
+  /// - [forcedThrows]: 利き腕を強制（例: situational lefty）
+  /// - [minStamina]: スタミナの下限（例: ロングリリーフ）
+  Player generateReliefPitcher({
+    required int number,
+    ReliefRole? reliefRole,
+    double abilityBoost = 0.0,
+    Handedness? forcedThrows,
+    int? minStamina,
+  }) {
+    return _generatePitcher(
+      number: number,
+      isStarter: false,
+      reliefRole: reliefRole,
+      abilityBoost: abilityBoost,
+      forcedThrows: forcedThrows,
+      minStamina: minStamina,
+    );
   }
 
-  Player _generatePitcher({required int number, required bool isStarter}) {
+  Player _generatePitcher({
+    required int number,
+    required bool isStarter,
+    ReliefRole? reliefRole,
+    double abilityBoost = 0.0,
+    Handedness? forcedThrows,
+    int? minStamina,
+  }) {
     // 球速: 先発135〜150km前後、救援140〜155km前後
-    final speedMean = isStarter ? 140.0 : 145.0;
-    final avgSpeed = (speedMean + _r.nextGaussian() * 5.0).round().clamp(130, 160);
+    // abilityBoost 1ポイントごとに 2km 補正
+    final speedMean = (isStarter ? 140.0 : 145.0) + abilityBoost * 2.0;
+    final avgSpeed =
+        (speedMean + _r.nextGaussian() * 5.0).round().clamp(130, 160);
 
     // スタミナ: 先発は高め、救援は低め
+    // minStamina が指定された場合は下限として作用
     final staminaMean = isStarter ? 7.0 : 4.0;
-    final stamina = _r.normalInt(mean: staminaMean, sd: 1.5);
+    int stamina = _r.normalInt(mean: staminaMean, sd: 1.5);
+    if (minStamina != null && stamina < minStamina) {
+      stamina = minStamina;
+    }
 
     // 球種: ストレート + 1〜2球種ランダム
     final extraCount = _r.chance(0.5) ? 2 : 1;
@@ -41,7 +72,7 @@ class PlayerGenerator {
     );
     int? slider, curve, splitter, changeup;
     for (final t in extraTypes) {
-      final v = _r.normalInt();
+      final v = _r.normalInt(mean: 5.0 + abilityBoost);
       switch (t) {
         case 'slider':
           slider = v;
@@ -58,16 +89,17 @@ class PlayerGenerator {
       }
     }
 
-    // 投手の利き腕: 右70%、左30%
-    final throws = _r.chance(0.3) ? Handedness.left : Handedness.right;
+    // 投手の利き腕: forcedThrows 指定があればそれ、なければ 右70%・左30%
+    final throws = forcedThrows ??
+        (_r.chance(0.3) ? Handedness.left : Handedness.right);
 
     return Player(
       id: _newId(),
       name: _uniqueName(),
       number: number,
       averageSpeed: avgSpeed,
-      fastball: _r.normalInt(),
-      control: _r.normalInt(),
+      fastball: _r.normalInt(mean: 5.0 + abilityBoost),
+      control: _r.normalInt(mean: 5.0 + abilityBoost),
       stamina: stamina,
       slider: slider,
       curve: curve,
@@ -78,6 +110,7 @@ class PlayerGenerator {
       speed: _r.normalInt(mean: 3.5, sd: 1.5),
       // 打席（投手も打つ）
       bats: _batterHandedness(),
+      reliefRole: reliefRole,
     );
   }
 

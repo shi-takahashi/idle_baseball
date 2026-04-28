@@ -33,6 +33,10 @@ class Player {
   final Handedness? throws;
   final Handedness? bats;
 
+  // 救援投手のロール（先発投手・野手は null）
+  // 投手交代戦略がこのロールを参照して起用判断を行う。
+  final ReliefRole? reliefRole;
+
   // 守備能力（ポジションごと、0〜10）
   // fielding マップ自体が null  : 全ポジションをデフォルト値5で守れる（未設定の選手用）
   // fielding マップが明示されている: 列挙されたポジションのみ守れる
@@ -62,6 +66,7 @@ class Player {
     this.fielding,
     this.throws,
     this.bats,
+    this.reliefRole,
   });
 
   /// 投手かどうか
