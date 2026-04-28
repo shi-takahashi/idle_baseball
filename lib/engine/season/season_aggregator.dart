@@ -328,6 +328,13 @@ class SeasonAggregator {
             responsibleStats.runsAllowed += entry.value;
           }
         }
+        // 自責点（earnedRunsByPitcher）: 失点のうち投手の責任分のみ
+        for (final entry in ab.earnedRunsByPitcher.entries) {
+          final responsibleStats = pitcherStats[entry.key];
+          if (responsibleStats != null) {
+            responsibleStats.earnedRuns += entry.value;
+          }
+        }
       }
     }
 

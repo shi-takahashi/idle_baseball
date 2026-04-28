@@ -29,6 +29,13 @@ class AtBatResult {
   /// 計上される。打席で生還した走者の責任投手を追跡して算出する。
   final Map<String, int> runsByPitcher;
 
+  /// この打席で記録された自責点を投手別に分配したもの（pitcher.id → 自責点数）
+  /// 不自責のケース:
+  ///   - 走者がエラー出塁で塁に出たまま生還
+  ///   - エラーがなければイニングが終わっていた状態以降の得点
+  ///   - パスボールで生還した（ワイルドピッチは自責）
+  final Map<String, int> earnedRunsByPitcher;
+
   const AtBatResult({
     required this.batter,
     required this.pitcher,
@@ -44,6 +51,7 @@ class AtBatResult {
     this.fieldingError,
     this.isIncomplete = false,
     this.runsByPitcher = const {},
+    this.earnedRunsByPitcher = const {},
   });
 
   /// 球数

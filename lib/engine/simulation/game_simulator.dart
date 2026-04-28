@@ -178,6 +178,13 @@ class GameSimulator {
     // ハーフイニング全体で管理する。
     final runnerResponsibility = <String, String>{};
 
+    // 自責点判定用の状態
+    // - runnerIsUnearned: そのランナーがエラー出塁等で塁に出ているかどうか
+    // - errorOuts: このイニングで「エラーで取り損なったアウト」の数
+    //   実アウト + errorOuts >= 3 になった以降の得点は不自責
+    final runnerIsUnearned = <String, bool>{};
+    int errorOuts = 0;
+
     // 守備側チーム（このハーフで守る側）のアライメントを確定させる
     // 前の攻撃ハーフでの代打・代走の結果をここで反映する
     final defensiveChangesAtStart =
@@ -231,6 +238,7 @@ class GameSimulator {
         fielderChanges: fielderChanges,
         atBatIndex: atBats.length,
         runnerResponsibility: runnerResponsibility,
+        runnerIsUnearned: runnerIsUnearned,
       );
 
       final batter = battingFieldingState.currentBatter(currentBattingOrder);
@@ -418,10 +426,28 @@ class GameSimulator {
       // 全ての生還した走者（バッテリーエラー + 打席結果）について、
       // 打席開始前のスナップショット responsibility から投手を引く。
       // 打者自身が生還（HR等）した場合は現在の投手の責任。
+      //
+      // 自責点判定:
+      //   - 打席開始時点で「実アウト + errorOuts >= 3」なら、すでにイニングが
+      //     終わっていたはずなので、この打席の全得点は不自責
+      //   - 走者がエラー出塁で塁にいた場合、その走者の生還は不自責
+      //   - パスボールで生還した走者は不自責（ワイルドピッチは自責）
       final runsByPitcher = <String, int>{};
-      for (final scorer in atBatResult.batteryErrorScorers) {
-        final responsibleId = responsibilitySnapshot[scorer.id] ?? pitcher.id;
+      final earnedRunsByPitcher = <String, int>{};
+      final inningWouldHaveEnded = outsBefore + errorOuts >= 3;
+
+      for (final scoring in atBatResult.batteryErrorScorers) {
+        final scorerId = scoring.runner.id;
+        final responsibleId = responsibilitySnapshot[scorerId] ?? pitcher.id;
         runsByPitcher[responsibleId] = (runsByPitcher[responsibleId] ?? 0) + 1;
+        // 自責判定: イニング延長後 or PB or その走者が不自責ランナーなら不自責
+        final isUnearned = inningWouldHaveEnded ||
+            scoring.type == BatteryErrorType.passedBall ||
+            (runnerIsUnearned[scorerId] ?? false);
+        if (!isUnearned) {
+          earnedRunsByPitcher[responsibleId] =
+              (earnedRunsByPitcher[responsibleId] ?? 0) + 1;
+        }
       }
       for (final scorer in advanceResult.scoringRunners) {
         // 打者自身（HR）は現在の投手の責任
@@ -430,6 +456,19 @@ class GameSimulator {
             ? pitcher.id
             : (responsibilitySnapshot[scorer.id] ?? pitcher.id);
         runsByPitcher[responsibleId] = (runsByPitcher[responsibleId] ?? 0) + 1;
+        // 自責判定:
+        //   - イニングが既に終わっていたはずなら不自責
+        //   - 打者自身がエラー絡み（= reachedOnError）の打者ではない限り、
+        //     打者の得点は通常自責（HR）。
+        //   - 走者がエラー出塁の走者なら不自責
+        final isUnearnedRunner = scorer.id == batter.id
+            ? false
+            : (runnerIsUnearned[scorer.id] ?? false);
+        final isUnearned = inningWouldHaveEnded || isUnearnedRunner;
+        if (!isUnearned) {
+          earnedRunsByPitcher[responsibleId] =
+              (earnedRunsByPitcher[responsibleId] ?? 0) + 1;
+        }
       }
 
       // 次打席のために責任投手マップを更新
@@ -443,6 +482,16 @@ class GameSimulator {
       runnerResponsibility.removeWhere((id, _) => !newRunnersIds.contains(id));
       for (final id in newRunnersIds) {
         runnerResponsibility.putIfAbsent(id, () => pitcher.id);
+      }
+
+      // 自責点判定状態を次打席のために更新
+      // - エラー出塁（reachedOnError）したらその走者を unearned としてマーク、
+      //   かつ errorOuts を +1（取れていたはずのアウトを取り損なった）
+      // - 走者状態に居なくなった選手（生還 or アウト）は unearned マップから除去
+      runnerIsUnearned.removeWhere((id, _) => !newRunnersIds.contains(id));
+      if (resultType == AtBatResultType.reachedOnError) {
+        runnerIsUnearned[batter.id] = true;
+        errorOuts++;
       }
 
       final completedAtBat = AtBatResult(
@@ -459,6 +508,7 @@ class GameSimulator {
         tagUps: advanceResult.tagUps.isNotEmpty ? advanceResult.tagUps : null,
         fieldingError: atBatResult.fieldingError,
         runsByPitcher: runsByPitcher,
+        earnedRunsByPitcher: earnedRunsByPitcher,
       );
       atBats.add(completedAtBat);
 
@@ -508,6 +558,7 @@ class GameSimulator {
     required List<FielderChangeEvent> fielderChanges,
     required int atBatIndex,
     required Map<String, String> runnerResponsibility,
+    required Map<String, bool> runnerIsUnearned,
   }) {
     // 3塁 → 2塁 → 1塁 の順で評価（前のランナーから）
     final candidates = <(Base, Player)>[];
@@ -544,10 +595,14 @@ class GameSimulator {
       );
       // 塁上のランナーを入れ替え
       current = current.replaceRunner(base, decision.runner);
-      // 責任投手を引き継ぎ: 元の走者 → 代走者
+      // 責任投手・自責点フラグを引き継ぎ: 元の走者 → 代走者
       final originalResponsibility = runnerResponsibility.remove(runner.id);
       if (originalResponsibility != null) {
         runnerResponsibility[decision.runner.id] = originalResponsibility;
+      }
+      final wasUnearned = runnerIsUnearned.remove(runner.id);
+      if (wasUnearned != null && wasUnearned) {
+        runnerIsUnearned[decision.runner.id] = true;
       }
 
       fielderChanges.add(FielderChangeEvent(

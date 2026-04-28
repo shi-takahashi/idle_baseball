@@ -41,7 +41,8 @@ class AtBatSimulationResult {
 
   /// バッテリーエラー（WP/PB）で生還した走者
   /// 失点の責任投手を特定するために必要（インヘリット走者の場合は前任投手の責任）
-  final List<Player> batteryErrorScorers;
+  /// type は自責点判定に使用（WP=自責、PB=不自責）
+  final List<({Player runner, BatteryErrorType type})> batteryErrorScorers;
 
   const AtBatSimulationResult({
     required this.result,
@@ -930,7 +931,7 @@ class AtBatSimulator {
     int additionalOuts = 0;
     int currentPitchCount = pitchCount; // 打席中の投球数を追跡
     int batteryErrorRuns = 0; // バッテリーエラーによる得点
-    final batteryErrorScorers = <Player>[]; // WP/PB で生還した走者
+    final batteryErrorScorers = <({Player runner, BatteryErrorType type})>[];
     // 捕手の守備力（パスボール判定に使用）
     final catcherFielding = catcher?.getFielding(DefensePosition.catcher) ?? 5;
 
@@ -986,7 +987,9 @@ class AtBatSimulator {
           currentRunners = _errorSimulator.applyBatteryErrorToRunners(currentRunners);
           batteryErrorRuns += errorResult.runsScored;
           if (errorResult.runsScored > 0 && scorer != null) {
-            batteryErrorScorers.add(scorer);
+            batteryErrorScorers.add(
+              (runner: scorer, type: BatteryErrorType.wildPitch),
+            );
           }
           currentBatteryError = BatteryError(
             type: BatteryErrorType.wildPitch,
@@ -1003,7 +1006,9 @@ class AtBatSimulator {
           currentRunners = _errorSimulator.applyBatteryErrorToRunners(currentRunners);
           batteryErrorRuns += errorResult.runsScored;
           if (errorResult.runsScored > 0 && scorer != null) {
-            batteryErrorScorers.add(scorer);
+            batteryErrorScorers.add(
+              (runner: scorer, type: BatteryErrorType.passedBall),
+            );
           }
           currentBatteryError = BatteryError(
             type: BatteryErrorType.passedBall,

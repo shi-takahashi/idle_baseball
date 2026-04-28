@@ -61,7 +61,8 @@ class PitcherSeasonStats {
   int homeRunsAllowed = 0; // 被本塁打
   int walksAllowed = 0; // 与四球
   int strikeoutsRecorded = 0; // 奪三振
-  int runsAllowed = 0; // 失点（現状は自責点と同値）
+  int runsAllowed = 0; // 失点（責任投手にホームインされた点をカウント）
+  int earnedRuns = 0; // 自責点（エラーが無ければ無かった失点を除く）
 
   PitcherSeasonStats({required this.player, required this.team});
 
@@ -75,10 +76,10 @@ class PitcherSeasonStats {
   /// 投球回（小数）
   double get inningsPitched => outsRecorded / 3.0;
 
-  /// 防御率 = (失点 × 27) / 奪ったアウト数
+  /// 防御率 = (自責点 × 27) / 奪ったアウト数
   double get era {
     if (outsRecorded == 0) return 0;
-    return (runsAllowed * 27) / outsRecorded;
+    return (earnedRuns * 27) / outsRecorded;
   }
 
   /// WHIP = (与四球 + 被安打) × 3 / 奪ったアウト数
