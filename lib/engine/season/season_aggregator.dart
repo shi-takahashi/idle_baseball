@@ -30,12 +30,12 @@ class SeasonAggregator {
       ]) {
         all[p.id] = p;
       }
+      // DH非採用なので投手も打席に立つ。投手は両方の Stats を作成する。
       for (final p in all.values) {
         if (p.isPitcher) {
           pitcherStats[p.id] = PitcherSeasonStats(player: p, team: team);
-        } else {
-          batterStats[p.id] = BatterSeasonStats(player: p, team: team);
         }
+        batterStats[p.id] = BatterSeasonStats(player: p, team: team);
       }
     }
   }
@@ -246,21 +246,22 @@ class SeasonAggregator {
     final batterAppeared = <String>{};
     final pitcherAppeared = <String>{};
 
-    // スタメン野手は自動的に出場
-    for (final p in game.homeTeam.players.skip(1)) {
+    // スタメン9人（投手含む）は自動的に打席出場（DH非採用）
+    for (final p in game.homeTeam.players) {
       batterAppeared.add(p.id);
     }
-    for (final p in game.awayTeam.players.skip(1)) {
+    for (final p in game.awayTeam.players) {
       batterAppeared.add(p.id);
     }
-    // 先発投手は自動的に出場
+    // 先発投手は自動的に登板出場
     pitcherAppeared.add(game.homeTeam.pitcher.id);
     pitcherAppeared.add(game.awayTeam.pitcher.id);
 
     for (final half in game.halfInnings) {
-      // 投手交代で登板した投手を追加
+      // 投手交代で登板した投手を追加（打席にも立ちうるので両方に追加）
       for (final change in half.pitcherChanges) {
         pitcherAppeared.add(change.newPitcher.id);
+        batterAppeared.add(change.newPitcher.id);
       }
       // 野手交代で出場した選手を追加
       for (final fc in half.fielderChanges) {

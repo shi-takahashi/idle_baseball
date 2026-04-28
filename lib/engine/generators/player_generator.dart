@@ -106,6 +106,11 @@ class PlayerGenerator {
       splitter: splitter,
       changeup: changeup,
       throws: throws,
+      // 投手の打撃能力（DH非採用なので打席に立つ。野手より低め）
+      // 個別に設定されているので、後でバランス調整しやすい
+      meet: _r.normalInt(mean: 2.5, sd: 1.0),
+      power: _r.normalInt(mean: 2.0, sd: 1.0),
+      eye: _r.normalInt(mean: 3.0, sd: 1.0),
       // 投手の走力は低め（平均3.5）
       speed: _r.normalInt(mean: 3.5, sd: 1.5),
       // 打席（投手も打つ）
