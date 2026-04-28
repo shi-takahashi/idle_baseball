@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../engine/engine.dart';
 import '../widgets/batting_stats.dart';
+import '../widgets/game_summary_view.dart';
 import '../widgets/pitching_stats.dart';
 import '../widgets/score_board.dart';
 import 'game_result_screen.dart';
@@ -44,16 +45,15 @@ class _DailyScreenState extends State<DailyScreen>
     super.dispose();
   }
 
-  /// 現在の日の自チーム試合結果
-  GameResult? _myGameResult() {
+  /// 現在の日の自チーム試合
+  ScheduledGame? _myScheduledGame() {
     final c = widget.controller;
     if (c.currentDay == 0) return null;
     final games = c.scheduledGamesOnDay(c.currentDay);
-    final myGame = games.firstWhere(
+    return games.firstWhere(
       (g) => g.homeTeam.id == c.myTeamId || g.awayTeam.id == c.myTeamId,
       orElse: () => throw StateError('自チームの試合が見つかりません'),
     );
-    return c.resultFor(myGame.gameNumber);
   }
 
   /// 現在の日の他2試合の結果
@@ -76,7 +76,8 @@ class _DailyScreenState extends State<DailyScreen>
       listenable: widget.listenable,
       builder: (context, _) {
         final c = widget.controller;
-        final myGame = _myGameResult();
+        final mySg = _myScheduledGame();
+        final myGame = mySg == null ? null : c.resultFor(mySg.gameNumber);
         final otherGames = _otherGameResults();
 
         return Scaffold(
@@ -97,7 +98,7 @@ class _DailyScreenState extends State<DailyScreen>
                     ],
                   ),
           ),
-          body: myGame == null
+          body: myGame == null || mySg == null
               ? const Center(child: Text('試合がありません'))
               : TabBarView(
                   controller: _tabController,
@@ -106,7 +107,7 @@ class _DailyScreenState extends State<DailyScreen>
                   // タブ切り替えは上部の TabBar タップに統一する。
                   physics: const NeverScrollableScrollPhysics(),
                   children: [
-                    _buildScoreTab(myGame, otherGames),
+                    _buildScoreTab(mySg.gameNumber, myGame, otherGames),
                     _buildBattingTab(myGame),
                     _buildPitchingTab(myGame),
                   ],
@@ -116,7 +117,9 @@ class _DailyScreenState extends State<DailyScreen>
     );
   }
 
-  Widget _buildScoreTab(GameResult myGame, List<GameResult> otherGames) {
+  Widget _buildScoreTab(
+      int gameNumber, GameResult myGame, List<GameResult> otherGames) {
+    final summary = widget.controller.gameSummaryFor(gameNumber);
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
       child: Column(
@@ -136,7 +139,9 @@ class _DailyScreenState extends State<DailyScreen>
             style: Theme.of(context).textTheme.titleMedium,
             textAlign: TextAlign.center,
           ),
-          const SizedBox(height: 24),
+          // 勝敗投手・セーブ・本塁打
+          GameSummaryView(gameResult: myGame, summary: summary),
+          const SizedBox(height: 16),
           const Divider(),
           const SizedBox(height: 8),
           const Text(
@@ -151,13 +156,24 @@ class _DailyScreenState extends State<DailyScreen>
   }
 
   Widget _buildOtherGameCard(GameResult result) {
+    // この試合の gameNumber を schedule から逆引きしてサマリーを取得
+    final c = widget.controller;
+    final sg = c.scheduledGamesOnDay(c.currentDay).firstWhere(
+          (s) =>
+              s.homeTeam.id == result.homeTeam.id &&
+              s.awayTeam.id == result.awayTeam.id,
+        );
+    final summary = c.gameSummaryFor(sg.gameNumber);
     return Card(
       margin: const EdgeInsets.symmetric(vertical: 4),
       child: InkWell(
         onTap: () {
           Navigator.of(context).push(
             MaterialPageRoute(
-              builder: (_) => GameResultScreen(gameResult: result),
+              builder: (_) => GameResultScreen(
+                gameResult: result,
+                summary: summary,
+              ),
             ),
           );
         },

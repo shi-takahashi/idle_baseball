@@ -47,6 +47,35 @@ class SeasonAggregator {
     _updateWinLoss(game);
   }
 
+  /// 試合の勝敗・セーブ投手を解決して返す（公開API: UI表示等で使用）
+  /// 集計の副作用は無し（pitcherStats を変更しない）
+  ({Player? winningPitcher, Player? losingPitcher, Player? savingPitcher})
+      resolveGameDecisions(GameResult game) {
+    final winLoss = _determineDecisivePitchers(game);
+    final winnerPlayer = winLoss.$1;
+    final loserPlayer = winLoss.$2;
+
+    Player? saver;
+    if (game.winner != null) {
+      final outings = _buildOutings(game);
+      final homeWon = game.winner == game.homeTeamName;
+      final winningOutings = homeWon ? outings.$1 : outings.$2;
+      final finisher = winningOutings.last;
+      final winnerId = winnerPlayer?.id;
+      // セーブ条件: 勝利投手でない + セーブ機会条件を満たす
+      if ((winnerId == null || finisher.pitcher.id != winnerId) &&
+          _meetsSaveSituation(finisher)) {
+        saver = finisher.pitcher;
+      }
+    }
+
+    return (
+      winningPitcher: winnerPlayer,
+      losingPitcher: loserPlayer,
+      savingPitcher: saver,
+    );
+  }
+
   // ---- チーム勝敗 ----
   void _updateTeamRecord(GameResult game) {
     final homeRecord =

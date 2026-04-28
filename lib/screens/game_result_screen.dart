@@ -2,16 +2,23 @@ import 'package:flutter/material.dart';
 
 import '../engine/engine.dart';
 import '../widgets/batting_stats.dart';
+import '../widgets/game_summary_view.dart';
 import '../widgets/pitching_stats.dart';
 import '../widgets/score_board.dart';
 
 /// 1試合の詳細結果画面
 ///
 /// 指定された [gameResult] をスコア・打撃・投手の3タブで表示する。
+/// [summary] が渡されればスコアボード下に勝敗投手・本塁打を表示する。
 class GameResultScreen extends StatefulWidget {
   final GameResult gameResult;
+  final GameSummary? summary;
 
-  const GameResultScreen({super.key, required this.gameResult});
+  const GameResultScreen({
+    super.key,
+    required this.gameResult,
+    this.summary,
+  });
 
   @override
   State<GameResultScreen> createState() => _GameResultScreenState();
@@ -63,12 +70,17 @@ class _GameResultScreenState extends State<GameResultScreen>
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 ScoreBoard(gameResult: result),
-                const SizedBox(height: 24),
+                const SizedBox(height: 16),
                 Text(
                   result.winner != null ? '勝者: ${result.winner}' : '引き分け',
-                  style: Theme.of(context).textTheme.headlineSmall,
+                  style: Theme.of(context).textTheme.titleLarge,
                   textAlign: TextAlign.center,
                 ),
+                if (widget.summary != null)
+                  GameSummaryView(
+                    gameResult: result,
+                    summary: widget.summary!,
+                  ),
               ],
             ),
           ),

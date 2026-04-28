@@ -1,4 +1,5 @@
 // シーズン関連のエクスポート
+export 'game_summary.dart';
 export 'player_season_stats.dart';
 export 'schedule.dart';
 export 'schedule_generator.dart';

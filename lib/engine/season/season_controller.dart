@@ -3,6 +3,7 @@ import 'dart:math';
 import '../generators/generators.dart';
 import '../models/models.dart';
 import '../simulation/simulation.dart';
+import 'game_summary.dart';
 import 'player_season_stats.dart';
 import 'schedule.dart';
 import 'schedule_generator.dart';
@@ -137,6 +138,84 @@ class SeasonController {
 
   /// 指定 gameNumber の結果（未実行なら null）
   GameResult? resultFor(int gameNumber) => _results[gameNumber];
+
+  /// 指定 gameNumber のサマリー情報（勝利投手・敗戦投手・セーブ・本塁打通算番号）
+  /// 各投手にはその試合終了時点での通算 W/L/S 成績が付く。
+  /// スコアタブ等で表示する用途。試合が未実行なら GameSummary.empty。
+  GameSummary gameSummaryFor(int gameNumber) {
+    final game = _results[gameNumber];
+    if (game == null) return GameSummary.empty;
+
+    // 試合順序で:
+    //   - 投手別の通算 W/L/S
+    //   - 打者別の通算 HR 数
+    // を累積し、対象試合の時点での値を取得する。
+    final winsByPitcher = <String, int>{};
+    final lossesByPitcher = <String, int>{};
+    final savesByPitcher = <String, int>{};
+    final hrCounts = <String, int>{};
+    final homeRuns = <HomeRunRecord>[];
+
+    ({Player? winningPitcher, Player? losingPitcher, Player? savingPitcher})?
+        targetDecisions;
+
+    for (final sg in schedule.games) {
+      if (sg.gameNumber > gameNumber) break;
+      final g = _results[sg.gameNumber];
+      if (g == null) continue;
+
+      // 決定投手を集計
+      final d = _aggregator.resolveGameDecisions(g);
+      if (d.winningPitcher != null) {
+        winsByPitcher[d.winningPitcher!.id] =
+            (winsByPitcher[d.winningPitcher!.id] ?? 0) + 1;
+      }
+      if (d.losingPitcher != null) {
+        lossesByPitcher[d.losingPitcher!.id] =
+            (lossesByPitcher[d.losingPitcher!.id] ?? 0) + 1;
+      }
+      if (d.savingPitcher != null) {
+        savesByPitcher[d.savingPitcher!.id] =
+            (savesByPitcher[d.savingPitcher!.id] ?? 0) + 1;
+      }
+
+      // 本塁打を集計（対象試合のみ HomeRunRecord に追加）
+      for (final half in g.halfInnings) {
+        for (final ab in half.atBats) {
+          if (ab.result != AtBatResultType.homeRun) continue;
+          if (ab.isIncomplete) continue;
+          hrCounts[ab.batter.id] = (hrCounts[ab.batter.id] ?? 0) + 1;
+          if (sg.gameNumber == gameNumber) {
+            homeRuns.add(HomeRunRecord(
+              batter: ab.batter,
+              seasonNumber: hrCounts[ab.batter.id]!,
+              isAway: ab.isTop,
+              inning: ab.inning,
+            ));
+          }
+        }
+      }
+
+      if (sg.gameNumber == gameNumber) targetDecisions = d;
+    }
+
+    PitcherDecisionRecord? recordFor(Player? p) {
+      if (p == null) return null;
+      return PitcherDecisionRecord(
+        pitcher: p,
+        wins: winsByPitcher[p.id] ?? 0,
+        losses: lossesByPitcher[p.id] ?? 0,
+        saves: savesByPitcher[p.id] ?? 0,
+      );
+    }
+
+    return GameSummary(
+      winning: recordFor(targetDecisions?.winningPitcher),
+      losing: recordFor(targetDecisions?.losingPitcher),
+      saving: recordFor(targetDecisions?.savingPitcher),
+      homeRuns: homeRuns,
+    );
+  }
 
   /// 指定チームの打撃集計（順位表での 打率・本塁打・盗塁 用）
   ({int hits, int atBats, int homeRuns, int stolenBases}) teamBattingTotals(
