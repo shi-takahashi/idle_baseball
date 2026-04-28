@@ -27,6 +27,11 @@ class Team {
   // null の場合はデフォルト配置を使用
   final Map<FieldPosition, Player>? defenseAlignment;
 
+  // チームカラー（ARGB int 値）
+  // UI 層で Color に変換して、バナーやアイコンの色付けに使う。
+  // engine 層を Flutter 非依存に保つため int で保持。
+  final int primaryColorValue;
+
   const Team({
     required this.id,
     required this.name,
@@ -36,6 +41,7 @@ class Team {
     this.bullpen = const [],
     this.bench = const [],
     this.defenseAlignment,
+    this.primaryColorValue = 0xFF9E9E9E, // デフォルト: グレー
   });
 
   /// 主に「その日の先発を差し替える」用途で使う複製ヘルパ
@@ -45,6 +51,7 @@ class Team {
     List<Player>? bullpen,
     List<Player>? bench,
     Map<FieldPosition, Player>? defenseAlignment,
+    int? primaryColorValue,
   }) {
     return Team(
       id: id,
@@ -55,6 +62,7 @@ class Team {
       bullpen: bullpen ?? this.bullpen,
       bench: bench ?? this.bench,
       defenseAlignment: defenseAlignment ?? this.defenseAlignment,
+      primaryColorValue: primaryColorValue ?? this.primaryColorValue,
     );
   }
 

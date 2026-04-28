@@ -18,22 +18,29 @@ class TeamGenerator {
         _playerGen = PlayerGenerator(random: random);
 
   /// 6チームを一括生成
+  /// 各チームに見分けやすい色を割り当てる（バナーやアイコンで使用）
   List<Team> generateLeague() {
     const teamInfos = [
-      (id: 'team_phoenix', name: 'フェニックス', shortName: 'P'),
-      (id: 'team_dragoons', name: 'ドラグーンズ', shortName: 'D'),
-      (id: 'team_comets', name: 'コメッツ', shortName: 'C'),
-      (id: 'team_auroras', name: 'オーロラズ', shortName: 'A'),
-      (id: 'team_thunders', name: 'サンダーズ', shortName: 'T'),
-      (id: 'team_blizzards', name: 'ブリザーズ', shortName: 'B'),
+      // フェニックス: 赤（不死鳥）
+      (id: 'team_phoenix', name: 'フェニックス', shortName: 'P', color: 0xFFE53935),
+      // ドラグーンズ: 紺（重騎兵）
+      (id: 'team_dragoons', name: 'ドラグーンズ', shortName: 'D', color: 0xFF3949AB),
+      // コメッツ: 黄（彗星）
+      (id: 'team_comets', name: 'コメッツ', shortName: 'C', color: 0xFFFBC02D),
+      // オーロラズ: 紫（オーロラ）
+      (id: 'team_auroras', name: 'オーロラズ', shortName: 'A', color: 0xFF8E24AA),
+      // サンダーズ: 橙（雷）
+      (id: 'team_thunders', name: 'サンダーズ', shortName: 'T', color: 0xFFEF6C00),
+      // ブリザーズ: 水色（吹雪）
+      (id: 'team_blizzards', name: 'ブリザーズ', shortName: 'B', color: 0xFF039BE5),
     ];
     return [
       for (final info in teamInfos)
-        _generateTeam(info.id, info.name, info.shortName),
+        _generateTeam(info.id, info.name, info.shortName, info.color),
     ];
   }
 
-  Team _generateTeam(String id, String name, String shortName) {
+  Team _generateTeam(String id, String name, String shortName, int color) {
     // ---- スタメン野手8人（打順1〜8、players[1..8]の順序でデフォルト守備位置に対応） ----
     // Teamのデフォルト配置:
     // players[1]=捕 / [2]=一 / [3]=二 / [4]=三 / [5]=遊 / [6]=左 / [7]=中 / [8]=右
@@ -181,6 +188,7 @@ class TeamGenerator {
       startingRotation: rotation,
       bullpen: bullpen,
       bench: bench,
+      primaryColorValue: color,
     );
   }
 }

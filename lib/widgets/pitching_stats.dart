@@ -13,29 +13,41 @@ class PitchingStats extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          _buildTeamStats(context, gameResult.awayTeamName, true),
+          _buildTeamStats(context, gameResult.awayTeam, true),
           const SizedBox(height: 16),
-          _buildTeamStats(context, gameResult.homeTeamName, false),
+          _buildTeamStats(context, gameResult.homeTeam, false),
         ],
       ),
     );
   }
 
-  Widget _buildTeamStats(BuildContext context, String teamName, bool isAway) {
+  Widget _buildTeamStats(BuildContext context, Team team, bool isAway) {
     // このチームの投手成績を集計
     final pitcherStats = _collectPitcherStats(isAway);
+
+    // チームカラー: パステル背景 + アクセントテキスト + 左ボーダー
+    final primary = Color(team.primaryColorValue);
+    final bannerBg = Color.lerp(Colors.white, primary, 0.25)!;
+    final accentText = Color.lerp(Colors.black, primary, 0.7)!;
 
     return Card(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // チーム名ヘッダー
+          // チーム名ヘッダー（チームカラーのパステル背景）
           Container(
             padding: const EdgeInsets.all(8),
-            color: isAway ? Colors.blue.shade100 : Colors.red.shade100,
+            decoration: BoxDecoration(
+              color: bannerBg,
+              border: Border(left: BorderSide(color: primary, width: 4)),
+            ),
             child: Text(
-              teamName,
-              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+              team.name,
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                fontSize: 16,
+                color: accentText,
+              ),
             ),
           ),
           // 左：選手列（固定） / 右：投球回〜失点（横スクロール）

@@ -52,6 +52,7 @@ class TeamFieldingState {
       bullpen: originalTeam.bullpen,
       bench: List.of(bench),
       defenseAlignment: Map.of(currentAlignment),
+      primaryColorValue: originalTeam.primaryColorValue,
     );
   }
 

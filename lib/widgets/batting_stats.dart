@@ -25,17 +25,29 @@ class BattingStats extends StatelessWidget {
     final inningCount = gameResult.inningScores.length;
     final rows = _computeRows(team, isAway, inningCount);
 
+    // チームカラーをパステルにしてバナー背景に使う（テキストは黒で読みやすく保つ）
+    final primary = Color(team.primaryColorValue);
+    final bannerBg = Color.lerp(Colors.white, primary, 0.25)!;
+    final accentText = Color.lerp(Colors.black, primary, 0.7)!;
+
     return Card(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // チーム名ヘッダー
+          // チーム名ヘッダー（チームカラーのパステル背景）
           Container(
             padding: const EdgeInsets.all(8),
-            color: isAway ? Colors.blue.shade100 : Colors.red.shade100,
+            decoration: BoxDecoration(
+              color: bannerBg,
+              border: Border(left: BorderSide(color: primary, width: 4)),
+            ),
             child: Text(
               team.name,
-              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                fontSize: 16,
+                color: accentText,
+              ),
             ),
           ),
           // 左：選手列（固定） / 右：位置〜イニング別（横スクロール）
