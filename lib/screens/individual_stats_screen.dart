@@ -155,6 +155,13 @@ class _IndividualStatsScreenState extends State<IndividualStatsScreen>
           min: 1,
         ),
         _buildPitcherRanking(
+          '最多セーブ',
+          all,
+          (p) => p.saves.toDouble(),
+          (v) => v.toInt().toString(),
+          min: 1,
+        ),
+        _buildPitcherRanking(
           'WHIP',
           qualified,
           (p) => p.whip,
@@ -355,7 +362,7 @@ class _IndividualStatsScreenState extends State<IndividualStatsScreen>
                 ),
                 Text(
                   '${p.inningsPitchedDisplay}回  '
-                  '${p.wins}勝${p.losses}敗  '
+                  '${p.wins}勝${p.losses}敗${p.saves}S  '
                   '${p.strikeoutsRecorded}K  '
                   '${p.walksAllowed}四  '
                   '被${p.hitsAllowed}安  失${p.runsAllowed}',

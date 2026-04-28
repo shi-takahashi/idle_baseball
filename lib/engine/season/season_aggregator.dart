@@ -90,6 +90,114 @@ class SeasonAggregator {
     final loserId = decisive.$2?.id;
     if (winnerId != null) pitcherStats[winnerId]?.wins++;
     if (loserId != null) pitcherStats[loserId]?.losses++;
+    _updateSave(game, winnerId);
+  }
+
+  // ---- セーブ ----
+  /// セーブの判定:
+  ///   必須条件:
+  ///     - 勝利投手でない
+  ///     - 自チームが勝った試合の最後を投げ切った投手
+  ///     - 1/3 イニング以上投球
+  ///     - リードを保った状態で試合を終えた（登板中に同点・逆転を許していない）
+  ///   いずれかを満たす:
+  ///     A. 3点差以内のリードで登板し、1イニング以上投げる
+  ///     B. 同点・逆転走者を背負っての登板（連続2HRで同点/逆転になる状況）
+  ///        登板時のリード ≤ 走者数 + 2
+  ///     C. 3イニング以上投げる
+  void _updateSave(GameResult game, String? winnerPitcherId) {
+    if (game.winner == null) return;
+    final homeWon = game.winner == game.homeTeamName;
+
+    // 各チームの登板履歴（先発から始まり、交代ごとに追加）
+    final homeOutings = <_PitcherOuting>[
+      _PitcherOuting(pitcher: game.homeTeam.pitcher, entryLead: 0, entryRunners: 0),
+    ];
+    final awayOutings = <_PitcherOuting>[
+      _PitcherOuting(pitcher: game.awayTeam.pitcher, entryLead: 0, entryRunners: 0),
+    ];
+
+    int homeScore = 0;
+    int awayScore = 0;
+
+    for (final half in game.halfInnings) {
+      final defenderIsHome = half.isTop;
+      final defOutings = defenderIsHome ? homeOutings : awayOutings;
+
+      // このハーフ内で発生する投手交代を atBatIndex でグルーピング
+      final changesByIdx = <int, List<PitcherChangeEvent>>{};
+      for (final ch in half.pitcherChanges) {
+        changesByIdx.putIfAbsent(ch.atBatIndex, () => []).add(ch);
+      }
+
+      for (int i = 0; i < half.atBats.length; i++) {
+        // この打席の前に発生する投手交代を反映
+        final changes = changesByIdx[i];
+        if (changes != null) {
+          for (final ch in changes) {
+            final defScore = defenderIsHome ? homeScore : awayScore;
+            final batScore = defenderIsHome ? awayScore : homeScore;
+            defOutings.add(_PitcherOuting(
+              pitcher: ch.newPitcher,
+              entryLead: defScore - batScore,
+              entryRunners: half.atBats[i].runnersBefore.count,
+            ));
+          }
+        }
+
+        final ab = half.atBats[i];
+        final outing = defOutings.last;
+        outing.outsRecorded += _outsInAtBat(ab);
+
+        // この打席の得点（打点 + バッテリーエラー）
+        int runsHere = ab.rbiCount;
+        for (final pitch in ab.pitches) {
+          if (pitch.batteryError != null) {
+            runsHere += pitch.batteryError!.runsScored;
+          }
+        }
+        if (defenderIsHome) {
+          awayScore += runsHere;
+        } else {
+          homeScore += runsHere;
+        }
+
+        // 登板中の最低リード（同点 or 逆転を許したか）を更新
+        final defScore = defenderIsHome ? homeScore : awayScore;
+        final batScore = defenderIsHome ? awayScore : homeScore;
+        final currentLead = defScore - batScore;
+        if (currentLead < outing.minLeadDuring) {
+          outing.minLeadDuring = currentLead;
+        }
+      }
+    }
+
+    final winningOutings = homeWon ? homeOutings : awayOutings;
+    final finisher = winningOutings.last;
+
+    // 1) 勝利投手でない
+    if (winnerPitcherId != null && finisher.pitcher.id == winnerPitcherId) {
+      return;
+    }
+    // 2) 1/3 イニング以上
+    if (finisher.outsRecorded < 1) return;
+    // 3) 登板時にリードしていた（≤0 だとセーブ機会ではない）
+    if (finisher.entryLead <= 0) return;
+    // 4) 登板中に同点・逆転を許していない
+    if (finisher.minLeadDuring <= 0) return;
+
+    // 5) サブ条件のいずれかを満たす
+    final entryLead = finisher.entryLead;
+    final entryRunners = finisher.entryRunners;
+    final outs = finisher.outsRecorded;
+
+    final condA = entryLead <= 3 && outs >= 3; // 3点差以内 + 1IP
+    final condB = entryLead <= entryRunners + 2; // 同点・逆転走者背負い登板
+    final condC = outs >= 9; // 3IP以上
+
+    if (condA || condB || condC) {
+      pitcherStats[finisher.pitcher.id]?.saves++;
+    }
   }
 
   // ---- 選手成績 ----
@@ -274,4 +382,19 @@ class SeasonAggregator {
 
     return (decisiveWinner, decisiveLoser);
   }
+}
+
+/// 1人の投手の登板（セーブ判定用）
+class _PitcherOuting {
+  final Player pitcher;
+  final int entryLead; // 登板時のリード（守備チーム視点、正で勝っている）
+  final int entryRunners; // 登板時の走者数
+  int outsRecorded = 0; // この登板で取ったアウト
+  int minLeadDuring; // 登板中の最低リード（≤0 になれば同点・逆転を許した）
+
+  _PitcherOuting({
+    required this.pitcher,
+    required this.entryLead,
+    required this.entryRunners,
+  }) : minLeadDuring = entryLead;
 }

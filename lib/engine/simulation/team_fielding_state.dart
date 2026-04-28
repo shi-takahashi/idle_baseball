@@ -50,6 +50,7 @@ class TeamFieldingState {
       players: List.of(currentLineup),
       startingRotation: originalTeam.startingRotation,
       bullpen: originalTeam.bullpen,
+      closer: originalTeam.closer,
       bench: List.of(bench),
       defenseAlignment: Map.of(currentAlignment),
     );

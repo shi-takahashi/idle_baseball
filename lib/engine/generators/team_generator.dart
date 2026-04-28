@@ -75,6 +75,11 @@ class TeamGenerator {
       for (int i = 0; i < 7; i++)
         _playerGen.generateReliefPitcher(number: 21 + i),
     ];
+    // 抑え投手の指名: 能力スコアが最も高いリリーフを抑えに
+    // （球速・制球・ストレートの質・最高変化球の平均）
+    final closer = bullpen.reduce(
+      (a, b) => _pitcherScore(a) >= _pitcherScore(b) ? a : b,
+    );
 
     // ---- 控え野手 8人 ----
     final bench = <Player>[];
@@ -138,7 +143,25 @@ class TeamGenerator {
       players: [rotation[0], ...starters],
       startingRotation: rotation,
       bullpen: bullpen,
+      closer: closer,
       bench: bench,
     );
+  }
+
+  /// 投手の能力スコア（0〜1）。抑え指名・先発エース判定で使う簡易指標。
+  /// 球速・制球・ストレートの質・最高変化球の平均。
+  double _pitcherScore(Player p) {
+    final speed = ((p.averageSpeed ?? 145) - 130) / 25;
+    final speedNorm = speed.clamp(0.0, 1.0);
+    final controlNorm = (p.control ?? 5) / 10.0;
+    final fastballNorm = (p.fastball ?? 5) / 10.0;
+    final pitches = <int>[
+      p.slider ?? 0,
+      p.curve ?? 0,
+      p.splitter ?? 0,
+      p.changeup ?? 0,
+    ];
+    final bestPitch = pitches.reduce((a, b) => a > b ? a : b) / 10.0;
+    return (speedNorm + controlNorm + fastballNorm + bestPitch) / 4.0;
   }
 }

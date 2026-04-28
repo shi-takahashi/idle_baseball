@@ -30,6 +30,11 @@ class PitcherChangeContext {
   /// 現在のランナー状況
   final BaseRunners runners;
 
+  /// 抑え投手（指名されていれば）。試合中まだ未登板で、かつコンディション
+  /// 上使用可能な場合のみ非 null。SeasonController がフレッシュさを判断して
+  /// 渡す。`pitchingState.bullpen` から外れていないことが前提。
+  final Player? closer;
+
   /// ランダム性が欲しい場合に使用（日ごとの気分、ランダム判定など）
   final Random random;
 
@@ -41,6 +46,7 @@ class PitcherChangeContext {
     required this.myTeamScore,
     required this.opponentScore,
     required this.runners,
+    this.closer,
     required this.random,
   });
 
@@ -121,11 +127,55 @@ class SimplePitcherChangeStrategy implements PitcherChangeStrategy {
     if (state.bullpen.isEmpty) return null;
 
     final isStarter = state.currentPitcher.id == state.usedPitchers.first.id;
+    final isCurrentCloser = context.closer != null &&
+        state.currentPitcher.id == context.closer!.id;
+
+    // ---- 抑え投手の起用判断（セーブ状況） ----
+    // 以下のいずれかで、現投手を降ろして抑えに切り替える:
+    //   A. 9回以降のセーブ機会
+    //   B. 8回途中のピンチ（接戦＋得点圏走者）
+    // 適用しない場合:
+    //   - 抑えが既にマウンドにいる
+    //   - 抑えが未指名 or 当日不在
+    //   - 先発が完封ペース（無失点 + 球数 < 100 + 9回頭）→ 続投で完封狙い
+    if (!isCurrentCloser &&
+        context.closer != null &&
+        !_isStarterOnShutoutPace(context, isStarter)) {
+      if (_isSaveSituation(context)) {
+        return PitcherChangeDecision(
+          newPitcher: context.closer!,
+          reason: 'セーブ機会',
+        );
+      }
+      if (_isLatePinchInEighth(context)) {
+        return PitcherChangeDecision(
+          newPitcher: context.closer!,
+          reason: '8回ピンチ',
+        );
+      }
+    }
 
     String? reason;
 
+    // 抑えが既にマウンドにいる場合は、よっぽどの理由がないと降ろさない
+    // （25球到達でのイニング境界スイッチや終盤ピンチでの降板を抑止）
+    if (isCurrentCloser) {
+      // 1イニング限定: 10回以降のイニング境界（outs == 0）で交代
+      // 現代野球では抑えは基本 1IP 運用なので、延長戦は別の救援に任せる
+      if (context.inning > 9 && context.outs == 0) {
+        reason = '抑え1IP終了';
+      }
+      // 大量失点（同点以下になったケース等で、後続の中継ぎに任せる）
+      else if (state.runsAllowed >= runsAllowedThreshold) {
+        reason = '${state.runsAllowed}失点';
+      } else if (state.hitsAllowedStreak >= hitsStreakThreshold) {
+        reason = '${state.hitsAllowedStreak}連打';
+      } else if (state.walksStreak >= walksStreakThreshold) {
+        reason = '${state.walksStreak}連続四球';
+      }
+    }
     // リリーフ投手はイニング境界で短い登板で降ろす
-    if (!isStarter &&
+    else if (!isStarter &&
         context.outs == 0 &&
         state.pitchCount >= relieverPitchCountThreshold) {
       reason = 'イニング終了';
@@ -161,10 +211,56 @@ class SimplePitcherChangeStrategy implements PitcherChangeStrategy {
     return PitcherChangeDecision(newPitcher: newPitcher, reason: reason);
   }
 
+  /// セーブ機会かどうか
+  /// - 9回以降の守備
+  /// - リード（scoreDiff > 0）
+  /// - リード ≤ 3 点 OR リード ≤ 走者数 + 2（連続2HRで同点・逆転）
+  ///   ※「3イニング以上投げて守る」条件は抑えの運用判断には使わない
+  bool _isSaveSituation(PitcherChangeContext context) {
+    if (context.inning < 9) return false;
+    final lead = context.scoreDiff;
+    if (lead <= 0) return false;
+    final runnersOnBase = context.runners.count;
+    return lead <= 3 || lead <= runnersOnBase + 2;
+  }
+
+  /// 8回途中のピンチかどうか（抑えを早めに投入する場面）
+  /// - 8回
+  /// - アウト ≤ 1（2アウトは打席終わり間近で投入する意味が薄い）
+  /// - リード > 0 かつ ≤ 2 点（接戦）
+  /// - 得点圏（2塁 or 3塁）に走者がいる
+  bool _isLatePinchInEighth(PitcherChangeContext context) {
+    if (context.inning != 8) return false;
+    if (context.outs >= 2) return false;
+    final lead = context.scoreDiff;
+    if (lead <= 0 || lead > 2) return false;
+    return context.runners.second != null || context.runners.third != null;
+  }
+
+  /// 先発が完封ペースかどうか
+  /// - 現投手が先発
+  /// - 無失点
+  /// - 球数 < 100
+  /// この場合は抑えに切り替えず、続投させて完封勝ちを狙う。
+  bool _isStarterOnShutoutPace(PitcherChangeContext context, bool isStarter) {
+    if (!isStarter) return false;
+    final state = context.pitchingState;
+    return state.runsAllowed == 0 && state.pitchCount < 100;
+  }
+
   /// 交代先の投手を選択する
   /// デフォルトはブルペンの先頭投手を起用（SeasonController が事前に
-  /// コンディション順に並び替えて渡している前提）
+  /// コンディション順に並び替えて渡している前提）。
+  /// ※ セーブ機会での抑え起用は decide() 側で直接 closer を返している。
+  /// ※ 抑えはセーブ機会以外では使わないので候補から除外する。
+  ///   ただしブルペンが抑えしか残っていない場合は仕方なく抑えを使う。
   Player _selectReliever(PitcherChangeContext context) {
-    return context.availableRelievers.first;
+    final closer = context.closer;
+    if (closer == null) return context.availableRelievers.first;
+    final pool = context.availableRelievers
+        .where((p) => p.id != closer.id)
+        .toList();
+    if (pool.isEmpty) return context.availableRelievers.first;
+    return pool.first;
   }
 }

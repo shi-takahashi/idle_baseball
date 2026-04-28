@@ -230,6 +230,12 @@ class GameSimulator {
       final batter = battingFieldingState.currentBatter(currentBattingOrder);
 
       // 投手交代判断（打者ごとに評価）
+      // 抑え投手は team.closer に指名されていて、まだ未登板（=ブルペンに残っている）
+      // 場合のみ候補として渡す。コンディションの判定は SeasonController が
+      // 既に bullpen を絞った上で渡しているので、ここでは在籍チェックのみ。
+      final closerCandidate = pitchingFieldingState.originalTeam.closer;
+      final isCloserAvailable = closerCandidate != null &&
+          pitchingState.bullpen.any((p) => p.id == closerCandidate.id);
       final changeContext = PitcherChangeContext(
         pitchingState: pitchingState,
         inning: inning,
@@ -238,6 +244,7 @@ class GameSimulator {
         myTeamScore: myTeamScore,
         opponentScore: opponentScoreAtStart + runs,
         runners: runners,
+        closer: isCloserAvailable ? closerCandidate : null,
         random: _random,
       );
       final decision = _pitcherChangeStrategy.decide(changeContext);

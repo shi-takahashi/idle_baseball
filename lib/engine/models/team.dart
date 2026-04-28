@@ -1,6 +1,8 @@
 import 'player.dart';
 import 'enums.dart';
 
+const Object _sentinel = Object();
+
 /// チーム
 class Team {
   final String id;
@@ -17,6 +19,11 @@ class Team {
   // 救援投手（中継ぎ + 抑え、7人想定）
   final List<Player> bullpen;
 
+  // 抑え投手（クローザー）
+  // bullpen の中の1人を指名。セーブ機会で優先的に登板する。
+  // null の場合は抑え未指名（=従来どおり、フレッシュな順で起用）。
+  final Player? closer;
+
   // 控え野手（代打・代走・守備固め要員、8人想定）
   final List<Player> bench;
 
@@ -32,6 +39,7 @@ class Team {
     required this.players,
     this.startingRotation = const [],
     this.bullpen = const [],
+    this.closer,
     this.bench = const [],
     this.defenseAlignment,
   });
@@ -41,6 +49,7 @@ class Team {
     List<Player>? players,
     List<Player>? startingRotation,
     List<Player>? bullpen,
+    Object? closer = _sentinel,
     List<Player>? bench,
     Map<FieldPosition, Player>? defenseAlignment,
   }) {
@@ -51,6 +60,7 @@ class Team {
       players: players ?? this.players,
       startingRotation: startingRotation ?? this.startingRotation,
       bullpen: bullpen ?? this.bullpen,
+      closer: identical(closer, _sentinel) ? this.closer : closer as Player?,
       bench: bench ?? this.bench,
       defenseAlignment: defenseAlignment ?? this.defenseAlignment,
     );

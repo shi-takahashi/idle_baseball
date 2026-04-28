@@ -99,6 +99,9 @@ void main() {
   _printPitcherRanking('最多奪三振', result.pitcherStats.values.toList(),
       (p) => p.strikeoutsRecorded.toDouble(), (v) => v.toInt().toString(),
       min: 1);
+  _printPitcherRanking('最多セーブ', result.pitcherStats.values.toList(),
+      (p) => p.saves.toDouble(), (v) => v.toInt().toString(),
+      min: 1);
   _printPitcherRanking('WHIP', qualifiedPitchers, (p) => p.whip,
       (v) => v.toStringAsFixed(2),
       ascending: true);
@@ -189,7 +192,7 @@ void _printPitcherRanking(
     print('  ${(i + 1).toString().padLeft(2)}. '
         '${format(getValue(p)).padLeft(6)}  '
         '${p.player.name.padRight(8)} '
-        '(${p.team.name}, ${p.wins}勝${p.losses}敗 '
+        '(${p.team.name}, ${p.wins}勝${p.losses}敗${p.saves}S '
         '${p.inningsPitchedDisplay}回 ${p.strikeoutsRecorded}K)');
   }
 }
