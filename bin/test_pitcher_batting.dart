@@ -20,7 +20,23 @@ void main() {
         hittingPitchers.add(stats);
       }
     }
-    print('  投手の打席合計: $totalPitcherPA / 投手のHR合計: $totalPitcherHR');
+    int totalAB = 0;
+    int totalHits = 0;
+    int totalK = 0;
+    for (final stats in result.batterStats.values) {
+      if (!stats.player.isPitcher) continue;
+      totalAB += stats.atBats;
+      totalHits += stats.hits;
+      totalK += stats.strikeouts;
+    }
+    final ba = totalAB > 0 ? (totalHits / totalAB) : 0;
+    final hrPct = totalPitcherPA > 0 ? (totalPitcherHR / totalPitcherPA * 100) : 0;
+    final kPct = totalPitcherPA > 0 ? (totalK / totalPitcherPA * 100) : 0;
+    print('  投手の打席合計: $totalPitcherPA  '
+        '打率: ${ba.toStringAsFixed(3)}  '
+        'HR率: ${hrPct.toStringAsFixed(2)}%  '
+        'K率: ${kPct.toStringAsFixed(1)}%  '
+        '($totalHits安/${totalAB}打数 ${totalPitcherHR}本 ${totalK}三振)');
     if (hittingPitchers.isNotEmpty) {
       hittingPitchers.sort((a, b) => b.homeRuns.compareTo(a.homeRuns));
       for (final s in hittingPitchers.take(3)) {

@@ -96,6 +96,11 @@ class AtBatSimulator {
   // ミート力1あたりの補正率（インプレーになる確率に影響）
   static const double _meetSwingModifier = 0.015; // 空振り確率補正（高いほど空振り減→インプレー増）
 
+  // ミート力1あたりのインプレー時の打球の質補正
+  // 高ミートでアウト率↓（=ヒット率↑）、低ミートでアウト率↑（=ヒット率↓）
+  // ※ コンタクトの「質」のモデル化。低ミート打者（投手など）は当てても弱い当たりに。
+  static const double _meetOutModifier = 0.020;
+
   // 基準選球眼（この選球眼で基本確率になる）
   static const int _baseEye = 5;
 
@@ -634,6 +639,7 @@ class AtBatSimulator {
   InPlayProbabilities _calculateInPlayProbabilities({
     required int speed,
     required int control,
+    required int meet,
     required int power,
     required int fielding,
     required int catcherLead,
@@ -685,10 +691,16 @@ class AtBatSimulator {
     final tripleModifier = powerDiff * _powerTripleModifier;
     final singleModifier = powerDiff * _powerSingleModifier;
 
+    // ミート力によるアウト率補正
+    // 高ミート → アウト率↓（ヒットが増える）、低ミート → アウト率↑（弱い当たり=アウト）
+    // 投手のような低ミート打者は、当てても弱い当たりになりアウトになりやすい
+    final meetDiff = meet - _baseMeet;
+    final meetOutAdjustment = -meetDiff * _meetOutModifier;
+
     // プラトーン補正（同じ手=投手有利）
     final platoonOut = isPlatoonDisadvantage ? _platoonOutModifier : 0.0;
 
-    // アウト率: 球種固有 + 球速（ストレートのみ）+ パラメータ + 制球力 + 守備力 + リード - 疲労 + プラトーン
+    // アウト率: 球種固有 + 球速（ストレートのみ）+ パラメータ + 制球力 + 守備力 + リード - 疲労 + ミート + プラトーン
     final outModifier = pitchOutModifier +
         speedModifier +
         paramScaling +
@@ -696,12 +708,16 @@ class AtBatSimulator {
         fieldingModifierValue +
         leadModifierValue -
         fatigueOutDecrease +
+        meetOutAdjustment +
         platoonOut;
     final probOut = (_baseProbOut + outModifier).clamp(0.45, 0.85);
 
     // 長打確率（長打力 + 球種効果 + 疲労で変動）
+    // floor を 0.002 に下げて、低長打力打者（投手など）の HR をより抑える
+    // 基本値 0.025 はインプレー結果の正規化後の HR 率がリーグ平均で約2.5%になるよう調整
     final probHomeRun =
-        (0.04 + homeRunModifier + pitchXbhModifier + fatigueXbhIncrease).clamp(0.005, 0.18);
+        (0.025 + homeRunModifier + pitchXbhModifier + fatigueXbhIncrease)
+            .clamp(0.002, 0.18);
     final probTriple =
         (_baseProbTriple + tripleModifier + pitchXbhModifier * 0.3 + fatigueXbhIncrease * 0.3)
             .clamp(0.005, 0.04);
@@ -759,8 +775,8 @@ class AtBatSimulator {
     return const InPlayResult(result: AtBatResultType.groundOut);
   }
 
-  /// インプレー時の打席結果を決定（球速・制球力・長打力・守備力・走力・球種・疲労考慮）
-  /// ミート力はインプレーになる確率に影響し、インプレー後の結果には影響しない
+  /// インプレー時の打席結果を決定（球速・制球力・ミート・長打力・守備力・走力・球種・疲労考慮）
+  /// ミート力は (1) インプレーになる確率 (2) インプレー時のアウト率 の両方に影響
   /// fielding: 打球方向を守る野手の守備力（0〜10、nullの場合はデフォルト5）
   /// batterSpeed: 打者の走力（1〜10、内野安打判定に使用）
   /// fieldPosition: 打球方向（内野安打判定に使用）
@@ -773,6 +789,7 @@ class AtBatSimulator {
     BattedBallType battedBallType,
     int speed,
     int control,
+    int meet,
     int power,
     int? fielding, {
     int? batterSpeed,
@@ -793,6 +810,7 @@ class AtBatSimulator {
     final probs = _calculateInPlayProbabilities(
       speed: speed,
       control: control,
+      meet: meet,
       power: power,
       fielding: fieldingValue,
       catcherLead: leadValue,
@@ -802,7 +820,16 @@ class AtBatSimulator {
       isPlatoonDisadvantage: isPlatoonDisadvantage,
     );
 
-    final roll = _random.nextDouble();
+    // 5つの確率を合算して正規化したうえでロール判定する。
+    // 旧実装は「残り確率 → HR/Double 二択」を `probHomeRun / (probHomeRun + 0.01)` で
+    // 行っていたが、probHomeRun が小さい（=低長打力）場合でも 30% 前後 HR に振られる
+    // 不具合があったため、正規化して probHomeRun の比率がそのまま反映されるよう修正。
+    final total = probs.probOut +
+        probs.probSingle +
+        probs.probDouble +
+        probs.probTriple +
+        probs.probHomeRun;
+    final roll = _random.nextDouble() * total;
     double cumulative = 0;
 
     // アウト判定
@@ -842,12 +869,8 @@ class AtBatSimulator {
       return const InPlayResult(result: AtBatResultType.triple);
     }
 
-    // 本塁打（残り）
-    if (_random.nextDouble() < probs.probHomeRun / (probs.probHomeRun + 0.01)) {
-      return const InPlayResult(result: AtBatResultType.homeRun);
-    }
-    // 本塁打にならなかった場合は二塁打
-    return const InPlayResult(result: AtBatResultType.double_);
+    // 残りは本塁打（probHomeRun 分）
+    return const InPlayResult(result: AtBatResultType.homeRun);
   }
 
   /// 1打席をシミュレート（盗塁判定を含む）
@@ -1103,6 +1126,7 @@ class AtBatSimulator {
         pitch: pitch,
         balls: balls,
         strikes: strikes,
+        meet: meet,
         power: power,
         control: control,
         speed: speed,
@@ -1176,6 +1200,7 @@ class AtBatSimulator {
     required PitchResult pitch,
     required int balls,
     required int strikes,
+    required int meet,
     required int power,
     required int control,
     required int speed,
@@ -1211,6 +1236,7 @@ class AtBatSimulator {
           pitch.battedBallType!,
           speed,
           control,
+          meet,
           power,
           fielding,
           batterSpeed: batterSpeed,
