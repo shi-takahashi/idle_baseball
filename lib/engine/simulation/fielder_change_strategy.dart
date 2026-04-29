@@ -143,7 +143,8 @@ class SimpleFielderChangeStrategy implements FielderChangeStrategy {
     if (state.bench.isEmpty) return null;
     if (ctx.inning < minInningForPinchHit) return null;
     if (ctx.scoreDiff > 0) return null;
-    if (ctx.battingOrder == 0) return null;
+    // 投手スロット（9番=index 8）は専用の投手交代ロジックで扱うのでここではスキップ
+    if (ctx.battingOrder == 8) return null;
 
     final current = ctx.currentBatter;
     final currentScore = (current.meet ?? 5) + (current.power ?? 5);
@@ -175,7 +176,8 @@ class SimpleFielderChangeStrategy implements FielderChangeStrategy {
     if (state.bench.isEmpty) return null;
     if (ctx.inning < minInningForPinchRun) return null;
     if (ctx.scoreDiff.abs() > maxScoreDiffForPinchRun) return null;
-    if (ctx.battingOrder == 0) return null;
+    // 投手スロット（9番=index 8）は専用の投手交代ロジックで扱うのでここではスキップ
+    if (ctx.battingOrder == 8) return null;
 
     final runnerSpeed = ctx.runner.speed ?? 5;
     if (runnerSpeed > slowRunnerThreshold) return null;

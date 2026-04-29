@@ -372,7 +372,7 @@ class SeasonController {
   }
 
   /// 今日の先発を選出する
-  /// 1. ローテが空なら従来通り players[0] を使用（後方互換）
+  /// 1. ローテが空なら従来通り players[8] を使用（後方互換）
   /// 2. 中4日以上空いている SP に絞る（hard min）
   /// 3. その中でコンディション 100 のフル回復 SP がいれば、登板から最も空いている者
   /// 4. フル回復者がいなければ、最も登板から空いている者（コンディションは二次基準）
@@ -462,16 +462,16 @@ class SeasonController {
   }
 
   /// 1試合分の Team を構築する：
-  /// - players[0] を当日の先発 SP に差し替え
+  /// - players[8]（9番打者=投手枠）を当日の先発 SP に差し替え
   /// - bullpen をフレッシュな RP 順に並び替え（疲労した RP は除外）
   ///
   /// ロール別の getter（team.closer / setupPitcher など）は bullpen 内を
   /// reliefRole で検索するため、疲労した投手はここで bullpen から外れることで
   /// 自動的に「当日不在」扱いになる（連投回避）。
   Team _withGameLineup(Team team, Player sp) {
-    final newPlayers = team.players.isNotEmpty && team.players[0].id == sp.id
+    final newPlayers = team.players.length >= 9 && team.players[8].id == sp.id
         ? team.players
-        : [sp, ...team.players.skip(1)];
+        : [...team.players.take(8), sp];
     return team.copyWith(
       players: newPlayers,
       bullpen: _availableBullpen(team),

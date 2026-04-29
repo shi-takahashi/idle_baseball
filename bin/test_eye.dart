@@ -25,7 +25,6 @@ void main() {
       id: name,
       name: name,
       players: [
-        pitcher,
         ...List.generate(
           8,
           (i) => Player(
@@ -38,6 +37,7 @@ void main() {
             eye: eyeValue,
           ),
         ),
+        pitcher,
       ],
     );
   }
@@ -53,7 +53,6 @@ void main() {
       id: name,
       name: name,
       players: [
-        pitcher,
         ...List.generate(
           8,
           (i) => Player(
@@ -66,6 +65,7 @@ void main() {
             eye: eye,
           ),
         ),
+        pitcher,
       ],
     );
   }
@@ -75,7 +75,6 @@ void main() {
     id: 'opponent',
     name: '相手',
     players: [
-      pitcher,
       ...List.generate(
         8,
         (i) => Player(
@@ -88,6 +87,7 @@ void main() {
           eye: 5,
         ),
       ),
+      pitcher,
     ],
   );
 

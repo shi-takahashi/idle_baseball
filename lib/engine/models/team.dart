@@ -7,11 +7,15 @@ class Team {
   final String name;
   // スコアボード等の狭い表示領域で使う英字1〜2文字の略称（例: フェニックス → "P"）
   final String shortName;
-  final List<Player> players; // 9人（players[0]=今日の先発、players[1..8]=スタメン野手）
+  // 9人。打順順に並ぶ:
+  //   players[0..7] = 1〜8番（スタメン野手）
+  //   players[8]    = 9番（投手）
+  // DH 非採用のため、投手は最弱打者として9番に固定する。
+  final List<Player> players;
 
   // 先発ローテーション（6人想定）
-  // players[0] はこのリストの中から日々選出される。
-  // 既存テストコード等の互換のため省略可能（空なら従来どおり players[0] が固定の先発）
+  // players[8] はこのリストの中から日々選出される。
+  // 既存テストコード等の互換のため省略可能（空なら従来どおり players[8] が固定の先発）
   final List<Player> startingRotation;
 
   // 救援投手（8人想定: 抑え1 + セットアッパー1 + 中継ぎ2 + ワンポイント1 + ロング1 + 敗戦処理2）
@@ -102,7 +106,7 @@ class Team {
   }
 
   /// 先発投手
-  Player get pitcher => players[0];
+  Player get pitcher => players[8];
 
   /// 指定ポジションの守備を担当する選手を取得
   /// defenseAlignment が設定されていない場合はデフォルト配置を使用
@@ -112,26 +116,26 @@ class Team {
       return defenseAlignment![position];
     }
 
-    // デフォルト配置（打順でポジションを割り当て）
-    // 0: 投手, 1: 捕手, 2: 一塁, 3: 二塁, 4: 三塁, 5: 遊撃, 6: 左翼, 7: 中堅, 8: 右翼
+    // デフォルト配置（打順1〜8番が野手、9番が投手）
+    // 0: 捕手, 1: 一塁, 2: 二塁, 3: 三塁, 4: 遊撃, 5: 左翼, 6: 中堅, 7: 右翼, 8: 投手
     switch (position) {
-      case FieldPosition.pitcher:
-        return players[0];
       case FieldPosition.catcher:
-        return players[1];
+        return players[0];
       case FieldPosition.first:
-        return players[2];
+        return players[1];
       case FieldPosition.second:
-        return players[3];
+        return players[2];
       case FieldPosition.third:
-        return players[4];
+        return players[3];
       case FieldPosition.shortstop:
-        return players[5];
+        return players[4];
       case FieldPosition.left:
-        return players[6];
+        return players[5];
       case FieldPosition.center:
-        return players[7];
+        return players[6];
       case FieldPosition.right:
+        return players[7];
+      case FieldPosition.pitcher:
         return players[8];
     }
   }

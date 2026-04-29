@@ -5,8 +5,8 @@ import 'player_generator.dart';
 /// チームを自動生成する
 ///
 /// 1チーム29人構成:
-/// - 先発ローテ 6 (startingRotation、うち1人が試合ごとに players[0] に入る)
-/// - スタメン野手 8 (players[1..8]: 捕/一/二/三/遊/左/中/右)
+/// - スタメン野手 8 (players[0..7]: 1〜8番。捕/一/二/三/遊/左/中/右)
+/// - 先発ローテ 6 (startingRotation、うち1人が試合ごとに players[8]=9番 に入る)
 /// - 救援投手 7 (bullpen: 中継6 + 抑え1)
 /// - 控え野手 8 (bench: 控え捕手1・内野UT3・外野UT2・万能UT2)
 class TeamGenerator {
@@ -41,9 +41,9 @@ class TeamGenerator {
   }
 
   Team _generateTeam(String id, String name, String shortName, int color) {
-    // ---- スタメン野手8人（打順1〜8、players[1..8]の順序でデフォルト守備位置に対応） ----
+    // ---- スタメン野手8人（打順1〜8、players[0..7]の順序でデフォルト守備位置に対応） ----
     // Teamのデフォルト配置:
-    // players[1]=捕 / [2]=一 / [3]=二 / [4]=三 / [5]=遊 / [6]=左 / [7]=中 / [8]=右
+    // players[0]=捕 / [1]=一 / [2]=二 / [3]=三 / [4]=遊 / [5]=左 / [6]=中 / [7]=右
     final starterPositions = [
       DefensePosition.catcher,
       DefensePosition.first,
@@ -63,7 +63,7 @@ class TeamGenerator {
     }
 
     // ---- 先発ローテ 6人 ----
-    // players[0] には rotation[0] を初期値として入れておく（最初の試合の先発）。
+    // players[8]（=9番打者枠）には rotation[0] を初期値として入れておく（最初の試合の先発）。
     // 以降は SeasonController が日々選んで差し替える。
     //
     // 並び順をランダムにシャッフルする狙い:
@@ -184,7 +184,7 @@ class TeamGenerator {
       id: id,
       name: name,
       shortName: shortName,
-      players: [rotation[0], ...starters],
+      players: [...starters, rotation[0]],
       startingRotation: rotation,
       bullpen: bullpen,
       bench: bench,

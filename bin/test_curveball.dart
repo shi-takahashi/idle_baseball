@@ -43,7 +43,6 @@ void main() {
       id: name,
       name: name,
       players: [
-        pitcher,
         ...List.generate(
           8,
           (i) => Player(
@@ -55,6 +54,7 @@ void main() {
             speed: 5,
           ),
         ),
+        pitcher,
       ],
     );
   }
@@ -68,7 +68,6 @@ void main() {
     id: 'opponent',
     name: '相手チーム',
     players: [
-      const Player(id: 'p', name: '投手', number: 18, averageSpeed: 145, control: 5),
       ...List.generate(
         8,
         (i) => Player(
@@ -80,6 +79,7 @@ void main() {
           speed: 5,
         ),
       ),
+      const Player(id: 'p', name: '投手', number: 18, averageSpeed: 145, control: 5),
     ],
   );
 

@@ -7,7 +7,6 @@ void main() {
     id: 'team_a',
     name: 'タイガース',
     players: [
-      const Player(id: 'a_0', name: '剛速球太郎', number: 18, averageSpeed: 155, control: 4),
       const Player(id: 'a_1', name: '首位打者', number: 1, meet: 8, power: 5),  // 巧打タイプ
       const Player(id: 'a_2', name: '巧打者', number: 2, meet: 7, power: 4),    // 巧打タイプ
       const Player(id: 'a_3', name: '強打者', number: 3, meet: 6, power: 8),    // パワータイプ
@@ -16,6 +15,7 @@ void main() {
       const Player(id: 'a_6', name: '堅実打者', number: 6, meet: 6, power: 5),  // バランス
       const Player(id: 'a_7', name: '下位打者', number: 7, meet: 5, power: 4),  // 平均
       const Player(id: 'a_8', name: '守備職人', number: 8, meet: 4, power: 3),  // 守備型
+      const Player(id: 'a_0', name: '剛速球太郎', number: 18, averageSpeed: 155, control: 4),
     ],
   );
 
@@ -24,7 +24,6 @@ void main() {
     id: 'team_b',
     name: 'ジャイアンツ',
     players: [
-      const Player(id: 'b_0', name: '技巧派次郎', number: 11, averageSpeed: 138, control: 8),
       const Player(id: 'b_1', name: '一番打者', number: 1, meet: 6, power: 4),
       const Player(id: 'b_2', name: '二番打者', number: 2, meet: 5, power: 3),
       const Player(id: 'b_3', name: '三番打者', number: 3, meet: 6, power: 6),
@@ -33,6 +32,7 @@ void main() {
       const Player(id: 'b_6', name: '六番打者', number: 6, meet: 4, power: 4),
       const Player(id: 'b_7', name: '七番打者', number: 7, meet: 4, power: 3),
       const Player(id: 'b_8', name: '八番打者', number: 8, meet: 3, power: 2),
+      const Player(id: 'b_0', name: '技巧派次郎', number: 11, averageSpeed: 138, control: 8),
     ],
   );
 

@@ -13,18 +13,7 @@ void main() {
       id: name,
       name: name,
       players: [
-        // 投手（標準）
-        const Player(
-          id: 'pitcher',
-          name: 'テスト投手',
-          number: 18,
-          averageSpeed: 145,
-          fastball: 5,
-          control: 5,
-          stamina: 5,
-          slider: 5,
-        ),
-        // 捕手（リード値を指定）
+        // 1番=捕手（リード値を指定）
         Player(
           id: 'catcher',
           name: '捕手',
@@ -34,7 +23,7 @@ void main() {
           speed: 5,
           lead: leadValue,
         ),
-        // その他の野手
+        // 2〜8番の野手
         ...List.generate(
           7,
           (i) => Player(
@@ -46,6 +35,17 @@ void main() {
             speed: 5,
           ),
         ),
+        // 9番=投手（標準）
+        const Player(
+          id: 'pitcher',
+          name: 'テスト投手',
+          number: 18,
+          averageSpeed: 145,
+          fastball: 5,
+          control: 5,
+          stamina: 5,
+          slider: 5,
+        ),
       ],
     );
   }
@@ -55,15 +55,6 @@ void main() {
     id: 'batting',
     name: '打撃チーム',
     players: [
-      const Player(
-        id: 'b_pitcher',
-        name: '投手',
-        number: 18,
-        averageSpeed: 145,
-        fastball: 5,
-        control: 5,
-        stamina: 5,
-      ),
       ...List.generate(
         8,
         (i) => Player(
@@ -75,6 +66,15 @@ void main() {
           speed: 5,
           eye: 5,
         ),
+      ),
+      const Player(
+        id: 'b_pitcher',
+        name: '投手',
+        number: 18,
+        averageSpeed: 145,
+        fastball: 5,
+        control: 5,
+        stamina: 5,
       ),
     ],
   );
