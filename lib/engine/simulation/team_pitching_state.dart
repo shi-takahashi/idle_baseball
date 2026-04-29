@@ -76,7 +76,10 @@ class TeamPitchingState {
       hitsAllowedStreak = 0;
       onBaseStreak++;
       walksStreak = 0;
-    } else if (atBat.result.isOut) {
+    } else if (atBat.result.isOut ||
+        atBat.result == AtBatResultType.fieldersChoice) {
+      // 野選は打者は1塁に出るが、先頭走者をアウトにしているので
+      // 投手側の streak はアウトと同じく全てリセット
       hitsAllowedStreak = 0;
       onBaseStreak = 0;
       walksStreak = 0;

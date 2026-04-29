@@ -1,6 +1,7 @@
 import 'dart:math';
 import '../models/models.dart';
 import 'at_bat_simulator.dart';
+import 'bunt_decision_strategy.dart';
 import 'fielder_change_strategy.dart';
 import 'pitcher_change_strategy.dart';
 import 'steal_simulator.dart';
@@ -14,18 +15,22 @@ class GameSimulator {
   final StealSimulator _stealSimulator;
   final PitcherChangeStrategy _pitcherChangeStrategy;
   final FielderChangeStrategy _fielderChangeStrategy;
+  final BuntDecisionStrategy _buntDecisionStrategy;
 
   GameSimulator({
     Random? random,
     PitcherChangeStrategy? pitcherChangeStrategy,
     FielderChangeStrategy? fielderChangeStrategy,
+    BuntDecisionStrategy? buntDecisionStrategy,
   })  : _random = random ?? Random(),
         _atBatSimulator = AtBatSimulator(random: random),
         _stealSimulator = StealSimulator(random: random),
         _pitcherChangeStrategy =
             pitcherChangeStrategy ?? const SimplePitcherChangeStrategy(),
         _fielderChangeStrategy =
-            fielderChangeStrategy ?? const SimplePinchHitStrategy();
+            fielderChangeStrategy ?? const SimplePinchHitStrategy(),
+        _buntDecisionStrategy =
+            buntDecisionStrategy ?? const SimpleBuntDecisionStrategy();
 
   /// ヒット（単打・二塁打・三塁打・本塁打）の場合、打球方向を外野に調整
   /// 内野安打以外で内野方向へのヒットは野球的に不自然なため
@@ -309,18 +314,40 @@ class GameSimulator {
       // 守備側のスナップショット（現在の守備配置を反映したTeam）
       final pitchingTeamSnapshot = pitchingFieldingState.asTeamSnapshot();
 
-      // 打席シミュレーション（盗塁判定を含む）
-      final atBatResult = _atBatSimulator.simulateAtBat(
-        pitcher,
-        batter,
-        pitchingTeamSnapshot,
+      // バント判定: 試行する状況なら simulateBuntAtBat を使う
+      final buntCtx = BuntContext(
+        batter: batter,
         runners: runners,
         outs: outs,
-        stealSimulator: _stealSimulator,
-        pitchCount: pitchingState.pitchCount,
-        condition: pitchingState.condition,
-        batterConditionModifier: batterConditionModifiers[batter.id] ?? 0,
+        inning: inning,
+        myTeamScore: opponentScoreAtStart + runs,
+        opponentScore: myTeamScore,
+        random: _random,
       );
+      final shouldBunt = _buntDecisionStrategy.shouldBunt(buntCtx);
+
+      // 打席シミュレーション（バント時はバント専用ルート）
+      final atBatResult = shouldBunt
+          ? _atBatSimulator.simulateBuntAtBat(
+              pitcher,
+              batter,
+              runners: runners,
+              condition: pitchingState.condition,
+              batterConditionModifier:
+                  batterConditionModifiers[batter.id] ?? 0,
+            )
+          : _atBatSimulator.simulateAtBat(
+              pitcher,
+              batter,
+              pitchingTeamSnapshot,
+              runners: runners,
+              outs: outs,
+              stealSimulator: _stealSimulator,
+              pitchCount: pitchingState.pitchCount,
+              condition: pitchingState.condition,
+              batterConditionModifier:
+                  batterConditionModifiers[batter.id] ?? 0,
+            );
       // 現投手の投球数を更新
       pitchingState.pitchCount += atBatResult.pitches.length;
 
@@ -761,7 +788,74 @@ class GameSimulator {
         return _advanceOnNoChange(runners);
       case AtBatResultType.reachedOnError:
         return _advanceOnError(runners, batter);
+      case AtBatResultType.sacrificeBunt:
+        return _advanceOnSacrificeBunt(runners);
+      case AtBatResultType.fieldersChoice:
+        return _advanceOnFieldersChoice(runners, batter);
     }
+  }
+
+  /// 送りバント成功時の走塁
+  /// 打者は1塁でアウト。各走者が1塁ずつ進む。
+  /// （簡易: 進塁先が空いている場合のみ進塁。詰まっていたら据え置き）
+  _RunnerAdvanceResult _advanceOnSacrificeBunt(BaseRunners runners) {
+    final scorers = <Player>[];
+    Player? newSecond;
+    Player? newThird;
+
+    // 3塁ランナーは普通動かない（バント=ゴロは内野前なのでホーム生還は稀）
+    newThird = runners.third;
+
+    // 2塁ランナーは3塁が空いていれば3塁へ
+    if (runners.second != null) {
+      if (newThird == null) {
+        newThird = runners.second;
+      } else {
+        // 3塁が詰まっていれば据え置き（実際には起こらない想定だが念のため）
+        newThird = runners.second;
+      }
+    }
+
+    // 1塁ランナーは2塁が空いていれば2塁へ
+    if (runners.first != null) {
+      newSecond = runners.first;
+    }
+
+    return _RunnerAdvanceResult(
+      newRunners: BaseRunners(second: newSecond, third: newThird),
+      scoringRunners: scorers,
+    );
+  }
+
+  /// 野選（FC）時の走塁
+  /// バント失敗で先頭走者がアウト。打者は1塁でセーフ。
+  /// 1塁ランナーがいれば → 2塁で封殺、打者は1塁
+  /// 2塁ランナーがいて1塁が空 → 3塁で封殺、打者は1塁
+  /// 1,2塁の場合は2塁ランナー（先頭）がアウト、1塁ランナーは2塁、打者は1塁
+  _RunnerAdvanceResult _advanceOnFieldersChoice(
+    BaseRunners runners,
+    Player batter,
+  ) {
+    Player? newFirst = batter;
+    Player? newSecond;
+    Player? newThird = runners.third;
+
+    if (runners.first != null && runners.second != null) {
+      // 1,2塁: 2塁ランナー（先頭）が3塁で封殺、1塁ランナー → 2塁、打者 → 1塁
+      newSecond = runners.first;
+    } else if (runners.second != null) {
+      // 2塁のみ: 2塁ランナーが3塁で封殺、打者 → 1塁
+    } else if (runners.first != null) {
+      // 1塁のみ: 1塁ランナーが2塁で封殺、打者 → 1塁
+    }
+
+    // 先頭走者をアウトにする → 1アウト追加
+    return _RunnerAdvanceResult(
+      newRunners:
+          BaseRunners(first: newFirst, second: newSecond, third: newThird),
+      additionalOuts: 1,
+      scoringRunners: const [],
+    );
   }
 
   /// ホームラン時の走塁

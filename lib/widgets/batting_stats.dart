@@ -351,6 +351,10 @@ class BattingStats extends StatelessWidget {
         return '直球';
       case AtBatResultType.reachedOnError:
         return 'エラー';
+      case AtBatResultType.sacrificeBunt:
+        return '送りバント';
+      case AtBatResultType.fieldersChoice:
+        return '野選';
     }
   }
 }

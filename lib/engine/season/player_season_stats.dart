@@ -19,6 +19,7 @@ class BatterSeasonStats {
   int stolenBases = 0; // 盗塁成功
   int caughtStealing = 0; // 盗塁死
   int sacFlies = 0; // 犠飛
+  int sacrificeBunts = 0; // 犠打（送りバント成功）
 
   BatterSeasonStats({required this.player, required this.team});
 

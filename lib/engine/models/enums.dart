@@ -163,6 +163,8 @@ enum AtBatResultType {
   flyOut, // フライアウト
   lineOut, // ライナーアウト
   reachedOnError, // エラー出塁
+  sacrificeBunt, // 送りバント成功（打者OUT・走者進塁、打数にカウントしない）
+  fieldersChoice, // 野選（バント失敗で先頭走者OUT・打者は1塁セーフ）
 }
 
 /// 塁
@@ -339,7 +341,8 @@ extension AtBatResultTypeExtension on AtBatResultType {
         this == AtBatResultType.groundOut ||
         this == AtBatResultType.doublePlay ||
         this == AtBatResultType.flyOut ||
-        this == AtBatResultType.lineOut;
+        this == AtBatResultType.lineOut ||
+        this == AtBatResultType.sacrificeBunt;
   }
 
   /// 併殺打かどうか
@@ -352,9 +355,22 @@ extension AtBatResultTypeExtension on AtBatResultType {
     return this == AtBatResultType.reachedOnError;
   }
 
-  /// 打者が出塁するかどうか
+  /// 送りバント成功かどうか（打数にカウントせず犠打として記録）
+  bool get isSacrificeBunt {
+    return this == AtBatResultType.sacrificeBunt;
+  }
+
+  /// 野選（FC: 走者OUT・打者SAFE）かどうか
+  bool get isFieldersChoice {
+    return this == AtBatResultType.fieldersChoice;
+  }
+
+  /// 打者が出塁するかどうか（安打・四球・エラー出塁・野選）
   bool get isOnBase {
-    return isHit || this == AtBatResultType.walk || this == AtBatResultType.reachedOnError;
+    return isHit ||
+        this == AtBatResultType.walk ||
+        this == AtBatResultType.reachedOnError ||
+        this == AtBatResultType.fieldersChoice;
   }
 
   /// 表示用の文字列
@@ -384,6 +400,10 @@ extension AtBatResultTypeExtension on AtBatResultType {
         return 'ライナー';
       case AtBatResultType.reachedOnError:
         return 'エラー出塁';
+      case AtBatResultType.sacrificeBunt:
+        return '送りバント';
+      case AtBatResultType.fieldersChoice:
+        return '野選';
     }
   }
 }

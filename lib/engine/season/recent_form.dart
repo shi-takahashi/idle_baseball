@@ -65,6 +65,8 @@ class RecentForm {
 
   void recordAtBat(AtBatResult ab) {
     if (ab.isIncomplete) return;
+    // 送りバントは打者が「打ちに行った打席」ではないので調子の指標から除外
+    if (ab.result == AtBatResultType.sacrificeBunt) return;
     _window.add(_PA.from(ab));
     if (_window.length > maxWindow) _window.removeAt(0);
   }

@@ -1160,6 +1160,132 @@ class AtBatSimulator {
     }
   }
 
+  /// バント打席をシミュレートする
+  ///
+  /// 通常の打席ループ（球種選択 → 結果判定）とは異なり、
+  /// 結果を能力ベースの確率テーブルから直接決定し、表示用に簡易的な
+  /// 投球シーケンスを合成して返す。
+  ///
+  /// ランナー進塁処理は呼び出し側（GameSimulator._advanceRunners）が
+  /// 結果タイプに応じて行う。
+  AtBatSimulationResult simulateBuntAtBat(
+    Player pitcher,
+    Player batter, {
+    required BaseRunners runners,
+    PitcherCondition condition = const PitcherCondition(),
+    int batterConditionModifier = 0,
+  }) {
+    final meet =
+        ((batter.meet ?? 5) + batterConditionModifier).clamp(1, 10);
+    final batterSpeed =
+        ((batter.speed ?? 5) + batterConditionModifier).clamp(1, 10);
+    final avgSpeed = (pitcher.averageSpeed ?? 145) + condition.speedModifier;
+
+    final outcome = _rollBuntOutcome(meet: meet, batterSpeed: batterSpeed);
+    final fieldPosition =
+        outcome == AtBatResultType.walk || outcome == AtBatResultType.strikeout
+            ? null
+            : _pickBuntFieldPosition(outcome);
+    final pitches = _synthesizeBuntPitches(outcome, avgSpeed, fieldPosition);
+
+    return AtBatSimulationResult(
+      result: outcome,
+      pitches: pitches,
+      updatedRunners: runners, // ランナー進塁は GameSimulator 側で行う
+    );
+  }
+
+  /// バント打席の結果を確率テーブルで決定
+  AtBatResultType _rollBuntOutcome({
+    required int meet,
+    required int batterSpeed,
+  }) {
+    final mF = (meet - 5) / 5.0; // -0.8 〜 +1.0
+    final sF = (batterSpeed - 5) / 5.0;
+
+    final pStrikeout = (0.06 - mF * 0.04).clamp(0.02, 0.15);
+    const pWalk = 0.03;
+    final pDP = (0.05 - mF * 0.03 - sF * 0.015).clamp(0.005, 0.10);
+    final pPopOut = (0.08 - mF * 0.045).clamp(0.02, 0.15);
+    final pFC = (0.10 - mF * 0.05 - sF * 0.02).clamp(0.02, 0.20);
+    final pBuntSafe = (0.05 + sF * 0.10 + mF * 0.02).clamp(0.01, 0.30);
+
+    final r = _random.nextDouble();
+    double cum = 0;
+    cum += pStrikeout;
+    if (r < cum) return AtBatResultType.strikeout;
+    cum += pWalk;
+    if (r < cum) return AtBatResultType.walk;
+    cum += pDP;
+    if (r < cum) return AtBatResultType.doublePlay;
+    cum += pPopOut;
+    if (r < cum) return AtBatResultType.flyOut;
+    cum += pFC;
+    if (r < cum) return AtBatResultType.fieldersChoice;
+    cum += pBuntSafe;
+    if (r < cum) return AtBatResultType.infieldHit;
+    return AtBatResultType.sacrificeBunt;
+  }
+
+  /// バント打球の方向を結果に応じて決定（投手前・三塁前・一塁前・捕手前のいずれか）
+  FieldPosition _pickBuntFieldPosition(AtBatResultType outcome) {
+    if (outcome == AtBatResultType.flyOut) {
+      // バント小フライ: 投手前/捕手前/一塁前/三塁前 が多い（外野には飛ばない）
+      final r = _random.nextDouble();
+      if (r < 0.40) return FieldPosition.pitcher;
+      if (r < 0.70) return FieldPosition.catcher;
+      if (r < 0.85) return FieldPosition.third;
+      return FieldPosition.first;
+    }
+    // 通常のバント: 投手前と三塁前が多い
+    final r = _random.nextDouble();
+    if (r < 0.45) return FieldPosition.pitcher;
+    if (r < 0.80) return FieldPosition.third;
+    if (r < 0.95) return FieldPosition.first;
+    return FieldPosition.catcher;
+  }
+
+  /// 結果に応じた表示用の投球シーケンスを合成
+  List<PitchResult> _synthesizeBuntPitches(
+    AtBatResultType outcome,
+    int avgSpeed,
+    FieldPosition? fieldPosition,
+  ) {
+    PitchResult ball() => PitchResult(
+          type: PitchResultType.ball,
+          pitchType: PitchType.fastball,
+          speed: avgSpeed,
+        );
+    PitchResult foul() => PitchResult(
+          type: PitchResultType.foul,
+          pitchType: PitchType.fastball,
+          speed: avgSpeed,
+        );
+    PitchResult inPlay() => PitchResult(
+          type: PitchResultType.inPlay,
+          pitchType: PitchType.fastball,
+          battedBallType: BattedBallType.groundBall,
+          fieldPosition: fieldPosition,
+          speed: avgSpeed,
+        );
+
+    switch (outcome) {
+      case AtBatResultType.walk:
+        // バント中の四球（稀）: 4ボール
+        return [ball(), ball(), ball(), ball()];
+      case AtBatResultType.strikeout:
+        // 3バント失敗: ファウル3つ
+        return [foul(), foul(), foul()];
+      default:
+        // インプレー: 0〜1ボール + バント
+        final preBalls = _random.nextInt(2);
+        return [
+          for (int i = 0; i < preBalls; i++) ball(),
+          inPlay(),
+        ];
+    }
+  }
+
   /// 盗塁と投球の組み合わせを解決
   _StealPitchResult _resolveStealAndPitch({
     required List<StealAttempt> stealAttempts,

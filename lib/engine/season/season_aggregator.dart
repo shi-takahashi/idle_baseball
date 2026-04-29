@@ -326,9 +326,11 @@ class SeasonAggregator {
           bStats.plateAppearances++;
           final isSacFly =
               ab.result == AtBatResultType.flyOut && ab.rbiCount > 0;
+          final isSacBunt = ab.result == AtBatResultType.sacrificeBunt;
           if (isSacFly) bStats.sacFlies++;
-          // 打数: 打席 - 四球 - 犠飛
-          if (ab.result != AtBatResultType.walk && !isSacFly) {
+          if (isSacBunt) bStats.sacrificeBunts++;
+          // 打数: 打席 - 四球 - 犠飛 - 犠打
+          if (ab.result != AtBatResultType.walk && !isSacFly && !isSacBunt) {
             bStats.atBats++;
           }
           if (ab.result == AtBatResultType.walk) bStats.walks++;

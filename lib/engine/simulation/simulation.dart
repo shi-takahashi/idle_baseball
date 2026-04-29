@@ -1,5 +1,6 @@
 // シミュレーションのエクスポート
 export 'at_bat_simulator.dart';
+export 'bunt_decision_strategy.dart';
 export 'error_simulator.dart';
 export 'fielder_change_strategy.dart';
 export 'game_simulator.dart';
