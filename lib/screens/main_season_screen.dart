@@ -5,6 +5,7 @@ import 'daily_screen.dart';
 import 'individual_stats_screen.dart';
 import 'season_listenable.dart';
 import 'standings_screen.dart';
+import 'team_list_screen.dart';
 
 /// シーズン中の主画面
 ///
@@ -30,6 +31,7 @@ class _MainSeasonScreenState extends State<MainSeasonScreen> {
   /// - タブ切替時に既存ルートを保持
   /// - WillPopScope などで個別に pop も可能
   final List<GlobalKey<NavigatorState>> _navigatorKeys = [
+    GlobalKey<NavigatorState>(),
     GlobalKey<NavigatorState>(),
     GlobalKey<NavigatorState>(),
     GlobalKey<NavigatorState>(),
@@ -123,6 +125,13 @@ class _MainSeasonScreenState extends State<MainSeasonScreen> {
                 listenable: _listenable,
               ),
             ),
+            _buildTabNavigator(
+              3,
+              TeamListScreen(
+                controller: widget.controller,
+                listenable: _listenable,
+              ),
+            ),
           ],
         ),
         bottomNavigationBar: Column(
@@ -149,6 +158,10 @@ class _MainSeasonScreenState extends State<MainSeasonScreen> {
                 NavigationDestination(
                   icon: Icon(Icons.bar_chart),
                   label: '個人成績',
+                ),
+                NavigationDestination(
+                  icon: Icon(Icons.groups_2),
+                  label: 'チーム',
                 ),
               ],
             ),
