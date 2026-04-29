@@ -30,6 +30,20 @@ void main() {
     controller.advanceDay();
   }
   _printLineupWithStats(controller, myTeamId, 25);
+
+  print('\n=== 野手調子の推移（自チーム1番打者、Day 1〜30） ===');
+  // 別途新しいシーズンで毎日のコンディションを追跡
+  final c2 = SeasonController.newSeason(random: Random(7));
+  final myTeam = c2.myTeam;
+  final tracked = myTeam.players.first; // 任意の野手
+  print('対象: ${tracked.name}');
+  final timeline = <String>[];
+  while (c2.currentDay < 30) {
+    c2.advanceDay();
+    final s = c2.batterConditionState(tracked.id);
+    timeline.add(s == 1 ? '+' : (s == -1 ? '-' : '0'));
+  }
+  print('Day 1..30: ${timeline.join("")}');
 }
 
 void _printDay1Lineup(SeasonController c, String teamId) {

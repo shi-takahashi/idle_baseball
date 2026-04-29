@@ -3,6 +3,7 @@ import 'dart:math';
 import '../generators/generators.dart';
 import '../models/models.dart';
 import '../simulation/simulation.dart';
+import 'batter_condition.dart';
 import 'game_summary.dart';
 import 'lineup_planner.dart';
 import 'player_season_stats.dart';
@@ -98,6 +99,10 @@ class SeasonController {
   /// 試合後に [_updateRecentForms] が更新する。
   final Map<String, RecentForm> _recentForms = {};
 
+  /// 野手の調子（隠しパラメータ）。シミュレーションの能力に直接効く。
+  /// 毎日朝に Markov 遷移で更新され、複数日にわたって持続する。
+  late final BatterConditionTracker _batterConditions;
+
   SeasonController({
     required this.teams,
     required this.schedule,
@@ -107,6 +112,7 @@ class SeasonController {
   })  : _aggregator = SeasonAggregator(teams),
         _gameSimulator = gameSimulator ?? GameSimulator(random: random),
         _rotationRandom = random ?? Random() {
+    _batterConditions = BatterConditionTracker(random: random);
     // 開幕時、SP・RP 全員フレッシュ（100）でスタート
     for (final team in teams) {
       for (final p in [...team.startingRotation, ...team.bullpen]) {
@@ -267,6 +273,9 @@ class SeasonController {
     // 1日経過分の回復（全 SP 対象）
     _recoverPitcherFreshness();
 
+    // 全選手の野手調子を Markov 遷移で更新（試合前に確定）
+    _advanceBatterConditions();
+
     final games = scheduledGamesOnDay(_currentDay);
     final results = <GameResult>[];
     for (final sg in games) {
@@ -276,7 +285,12 @@ class SeasonController {
       final homeForGame = _withGameLineup(sg.homeTeam, homeSP);
       final awayForGame = _withGameLineup(sg.awayTeam, awaySP);
 
-      final result = _gameSimulator.simulate(homeForGame, awayForGame);
+      final result = _gameSimulator.simulate(
+        homeForGame,
+        awayForGame,
+        batterConditionModifiers:
+            _conditionMapForGame(homeForGame, awayForGame),
+      );
       _results[sg.gameNumber] = result;
       _aggregator.recordGame(result);
 
@@ -528,6 +542,36 @@ class SeasonController {
       }
     }
   }
+
+  /// 全リーグの選手について野手調子を Markov 遷移で1日進める
+  void _advanceBatterConditions() {
+    final ids = <String>{};
+    for (final team in teams) {
+      for (final p in [...team.players, ...team.bench]) {
+        ids.add(p.id);
+      }
+    }
+    _batterConditions.advanceDay(ids);
+  }
+
+  /// 1試合用の player.id → 調子補正値マップを構築する
+  Map<String, int> _conditionMapForGame(Team home, Team away) {
+    final mods = <String, int>{};
+    for (final p in [
+      ...home.players,
+      ...home.bench,
+      ...away.players,
+      ...away.bench,
+    ]) {
+      final m = _batterConditions.stateOf(p.id);
+      if (m != 0) mods[p.id] = m;
+    }
+    return mods;
+  }
+
+  /// 指定選手の現在の野手調子（-1/0/+1）。UI からの参照用。
+  int batterConditionState(String playerId) =>
+      _batterConditions.stateOf(playerId);
 
   /// 投手のコンディション参照（UI 用）
   // pitcherLastStartDay は既存定義あり。pitcherFreshness は既存。

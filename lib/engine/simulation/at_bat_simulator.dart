@@ -920,6 +920,7 @@ class AtBatSimulator {
     required StealSimulator stealSimulator,
     int pitchCount = 0, // この打席前までの投球数
     PitcherCondition condition = const PitcherCondition(), // 投手の調子
+    int batterConditionModifier = 0, // 野手の調子（-1/0/+1）。攻撃面の能力に一律加算
   }) {
     // 投手の平均球速（設定されていなければ145km）+ 調子補正
     final avgSpeed = (pitcher.averageSpeed ?? 145) + condition.speedModifier;
@@ -927,14 +928,14 @@ class AtBatSimulator {
     final control = ((pitcher.control ?? 5) + condition.controlModifier).clamp(1, 10);
     // 投手のスタミナ（設定されていなければ5）
     final stamina = pitcher.stamina;
-    // 打者のミート力（設定されていなければ5）
-    final meet = batter.meet ?? 5;
-    // 打者の長打力（設定されていなければ5）
-    final power = batter.power ?? 5;
-    // 打者の走力（設定されていなければ5）
-    final batterSpeed = batter.speed ?? 5;
-    // 打者の選球眼（設定されていなければ5）
-    final eye = batter.eye ?? 5;
+    // 打者のミート力（設定されていなければ5）+ 調子補正（1〜10の範囲内）
+    final meet = ((batter.meet ?? 5) + batterConditionModifier).clamp(1, 10);
+    // 打者の長打力（設定されていなければ5）+ 調子補正
+    final power = ((batter.power ?? 5) + batterConditionModifier).clamp(1, 10);
+    // 打者の走力（設定されていなければ5）+ 調子補正
+    final batterSpeed = ((batter.speed ?? 5) + batterConditionModifier).clamp(1, 10);
+    // 打者の選球眼（設定されていなければ5）+ 調子補正
+    final eye = ((batter.eye ?? 5) + batterConditionModifier).clamp(1, 10);
     // 捕手の肩の強さ（盗塁阻止に使用）
     final catcher = pitchingTeam.getFielder(FieldPosition.catcher);
     final catcherArm = catcher?.arm ?? 5;

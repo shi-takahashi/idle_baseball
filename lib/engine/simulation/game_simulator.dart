@@ -64,7 +64,14 @@ class GameSimulator {
   static const int maxInnings = 12;
 
   /// 1試合をシミュレート
-  GameResult simulate(Team homeTeam, Team awayTeam) {
+  ///
+  /// [batterConditionModifiers] は player.id → 調子補正値（-1/0/+1）のマップ。
+  /// 渡された場合、各打者の能力（ミート/長打/走力/選球眼）に一律加算される。
+  GameResult simulate(
+    Team homeTeam,
+    Team awayTeam, {
+    Map<String, int> batterConditionModifiers = const {},
+  }) {
     final inningScores = <InningScore>[];
     final halfInnings = <HalfInningResult>[];
 
@@ -100,6 +107,7 @@ class GameSimulator {
         pitchingState: homePitchingState,
         myTeamScore: homeScore,
         opponentScoreAtStart: awayScore,
+        batterConditionModifiers: batterConditionModifiers,
       );
       halfInnings.add(topResult.halfInning);
       awayScore += topResult.halfInning.runs;
@@ -124,6 +132,7 @@ class GameSimulator {
         pitchingState: awayPitchingState,
         myTeamScore: awayScore,
         opponentScoreAtStart: homeScore,
+        batterConditionModifiers: batterConditionModifiers,
       );
       halfInnings.add(bottomResult.halfInning);
       homeScore += bottomResult.halfInning.runs;
@@ -161,6 +170,7 @@ class GameSimulator {
     required TeamPitchingState pitchingState,
     required int myTeamScore, // 投手チームの現在得点
     required int opponentScoreAtStart, // 相手チームの現在得点（このハーフイニング開始時点）
+    Map<String, int> batterConditionModifiers = const {},
   }) {
     final atBats = <AtBatResult>[];
     final stealEvents = <StealEvent>[];
@@ -309,6 +319,7 @@ class GameSimulator {
         stealSimulator: _stealSimulator,
         pitchCount: pitchingState.pitchCount,
         condition: pitchingState.condition,
+        batterConditionModifier: batterConditionModifiers[batter.id] ?? 0,
       );
       // 現投手の投球数を更新
       pitchingState.pitchCount += atBatResult.pitches.length;
