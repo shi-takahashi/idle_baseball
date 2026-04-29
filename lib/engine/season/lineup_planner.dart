@@ -137,22 +137,27 @@ class LineupPlanner {
   // ---------------------------------------------------
 
   /// 8人の野手を打順 1〜8番（index 0..7）に割り当てる
+  ///
+  /// 確定順:
+  ///   1. 4番（チームの主砲、最強長打）
+  ///   2. 3番・5番（クリーンナップ）
+  ///   3. 1番・2番（リードオフと繋ぎ）
+  ///   4. 6〜8番（残りを打力順）
   List<Player> _assignBattingOrder(List<Player> fielders) {
     final available = List.of(fielders);
     final result = List<Player?>.filled(8, null);
 
-    // 4番（最強長打）→ 3番（打率+長打）→ 1番（俊足）→ 2番（繋ぎ）→ 5番（長打）の順で確定
     void assign(int slot) {
       final pick = _pickBest(available, slot: slot);
       result[slot] = pick;
       available.remove(pick);
     }
 
-    assign(3); // 4番
+    assign(3); // 4番（主砲）
     assign(2); // 3番
+    assign(4); // 5番
     assign(0); // 1番
     assign(1); // 2番
-    assign(4); // 5番
 
     // 残り3人を打力順に 6→7→8番
     available.sort(
