@@ -136,11 +136,13 @@ class _TeamStatsScreenState extends State<TeamStatsScreen>
           label: Text('選手',
               style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
         ),
+        DataColumn(label: _Hd('打率')),
       ],
       rows: [
         for (final b in stats)
           DataRow(cells: [
             DataCell(_playerNameText(b.player)),
+            _Cell.rate(b.battingAverage),
           ]),
       ],
     );
@@ -165,7 +167,6 @@ class _TeamStatsScreenState extends State<TeamStatsScreen>
         DataColumn(label: _Hd('盗')),
         DataColumn(label: _Hd('四球')),
         DataColumn(label: _Hd('三振')),
-        DataColumn(label: _Hd('打率')),
         DataColumn(label: _Hd('出塁')),
         DataColumn(label: _Hd('長打')),
         DataColumn(label: _Hd('OPS')),
@@ -184,7 +185,6 @@ class _TeamStatsScreenState extends State<TeamStatsScreen>
             _Cell.num(b.stolenBases),
             _Cell.num(b.walks),
             _Cell.num(b.strikeouts),
-            _Cell.rate(b.battingAverage),
             _Cell.rate(b.onBasePct),
             _Cell.rate(b.sluggingPct),
             _Cell.rate(b.ops),
@@ -247,11 +247,15 @@ class _TeamStatsScreenState extends State<TeamStatsScreen>
           label: Text('選手',
               style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
         ),
+        DataColumn(label: _Hd('防御率')),
       ],
       rows: [
         for (final p in stats)
           DataRow(cells: [
             DataCell(_playerNameText(p.player)),
+            _Cell.text(
+              p.outsRecorded == 0 ? '-' : p.era.toStringAsFixed(2),
+            ),
           ]),
       ],
     );
@@ -278,7 +282,6 @@ class _TeamStatsScreenState extends State<TeamStatsScreen>
         DataColumn(label: _Hd('奪三')),
         DataColumn(label: _Hd('失')),
         DataColumn(label: _Hd('自責')),
-        DataColumn(label: _Hd('防御率')),
         DataColumn(label: _Hd('WHIP')),
       ],
       rows: [
@@ -297,9 +300,6 @@ class _TeamStatsScreenState extends State<TeamStatsScreen>
             _Cell.num(p.strikeoutsRecorded),
             _Cell.num(p.runsAllowed),
             _Cell.num(p.earnedRuns),
-            _Cell.text(p.outsRecorded == 0
-                ? '-'
-                : p.era.toStringAsFixed(2)),
             _Cell.text(p.outsRecorded == 0
                 ? '-'
                 : p.whip.toStringAsFixed(2)),
