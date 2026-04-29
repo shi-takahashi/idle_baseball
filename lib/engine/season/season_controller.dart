@@ -4,7 +4,9 @@ import '../generators/generators.dart';
 import '../models/models.dart';
 import '../simulation/simulation.dart';
 import 'game_summary.dart';
+import 'lineup_planner.dart';
 import 'player_season_stats.dart';
+import 'recent_form.dart';
 import 'schedule.dart';
 import 'schedule_generator.dart';
 import 'scheduled_game.dart';
@@ -90,6 +92,11 @@ class SeasonController {
   /// 完全に決定論的に「最終登板日が古い順」で選ぶと 100% 中5日に固定されるため、
   /// 微小な揺らぎを与えて現実の中4日／中6日が混ざるようにする。
   final Random _rotationRandom;
+
+  /// 各打者の直近の打席結果。
+  /// 当日のスタメン・打順決定で「調子」として参照する。
+  /// 試合後に [_updateRecentForms] が更新する。
+  final Map<String, RecentForm> _recentForms = {};
 
   SeasonController({
     required this.teams,
@@ -277,6 +284,9 @@ class SeasonController {
       _depleteStarterFreshness(result);
       _depleteRelieverFreshness(result);
 
+      // 各打者の直近成績を更新（次試合の打順決定で使う）
+      _updateRecentForms(result);
+
       results.add(result);
     }
     _notify();
@@ -462,20 +472,61 @@ class SeasonController {
   }
 
   /// 1試合分の Team を構築する：
-  /// - players[8]（9番打者=投手枠）を当日の先発 SP に差し替え
+  /// - LineupPlanner で当日の打順 (1〜8番) と守備配置を決定
+  /// - 9番は当日の先発 SP
   /// - bullpen をフレッシュな RP 順に並び替え（疲労した RP は除外）
+  /// - スワップで控えに回ったスタメン野手は bench に移動
   ///
   /// ロール別の getter（team.closer / setupPitcher など）は bullpen 内を
   /// reliefRole で検索するため、疲労した投手はここで bullpen から外れることで
   /// 自動的に「当日不在」扱いになる（連投回避）。
   Team _withGameLineup(Team team, Player sp) {
-    final newPlayers = team.players.length >= 9 && team.players[8].id == sp.id
-        ? team.players
-        : [...team.players.take(8), sp];
+    // 正規化チームの players[0..7] が崩れている場合（テストなど）は最低限の投手差し替えだけ行う
+    if (team.players.length < 9) {
+      final newPlayers = team.players.length >= 9 && team.players[8].id == sp.id
+          ? team.players
+          : [...team.players.take(8), sp];
+      return team.copyWith(
+        players: newPlayers,
+        bullpen: _availableBullpen(team),
+      );
+    }
+
+    final planner = LineupPlanner(
+      team: team,
+      forms: _recentForms,
+      todaysPitcher: sp,
+    );
+    final result = planner.buildLineup();
+
+    // 当日の bench を再構成: 元のベンチから「スタメン入りした選手」を除き、
+    // 「スタメンから外された選手」を加える
+    final lineupIds = result.lineup.map((p) => p.id).toSet();
+    final newBench = <Player>[];
+    for (final p in team.bench) {
+      if (!lineupIds.contains(p.id)) newBench.add(p);
+    }
+    for (final p in team.players.take(8)) {
+      if (!lineupIds.contains(p.id)) newBench.add(p);
+    }
+
     return team.copyWith(
-      players: newPlayers,
+      players: result.lineup,
+      defenseAlignment: result.alignment,
+      bench: newBench,
       bullpen: _availableBullpen(team),
     );
+  }
+
+  /// 試合結果から各打者の直近打席を [_recentForms] に取り込む
+  void _updateRecentForms(GameResult game) {
+    for (final half in game.halfInnings) {
+      for (final ab in half.atBats) {
+        final form =
+            _recentForms.putIfAbsent(ab.batter.id, () => RecentForm());
+        form.recordAtBat(ab);
+      }
+    }
   }
 
   /// 投手のコンディション参照（UI 用）
