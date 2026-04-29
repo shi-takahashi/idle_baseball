@@ -196,6 +196,30 @@ class _IndividualStatsScreenState extends State<IndividualStatsScreen>
     );
   }
 
+  /// ソート済みリストから「順位 ≤ topN」の項目を返す。
+  /// 同値はタイ（同じ順位）として扱い、タイで topN を超えても全員含める。
+  /// 例: 値 [10, 10, 8, 7, 7, 6, 5] / topN=5 → 順位 [1, 1, 3, 4, 4]、6位以降は除外。
+  List<({int rank, T item})> _topNWithTies<T>(
+    List<T> sorted,
+    double Function(T) getValue,
+    int topN,
+  ) {
+    final result = <({int rank, T item})>[];
+    for (int i = 0; i < sorted.length; i++) {
+      final int rank;
+      if (i == 0) {
+        rank = 1;
+      } else if (getValue(sorted[i]) == getValue(sorted[i - 1])) {
+        rank = result.last.rank;
+      } else {
+        rank = i + 1;
+      }
+      if (rank > topN) break;
+      result.add((rank: rank, item: sorted[i]));
+    }
+    return result;
+  }
+
   // ---------------------------------------------------
   // 打撃ランキング
   // ---------------------------------------------------
@@ -212,7 +236,7 @@ class _IndividualStatsScreenState extends State<IndividualStatsScreen>
     filtered.sort((a, b) => ascending
         ? getValue(a).compareTo(getValue(b))
         : getValue(b).compareTo(getValue(a)));
-    final top = filtered.take(topN).toList();
+    final top = _topNWithTies(filtered, getValue, topN);
 
     return Card(
       margin: const EdgeInsets.symmetric(vertical: 4),
@@ -236,8 +260,8 @@ class _IndividualStatsScreenState extends State<IndividualStatsScreen>
                     style: TextStyle(color: Colors.grey, fontSize: 12)),
               )
             else
-              for (int i = 0; i < top.length; i++)
-                _buildBatterRow(i + 1, top[i], getValue, format),
+              for (final entry in top)
+                _buildBatterRow(entry.rank, entry.item, getValue, format),
           ],
         ),
       ),
@@ -308,7 +332,7 @@ class _IndividualStatsScreenState extends State<IndividualStatsScreen>
     filtered.sort((a, b) => ascending
         ? getValue(a).compareTo(getValue(b))
         : getValue(b).compareTo(getValue(a)));
-    final top = filtered.take(topN).toList();
+    final top = _topNWithTies(filtered, getValue, topN);
 
     return Card(
       margin: const EdgeInsets.symmetric(vertical: 4),
@@ -332,8 +356,8 @@ class _IndividualStatsScreenState extends State<IndividualStatsScreen>
                     style: TextStyle(color: Colors.grey, fontSize: 12)),
               )
             else
-              for (int i = 0; i < top.length; i++)
-                _buildPitcherRow(i + 1, top[i], getValue, format),
+              for (final entry in top)
+                _buildPitcherRow(entry.rank, entry.item, getValue, format),
           ],
         ),
       ),
