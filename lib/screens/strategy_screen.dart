@@ -36,12 +36,17 @@ class StrategyScreen extends StatefulWidget {
 /// 親 [MainSeasonScreen] が `GlobalKey<StrategyScreenState>` 経由で
 /// `tryCommit()` を呼べるよう、State クラスは public にしている。
 class StrategyScreenState extends State<StrategyScreen> {
+  /// _Slot.id 用の連番カウンタ。`_loadFromCurrent` で新規スロットを作る時に使う。
+  int _slotIdCounter = 0;
+  String _newSlotId() => 'slot-${_slotIdCounter++}';
+
   /// 1〜9 番のスロット。投手は通常 [8]（9 番）だがどこでも置ける。
-  List<_Slot> _slots = List.generate(9, (_) => _Slot());
+  late List<_Slot> _slots = List.generate(9, (_) => _Slot(id: _newSlotId()));
 
   /// 「元に戻す」ボタン用に、画面表示時点（= 編集前）の状態を覚えておく。
   /// `_loadFromCurrent` で更新される。
-  List<_Slot> _initialSlots = List.generate(9, (_) => _Slot());
+  late List<_Slot> _initialSlots =
+      List.generate(9, (_) => _Slot(id: _newSlotId()));
 
   /// `_loadFromCurrent` を呼んだ時の `currentDay`。
   /// 試合進行で次の日になったら、自動でフォームを再ロードする判定に使う。
@@ -81,6 +86,7 @@ class StrategyScreenState extends State<StrategyScreen> {
       next = [
         for (int i = 0; i < 9; i++)
           _Slot(
+            id: _newSlotId(),
             player: saved.lineup[i],
             position: _findPositionForPlayer(saved.lineup[i], saved.alignment),
           ),
@@ -88,10 +94,11 @@ class StrategyScreenState extends State<StrategyScreen> {
     } else {
       final auto = widget.controller.suggestedStrategyForMyTeam();
       next = auto == null
-          ? List.generate(9, (_) => _Slot())
+          ? List.generate(9, (_) => _Slot(id: _newSlotId()))
           : [
               for (int i = 0; i < 9; i++)
                 _Slot(
+                  id: _newSlotId(),
                   player: auto.lineup[i],
                   position:
                       _findPositionForPlayer(auto.lineup[i], auto.alignment),
@@ -261,7 +268,7 @@ class StrategyScreenState extends State<StrategyScreen> {
   }
 
   // ---------------------------------------------------
-  // 打順 + 守備配置（9 行統合）
+  // 打順 + 守備配置（9 行統合 + 行を長押しドラッグで並び替え）
   // ---------------------------------------------------
   Widget _buildLineupCard() {
     return Card(
@@ -271,15 +278,42 @@ class StrategyScreenState extends State<StrategyScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const Text('打順 + 守備配置',
+            const Text('打順 + 守備配置（長押しドラッグで並び替え）',
                 style: TextStyle(
                     fontSize: 13, fontWeight: FontWeight.bold)),
             const Divider(height: 12),
-            for (int i = 0; i < 9; i++) _buildSlotRow(i),
+            ReorderableListView(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              // デフォルトのドラッグハンドル（右端のアイコン）は出さず、
+              // 行全体を長押しでドラッグ開始できるようにする。
+              buildDefaultDragHandles: false,
+              onReorder: _onReorder,
+              children: [
+                for (int i = 0; i < _slots.length; i++)
+                  ReorderableDelayedDragStartListener(
+                    key: ValueKey(_slots[i].id),
+                    index: i,
+                    child: _buildSlotRow(i),
+                  ),
+              ],
+            ),
           ],
         ),
       ),
     );
+  }
+
+  /// ドラッグ&ドロップで打順を入れ替えた時のハンドラ。
+  /// 選手と守備位置のペア（_Slot）ごと移動するので、移動した選手の守備位置は
+  /// 新しい打順位置でもそのまま維持される（野球的にも自然）。
+  void _onReorder(int oldIndex, int newIndex) {
+    setState(() {
+      // ReorderableListView の慣用: 後ろに動かす場合は newIndex を 1 ずらす
+      if (newIndex > oldIndex) newIndex--;
+      final item = _slots.removeAt(oldIndex);
+      _slots.insert(newIndex, item);
+    });
   }
 
   Widget _buildSlotRow(int index) {
@@ -690,10 +724,15 @@ class StrategyScreenState extends State<StrategyScreen> {
 // =====================================================
 
 class _Slot {
+  /// ReorderableListView 用の安定 Key として使う識別子。
+  /// _loadFromCurrent で新規スロットを作る時にカウンタから生成し、
+  /// `copyWith` では同じ id を保持するので、選手の差し替えやドラッグ並び替えで
+  /// id が変わらず ReorderableListView が正しくアニメーションできる。
+  final String id;
   final Player? player;
   final FieldPosition? position;
 
-  _Slot({this.player, this.position});
+  _Slot({required this.id, this.player, this.position});
 
   _Slot copyWith({
     Player? player,
@@ -702,6 +741,7 @@ class _Slot {
     bool clearPosition = false,
   }) {
     return _Slot(
+      id: id,
       player: clearPlayer ? null : (player ?? this.player),
       position: clearPosition ? null : (position ?? this.position),
     );
