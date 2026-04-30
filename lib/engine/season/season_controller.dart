@@ -145,6 +145,76 @@ class SeasonController {
   Map<String, BatterSeasonStats> get batterStats => _aggregator.batterStats;
   Map<String, PitcherSeasonStats> get pitcherStats => _aggregator.pitcherStats;
 
+  /// id から最新の Player を引く。
+  /// 編集後は teams 内の各リスト・統計に反映済みなので、まずは teams を見れば足りる。
+  /// 過去の試合 (`GameResult`) に登場する Player 参照は古いままだが、
+  /// 過去成績・過去試合は再シミュレートしないので問題にならない。
+  Player? findPlayerById(String id) {
+    for (final team in teams) {
+      for (final p in [
+        ...team.players,
+        ...team.startingRotation,
+        ...team.bullpen,
+        ...team.bench,
+      ]) {
+        if (p.id == id) return p;
+      }
+    }
+    return null;
+  }
+
+  /// 選手の能力を編集して全参照を差し替える（編集機能用）。
+  /// 同 id の Player を:
+  /// - 各 Team の `players` / `startingRotation` / `bullpen` / `bench` /
+  ///   `defenseAlignment` 内で置換（**in-place** で書き換え）
+  /// - `batterStats[id].player` / `pitcherStats[id].player` も更新
+  /// - 累積成績カウンタは維持
+  ///
+  /// **なぜ in-place か:**
+  /// `Schedule` / `ScheduledGame` はシーズン開始時に作られ、Team のオブジェクト
+  /// 参照を保持している。Team を新しく作り直して `teams[i]` を差し替えると、
+  /// `ScheduledGame.homeTeam` などは古い Team を指したままになり、
+  /// 編集後の試合シミュレートに新しい能力値が反映されない。
+  /// 各 Team の内部リストを in-place で書き換えれば、
+  /// 同じ Team を参照しているスケジュール・統計・標準順位表すべてに
+  /// 自動で反映される。
+  ///
+  /// 過去の `GameResult` 内の Player 参照は古いまま（履歴として保存）。
+  void updatePlayer(Player updated) {
+    for (final team in teams) {
+      _replacePlayerInTeamInPlace(team, updated);
+    }
+    final bs = _aggregator.batterStats[updated.id];
+    if (bs != null) bs.player = updated;
+    final ps = _aggregator.pitcherStats[updated.id];
+    if (ps != null) ps.player = updated;
+    _notify();
+  }
+
+  void _replacePlayerInTeamInPlace(Team t, Player updated) {
+    void swap(List<Player> list) {
+      for (int i = 0; i < list.length; i++) {
+        if (list[i].id == updated.id) list[i] = updated;
+      }
+    }
+
+    swap(t.players);
+    swap(t.startingRotation);
+    swap(t.bullpen);
+    swap(t.bench);
+
+    final align = t.defenseAlignment;
+    if (align != null) {
+      final keys = <FieldPosition>[];
+      align.forEach((k, v) {
+        if (v.id == updated.id) keys.add(k);
+      });
+      for (final k in keys) {
+        align[k] = updated;
+      }
+    }
+  }
+
   /// 指定日の予定試合一覧
   List<ScheduledGame> scheduledGamesOnDay(int day) =>
       schedule.gamesOnDay(day);

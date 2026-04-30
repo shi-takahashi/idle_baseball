@@ -3,8 +3,10 @@ import '../models/team.dart';
 
 /// 野手のシーズン成績
 class BatterSeasonStats {
-  final Player player;
-  final Team team;
+  // 選手・所属チームは編集機能（PlayerEditScreen）で差し替えられるので非final。
+  // 累積カウンタは維持したまま player/team の参照だけ最新版に更新する。
+  Player player;
+  Team team;
 
   int games = 0;
   int plateAppearances = 0; // 打席数
@@ -48,8 +50,9 @@ class BatterSeasonStats {
 
 /// 投手のシーズン成績
 class PitcherSeasonStats {
-  final Player player;
-  final Team team;
+  // 選手・所属チームは編集機能（PlayerEditScreen）で差し替えられるので非final。
+  Player player;
+  Team team;
 
   int games = 0; // 登板数
   int starts = 0; // 先発登板数

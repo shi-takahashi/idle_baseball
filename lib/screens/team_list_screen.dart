@@ -67,7 +67,11 @@ class TeamListScreen extends StatelessWidget {
   void _openRoster(BuildContext context, Team team) {
     Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) => PlayerListScreen(team: team),
+        builder: (_) => PlayerListScreen(
+          controller: controller,
+          listenable: listenable,
+          teamId: team.id,
+        ),
       ),
     );
   }

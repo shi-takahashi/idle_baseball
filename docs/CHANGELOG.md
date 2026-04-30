@@ -5,6 +5,71 @@
 
 ---
 
+## 2026-04-30 球速の編集に上下限を追加
+
+- 球速の入力範囲を 100〜165 km/h に制限（保存時に clamp）
+- 上限 165 = 試合中の調子で +5km/h 揺らいでも 170 km/h に収まり、メジャー最高記録（169km/h）と同等
+- 下限 100 = 0 やマイナスで挙動が壊れないようにする保険
+- 範囲外の値が補正された時だけ SnackBar で通知
+
+---
+
+## 2026-04-30 編集機能のバグ修正: スケジュール参照を踏み抜いていた
+
+**症状:**
+- 1日目消化後に長打力10に編集した選手が、残り29日進めても本塁打が伸びない
+
+**原因:**
+- 旧 `updatePlayer` は各 Team を `team.copyWith(...)` で作り直して
+  `controller.teams[i] = newTeam` していた
+- しかし `Schedule` は開幕時に作られ、`ScheduledGame.homeTeam` /
+  `awayTeam` が「元の Team オブジェクト」への参照を保持している
+- 試合シミュレートは `sg.homeTeam.players` を読むので、編集を加えても
+  古い Team の古い Player を見ていた
+
+**修正:**
+- Team を作り直さず、`team.players` / `startingRotation` / `bullpen` /
+  `bench` の各リストを **in-place** で書き換えるよう変更
+- `defenseAlignment` の値も同様に in-place 置換
+- 同じ Team 参照を持つスケジュール・統計・順位表すべてで自動反映
+
+**動作確認 (`bin/test_edit_player.dart`):**
+- 編集後に `scheduledGamesOnDay` から取り出した Team 経由でも新しい能力値が見える
+- power=10 / meet=10 に編集した選手がシーズン残り全試合を消化したのち、
+  打率 .288 / 4本塁打（修正前は古い能力で打席に立っていた）
+
+---
+
+## 2026-04-30 選手能力の編集機能（サブスク予定だが現状は自由に使える）
+
+**エンジン側の変更:**
+- `BatterSeasonStats.player` / `PitcherSeasonStats.player` を非final化（編集時に差し替えるため）
+- `SeasonController.findPlayerById(String)` 追加: teams 内の全リスト（players / startingRotation / bullpen / bench）から id 一致を返す
+- `SeasonController.updatePlayer(Player updated)` 追加:
+  - 各 Team の `players` / `startingRotation` / `bullpen` / `bench` / `defenseAlignment` 内で同 id を置換
+  - `batterStats[id].player` / `pitcherStats[id].player` も最新参照に更新
+  - 累積成績カウンタはそのまま維持
+  - リスナー通知
+  - 過去の `GameResult` 内の Player 参照は古いまま（履歴として保存）
+
+**新規 `PlayerEditScreen`:**
+- 投手用フォーム: 利き腕 / 起用（先発+救援6ロール）/ 球速（数値）/ 制球・ストレートの質・スタミナ（1〜10スライダー）/ 球種4種（投げる/投げない トグル + スライダー）/ 打撃3項目
+- 野手用フォーム: 打撃3項目 / 走力・肩 / リード（捕手のみ表示）/ 守備力6ポジション（守れる/守れない トグル + スライダー）
+- 名前・背番号・打席は両方に共通
+- 保存ボタンで `controller.updatePlayer(...)` を呼んで pop
+
+**配線:**
+- `PlayerDetailScreen` の AppBar に編集アイコン、controller 経由で常に最新の Player を参照
+- `PlayerListScreen` も controller / listenable / teamId を受け取る形に変更
+- 編集後はリスナー通知で詳細画面・一覧画面ともに自動再描画
+
+**動作確認 (`bin/test_edit_player.dart`):**
+- 編集後、Team.players / startingRotation / batterStats / findPlayerById すべてで新しい値を返す
+- 編集を挟んだ後シーズンを1日進めても編集値が継続する（試合シミュレートに反映される）
+- 編集前に取得した古い Player 参照はそのまま保持（履歴用途では古い値を見られる）
+
+---
+
 ## 2026-04-30 選手能力詳細画面 + チームカードのリンク整理
 
 **新規 `PlayerListScreen`:**

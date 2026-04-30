@@ -1,45 +1,88 @@
 import 'package:flutter/material.dart';
 
 import '../engine/engine.dart';
+import 'player_edit_screen.dart';
 
 /// 選手1人の能力パラメータ詳細画面
 ///
 /// 1〜10 評価のパラメータは横長のメーターで可視化する。
 /// 投手と野手で表示するパラメータが異なるため `_buildPitcherBody` /
 /// `_buildFielderBody` に分岐させる。
+///
+/// AppBar の編集ボタンから [PlayerEditScreen] に遷移し、保存すると
+/// `controller.updatePlayer` で値が反映される。本画面は `listenable`
+/// を購読しているので、編集後にそのまま新しい値で再描画される。
 class PlayerDetailScreen extends StatelessWidget {
-  final Player player;
+  final SeasonController controller;
+  final Listenable listenable;
+  final String playerId;
 
-  const PlayerDetailScreen({super.key, required this.player});
+  const PlayerDetailScreen({
+    super.key,
+    required this.controller,
+    required this.listenable,
+    required this.playerId,
+  });
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(player.name),
-        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-      ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            _buildHeader(context),
-            const SizedBox(height: 12),
-            if (player.isPitcher)
-              _buildPitcherBody()
-            else
-              _buildFielderBody(),
-          ],
-        ),
-      ),
+    return ListenableBuilder(
+      listenable: listenable,
+      builder: (context, _) {
+        final player = controller.findPlayerById(playerId);
+        if (player == null) {
+          return Scaffold(
+            appBar: AppBar(
+              title: const Text('選手'),
+              backgroundColor: Theme.of(context).colorScheme.inversePrimary,
+            ),
+            body: const Center(child: Text('選手が見つかりません')),
+          );
+        }
+        return Scaffold(
+          appBar: AppBar(
+            title: Text(player.name),
+            backgroundColor: Theme.of(context).colorScheme.inversePrimary,
+            actions: [
+              IconButton(
+                icon: const Icon(Icons.edit),
+                tooltip: '編集',
+                onPressed: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => PlayerEditScreen(
+                        controller: controller,
+                        initial: player,
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ],
+          ),
+          body: SingleChildScrollView(
+            padding: const EdgeInsets.all(12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _buildHeader(context, player),
+                const SizedBox(height: 12),
+                if (player.isPitcher)
+                  _buildPitcherBody(player)
+                else
+                  _buildFielderBody(player),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 
   // ---------------------------------------------------
   // ヘッダー（名前・背番号・利き腕・打席・ロール）
   // ---------------------------------------------------
-  Widget _buildHeader(BuildContext context) {
+  Widget _buildHeader(BuildContext context, Player player) {
     final tags = <String>[];
     if (player.isPitcher) {
       tags.add(player.reliefRole == null ? '先発' : '救援');
@@ -107,7 +150,7 @@ class PlayerDetailScreen extends StatelessWidget {
   // ---------------------------------------------------
   // 投手向け
   // ---------------------------------------------------
-  Widget _buildPitcherBody() {
+  Widget _buildPitcherBody(Player player) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -147,7 +190,7 @@ class PlayerDetailScreen extends StatelessWidget {
   // ---------------------------------------------------
   // 野手向け
   // ---------------------------------------------------
-  Widget _buildFielderBody() {
+  Widget _buildFielderBody(Player player) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -172,13 +215,13 @@ class PlayerDetailScreen extends StatelessWidget {
         const SizedBox(height: 8),
         _SectionCard(
           title: '守備力（ポジション別）',
-          children: _buildFieldingRows(),
+          children: _buildFieldingRows(player),
         ),
       ],
     );
   }
 
-  List<Widget> _buildFieldingRows() {
+  List<Widget> _buildFieldingRows(Player player) {
     final map = player.fielding;
     if (map == null) {
       return [

@@ -8,60 +8,89 @@ import 'player_detail_screen.dart';
 /// チーム一覧の「選手一覧」リンクから push される。
 /// 投手（先発・救援）と野手（スタメン・控え）をセクションに分けて並べる。
 /// 各行をタップすると [PlayerDetailScreen] に遷移して能力詳細を表示する。
+///
+/// `listenable` を購読しており、選手編集後に新しい能力で再描画される。
 class PlayerListScreen extends StatelessWidget {
-  final Team team;
+  final SeasonController controller;
+  final Listenable listenable;
+  final String teamId;
 
-  const PlayerListScreen({super.key, required this.team});
+  const PlayerListScreen({
+    super.key,
+    required this.controller,
+    required this.listenable,
+    required this.teamId,
+  });
 
   @override
   Widget build(BuildContext context) {
-    final primary = Color(team.primaryColorValue);
+    return ListenableBuilder(
+      listenable: listenable,
+      builder: (context, _) {
+        final team = controller.teams.firstWhere((t) => t.id == teamId);
+        final primary = Color(team.primaryColorValue);
 
-    // 先発ローテ（6人）
-    final starters = team.startingRotation;
-    // 救援投手（ロール順に並べ替え）
-    final relievers = [...team.bullpen]..sort((a, b) {
-        final ra = a.reliefRole?.index ?? 999;
-        final rb = b.reliefRole?.index ?? 999;
-        return ra.compareTo(rb);
-      });
-    // スタメン野手（players[0..7]）
-    final fielders = team.players.sublist(0, 8);
-    // 控え野手
-    final bench = team.bench;
+        // 先発ローテ（6人）
+        final starters = team.startingRotation;
+        // 救援投手（ロール順に並べ替え）
+        final relievers = [...team.bullpen]..sort((a, b) {
+            final ra = a.reliefRole?.index ?? 999;
+            final rb = b.reliefRole?.index ?? 999;
+            return ra.compareTo(rb);
+          });
+        // スタメン野手（players[0..7]）
+        final fielders = team.players.sublist(0, 8);
+        // 控え野手
+        final bench = team.bench;
 
-    return Scaffold(
-      appBar: AppBar(
-        title: Text('${team.name}　選手一覧'),
-        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-        flexibleSpace: Align(
-          alignment: Alignment.bottomCenter,
-          child: Container(height: 3, color: primary),
-        ),
-      ),
-      body: ListView(
-        padding: const EdgeInsets.symmetric(vertical: 8),
-        children: [
-          _SectionHeader(label: '先発ローテーション (${starters.length})'),
-          for (final p in starters)
-            _PlayerRow(player: p, subtitle: '先発'),
-          _SectionHeader(label: '救援投手 (${relievers.length})'),
-          for (final p in relievers)
-            _PlayerRow(
-              player: p,
-              subtitle: p.reliefRole?.displayName ?? '救援',
+        return Scaffold(
+          appBar: AppBar(
+            title: Text('${team.name}　選手一覧'),
+            backgroundColor: Theme.of(context).colorScheme.inversePrimary,
+            flexibleSpace: Align(
+              alignment: Alignment.bottomCenter,
+              child: Container(height: 3, color: primary),
             ),
-          _SectionHeader(label: 'スタメン野手 (${fielders.length})'),
-          for (int i = 0; i < fielders.length; i++)
-            _PlayerRow(
-              player: fielders[i],
-              subtitle: _starterPositionLabel(i),
-            ),
-          _SectionHeader(label: '控え野手 (${bench.length})'),
-          for (final p in bench)
-            _PlayerRow(player: p, subtitle: _benchPositionLabel(p)),
-        ],
-      ),
+          ),
+          body: ListView(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            children: [
+              _SectionHeader(label: '先発ローテーション (${starters.length})'),
+              for (final p in starters)
+                _PlayerRow(
+                  player: p,
+                  subtitle: '先発',
+                  controller: controller,
+                  listenable: listenable,
+                ),
+              _SectionHeader(label: '救援投手 (${relievers.length})'),
+              for (final p in relievers)
+                _PlayerRow(
+                  player: p,
+                  subtitle: p.reliefRole?.displayName ?? '救援',
+                  controller: controller,
+                  listenable: listenable,
+                ),
+              _SectionHeader(label: 'スタメン野手 (${fielders.length})'),
+              for (int i = 0; i < fielders.length; i++)
+                _PlayerRow(
+                  player: fielders[i],
+                  subtitle: _starterPositionLabel(i),
+                  controller: controller,
+                  listenable: listenable,
+                ),
+              _SectionHeader(label: '控え野手 (${bench.length})'),
+              for (final p in bench)
+                _PlayerRow(
+                  player: p,
+                  subtitle: _benchPositionLabel(p),
+                  controller: controller,
+                  listenable: listenable,
+                ),
+            ],
+          ),
+        );
+      },
     );
   }
 
@@ -115,8 +144,15 @@ class _SectionHeader extends StatelessWidget {
 class _PlayerRow extends StatelessWidget {
   final Player player;
   final String subtitle;
+  final SeasonController controller;
+  final Listenable listenable;
 
-  const _PlayerRow({required this.player, required this.subtitle});
+  const _PlayerRow({
+    required this.player,
+    required this.subtitle,
+    required this.controller,
+    required this.listenable,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -124,7 +160,11 @@ class _PlayerRow extends StatelessWidget {
       onTap: () {
         Navigator.of(context).push(
           MaterialPageRoute(
-            builder: (_) => PlayerDetailScreen(player: player),
+            builder: (_) => PlayerDetailScreen(
+              controller: controller,
+              listenable: listenable,
+              playerId: player.id,
+            ),
           ),
         );
       },
