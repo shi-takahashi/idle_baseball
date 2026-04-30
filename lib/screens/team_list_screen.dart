@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../engine/engine.dart';
 import 'player_list_screen.dart';
+import 'team_head_to_head_screen.dart';
 import 'team_info_screen.dart';
 import 'team_schedule_screen.dart';
 import 'team_stats_screen.dart';
@@ -49,6 +50,8 @@ class TeamListScreen extends StatelessWidget {
               onTapInfo: () => _openInfo(context, controller.teams[i]),
               onTapSchedule: () =>
                   _openSchedule(context, controller.teams[i]),
+              onTapHeadToHead: () =>
+                  _openHeadToHead(context, controller.teams[i]),
             ),
           ),
         );
@@ -93,6 +96,18 @@ class TeamListScreen extends StatelessWidget {
     );
   }
 
+  void _openHeadToHead(BuildContext context, Team team) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => TeamHeadToHeadScreen(
+          controller: controller,
+          listenable: listenable,
+          teamId: team.id,
+        ),
+      ),
+    );
+  }
+
   void _openRoster(BuildContext context, Team team) {
     Navigator.of(context).push(
       MaterialPageRoute(
@@ -114,6 +129,7 @@ class _TeamCard extends StatelessWidget {
   final VoidCallback onTapRoster;
   final VoidCallback onTapInfo;
   final VoidCallback onTapSchedule;
+  final VoidCallback onTapHeadToHead;
 
   const _TeamCard({
     required this.team,
@@ -123,6 +139,7 @@ class _TeamCard extends StatelessWidget {
     required this.onTapRoster,
     required this.onTapInfo,
     required this.onTapSchedule,
+    required this.onTapHeadToHead,
   });
 
   @override
@@ -177,10 +194,9 @@ class _TeamCard extends StatelessWidget {
             ),
           ),
           // リンクの 2 列 × 3 行グリッド
-          // 並び順: よく使うものから順に配置。
-          // [基本情報][日程・結果]   ← よく見る
-          // [打撃成績][投手成績]     ← 成績
-          // [選手一覧][対戦成績]     ← 詳細・拡張用（対戦成績は未実装）
+          // [基本情報][日程・結果]
+          // [対戦成績][選手一覧]
+          // [打撃成績][投手成績]
           Padding(
             padding: const EdgeInsets.symmetric(
                 horizontal: 12, vertical: 10),
@@ -200,10 +216,10 @@ class _TeamCard extends StatelessWidget {
                 Row(
                   children: [
                     Expanded(
-                      child: _LinkText('打撃成績', onTapBatting),
+                      child: _LinkText('対戦成績', onTapHeadToHead),
                     ),
                     Expanded(
-                      child: _LinkText('投手成績', onTapPitching),
+                      child: _LinkText('選手一覧', onTapRoster),
                     ),
                   ],
                 ),
@@ -211,9 +227,11 @@ class _TeamCard extends StatelessWidget {
                 Row(
                   children: [
                     Expanded(
-                      child: _LinkText('選手一覧', onTapRoster),
+                      child: _LinkText('打撃成績', onTapBatting),
                     ),
-                    const Expanded(child: _LinkText('対戦成績', null)),
+                    Expanded(
+                      child: _LinkText('投手成績', onTapPitching),
+                    ),
                   ],
                 ),
               ],
