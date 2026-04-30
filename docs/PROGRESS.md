@@ -76,6 +76,7 @@
 - [x] 選手能力詳細画面（チーム → 選手一覧 → 選手詳細、メーター可視化）
 - [x] 選手能力編集画面（スライダー＋トグル、`SeasonController.updatePlayer` で全参照差し替え）
 - [x] チーム基本情報の表示・編集画面（チーム名 / 略称 / カラー、`SeasonController.updateTeam` で in-place 更新）
+- [x] チーム単位の日程・結果画面（消化試合はスコア・勝敗、未消化は対戦予定。タップで試合詳細へ）
 
 **残課題:**
 - [ ] 犠飛の判定を厳密化（外野フライで打点ありを全て犠飛扱いにしている）
@@ -122,7 +123,8 @@ lib/
 │   ├── player_detail_screen.dart      # 選手1人の能力パラメータ詳細
 │   ├── player_edit_screen.dart        # 選手能力の編集（スライダー＋トグル）
 │   ├── team_info_screen.dart          # チーム基本情報の表示
-│   └── team_edit_screen.dart          # チーム名・略称・カラーの編集
+│   ├── team_edit_screen.dart          # チーム名・略称・カラーの編集
+│   └── team_schedule_screen.dart      # チーム単位の日程・結果（タップで試合詳細）
 ├── widgets/
 │   ├── score_board.dart               # スコアボード（9回時単一テーブル / 延長時 2分割固定）
 │   ├── batting_stats.dart             # 打撃成績（左:選手固定 / 右:位置〜イニング横スクロール）
