@@ -6,6 +6,7 @@ import '../simulation/simulation.dart';
 import 'batter_condition.dart';
 import 'game_summary.dart';
 import 'lineup_planner.dart';
+import 'next_game_strategy.dart';
 import 'player_season_stats.dart';
 import 'recent_form.dart';
 import 'schedule.dart';
@@ -103,6 +104,10 @@ class SeasonController {
   /// 毎日朝に Markov 遷移で更新され、複数日にわたって持続する。
   late final BatterConditionTracker _batterConditions;
 
+  /// 自チームの「次の試合」用の作戦。`null` ならオート編成。
+  /// `advanceDay` で自チームが試合をした瞬間に消費（クリア）される。
+  NextGameStrategy? _myStrategy;
+
   SeasonController({
     required this.teams,
     required this.schedule,
@@ -144,6 +149,62 @@ class SeasonController {
   Standings get standings => _aggregator.standings;
   Map<String, BatterSeasonStats> get batterStats => _aggregator.batterStats;
   Map<String, PitcherSeasonStats> get pitcherStats => _aggregator.pitcherStats;
+
+  /// 次の試合用の自チーム作戦（null ならオート編成）
+  NextGameStrategy? get myStrategy => _myStrategy;
+
+  /// 次の試合用の作戦をセットする。
+  /// 自動編成と異なるラインナップ・先発を使いたいときに UI から呼ぶ。
+  /// 構築時に NextGameStrategy 自身がバリデーションする。
+  void setMyStrategy(NextGameStrategy strategy) {
+    _myStrategy = strategy;
+    _notify();
+  }
+
+  /// 作戦をクリアしてオート編成に戻す。
+  void clearMyStrategy() {
+    if (_myStrategy == null) return;
+    _myStrategy = null;
+    _notify();
+  }
+
+  /// 自チームの「次の試合のオート編成」をシミュレートして返す（state は変えない）。
+  /// 作戦画面の初期表示用。
+  /// 投手はオートでは 9 番固定だが、ユーザーが作戦画面で他の打順に動かすことは可能
+  /// （[NextGameStrategy] は投手位置を縛らない）。
+  /// 投手は「コンディション高い順 → 背番号順」のシンプルなルールで選出する
+  /// ([_pickFreshestStarter])。
+  /// シーズン終了済み・自チームに試合がない日には null を返す。
+  ({
+    List<Player> lineup,
+    Map<FieldPosition, Player> alignment,
+  })? suggestedStrategyForMyTeam() {
+    if (isSeasonOver) return null;
+    final team = teams.firstWhere((t) => t.id == myTeamId);
+    if (team.players.length < 9) return null;
+    final sp = _pickFreshestStarter(team);
+    final result = LineupPlanner(
+      team: team,
+      forms: _recentForms,
+      todaysPitcher: sp,
+    ).buildLineup();
+    return (
+      lineup: result.lineup,
+      alignment: result.alignment,
+    );
+  }
+
+  /// 自チームの次の予定試合（明日の試合）。シーズン終了時は null。
+  ScheduledGame? get nextScheduledGameForMyTeam {
+    if (isSeasonOver) return null;
+    final nextDay = _currentDay + 1;
+    for (final sg in schedule.gamesOnDay(nextDay)) {
+      if (sg.homeTeam.id == myTeamId || sg.awayTeam.id == myTeamId) {
+        return sg;
+      }
+    }
+    return null;
+  }
 
   /// id から最新の Player を引く。
   /// 編集後は teams 内の各リスト・統計に反映済みなので、まずは teams を見れば足りる。
@@ -366,11 +427,26 @@ class SeasonController {
     final games = scheduledGamesOnDay(_currentDay);
     final results = <GameResult>[];
     for (final sg in games) {
-      // 各チームの今日の先発を選出
-      final homeSP = _selectStarter(sg.homeTeam);
-      final awaySP = _selectStarter(sg.awayTeam);
-      final homeForGame = _withGameLineup(sg.homeTeam, homeSP);
-      final awayForGame = _withGameLineup(sg.awayTeam, awaySP);
+      // 自チームの試合で strategy が指定されていれば、それを採用してオート編成を上書き。
+      // strategy は **試合後も保持** し、次の試合でも同じ打順 + 守備配置を再利用する。
+      final useStrategyForHome =
+          sg.homeTeam.id == myTeamId && _myStrategy != null;
+      final useStrategyForAway =
+          sg.awayTeam.id == myTeamId && _myStrategy != null;
+
+      final homeSP = useStrategyForHome
+          ? _myStrategy!.startingPitcher
+          : _selectStarter(sg.homeTeam);
+      final awaySP = useStrategyForAway
+          ? _myStrategy!.startingPitcher
+          : _selectStarter(sg.awayTeam);
+
+      final homeForGame = useStrategyForHome
+          ? _applyMyStrategy(sg.homeTeam, _myStrategy!)
+          : _withGameLineup(sg.homeTeam, homeSP);
+      final awayForGame = useStrategyForAway
+          ? _applyMyStrategy(sg.awayTeam, _myStrategy!)
+          : _withGameLineup(sg.awayTeam, awaySP);
 
       final result = _gameSimulator.simulate(
         homeForGame,
@@ -390,8 +466,54 @@ class SeasonController {
 
       results.add(result);
     }
+
+    // 試合終了後、strategy が残っていれば「次の試合用」の SP に差し替えておく。
+    // 今日の試合で使った SP は疲労しているので、明日のために自動で別の候補を入れておく
+    // （これがないと、翌日の作戦画面で今日の疲労 SP がそのまま表示される）。
+    // 自動選出ルール: 先発ローテの中で「疲労度が小さい（コンディション高い）順」、
+    //                同値なら背番号順。シンプル・予測可能で連投も自然に回避できる。
+    // ユーザーが明日の作戦画面で別 SP を選ぶことも自由にできる。
+    if (_myStrategy != null && !isSeasonOver) {
+      final myTeam = teams.firstWhere((t) => t.id == myTeamId);
+      final tomorrowsSP = _pickFreshestStarter(myTeam);
+      _myStrategy =
+          _withSPReplacedInStrategy(_myStrategy!, tomorrowsSP);
+    }
+
     _notify();
     return results;
+  }
+
+  /// 先発ローテの中で「コンディション高い順 → 背番号低い順」で先頭を返す。
+  /// 自チームの作戦自動編成で使う。シーズン序盤は全員 100 で揃うので
+  /// 背番号最小から順に登板し、その後はコンディション差で自然に回るようになる。
+  Player _pickFreshestStarter(Team team) {
+    final rotation = team.startingRotation;
+    if (rotation.isEmpty) return team.pitcher;
+    final sorted = rotation.toList()
+      ..sort((a, b) {
+        final fa = _pitcherFreshness[a.id] ?? 100;
+        final fb = _pitcherFreshness[b.id] ?? 100;
+        final c = fb.compareTo(fa); // freshness 高い順
+        if (c != 0) return c;
+        return a.number.compareTo(b.number); // 同値なら背番号低い順
+      });
+    return sorted.first;
+  }
+
+  /// strategy 内の SP を `newSP` に置き換えた新しい [NextGameStrategy] を返す。
+  /// 既に同じ SP なら同じインスタンスを返す。
+  /// `lineup` 内の旧 SP の位置（打順位置）はそのまま、新 SP に差し替える。
+  NextGameStrategy _withSPReplacedInStrategy(
+      NextGameStrategy old, Player newSP) {
+    if (old.startingPitcher.id == newSP.id) return old;
+    final newLineup =
+        old.lineup.map((p) => p.isPitcher ? newSP : p).toList();
+    final newAlignment = <FieldPosition, Player>{
+      ...old.alignment,
+      FieldPosition.pitcher: newSP,
+    };
+    return NextGameStrategy(lineup: newLineup, alignment: newAlignment);
   }
 
   /// 残り全日を一括シミュレート（デバッグ用）
@@ -619,6 +741,25 @@ class SeasonController {
     );
   }
 
+  /// ユーザーが指定した作戦（NextGameStrategy）から1試合分の Team を構築する。
+  /// `_withGameLineup` のオート版とほぼ同じだが、打順・守備配置・先発はユーザー指定を採用。
+  Team _applyMyStrategy(Team team, NextGameStrategy strategy) {
+    final lineupIds = strategy.fullLineup.map((p) => p.id).toSet();
+    final newBench = <Player>[];
+    for (final p in team.bench) {
+      if (!lineupIds.contains(p.id)) newBench.add(p);
+    }
+    for (final p in team.players.take(8)) {
+      if (!lineupIds.contains(p.id)) newBench.add(p);
+    }
+    return team.copyWith(
+      players: strategy.fullLineup,
+      defenseAlignment: Map.of(strategy.alignment),
+      bench: newBench,
+      bullpen: _availableBullpen(team),
+    );
+  }
+
   /// 試合結果から各打者の直近打席を [_recentForms] に取り込む
   void _updateRecentForms(GameResult game) {
     for (final half in game.halfInnings) {
@@ -660,12 +801,12 @@ class SeasonController {
   int batterConditionState(String playerId) =>
       _batterConditions.stateOf(playerId);
 
-  /// 投手のコンディション参照（UI 用）
-  // pitcherLastStartDay は既存定義あり。pitcherFreshness は既存。
-  // ここでは追加 API なし。
-
-  /// 投手のコンディション参照（UI 用）
-  int? pitcherFreshness(String pitcherId) => _pitcherFreshness[pitcherId];
+  /// 投手のコンディション（0〜100、100 = 完全フレッシュ）。
+  /// 試合の球数で消費し、1 日経過で `stamina` 依存の量だけ回復する。
+  /// 作戦画面で「連投できそうか」の判断材料として表示する。
+  /// 未登録の投手は 100 を返す（開幕直後の挙動と一致）。
+  int pitcherFreshness(String pitcherId) =>
+      _pitcherFreshness[pitcherId] ?? 100;
 
   /// 投手の最終登板日参照（UI 用）
   int? pitcherLastStartDay(String pitcherId) =>

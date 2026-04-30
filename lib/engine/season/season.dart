@@ -2,6 +2,7 @@
 export 'batter_condition.dart';
 export 'game_summary.dart';
 export 'lineup_planner.dart';
+export 'next_game_strategy.dart';
 export 'player_season_stats.dart';
 export 'recent_form.dart';
 export 'schedule.dart';

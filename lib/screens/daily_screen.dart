@@ -82,11 +82,12 @@ class _DailyScreenState extends State<DailyScreen>
 
         return Scaffold(
           appBar: AppBar(
-            title: Text('Day ${c.currentDay} / ${c.totalDays}'),
+            title: Text('Day ${c.currentDay} / ${c.totalDays} 結果'),
             backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-            // 戻るボタンは親の MainSeasonScreen が PopScope で扱う想定なので
-            // ここは明示的に無効化する（IndexedStack の各タブでルートのため）
-            automaticallyImplyLeading: false,
+            // この画面は MainSeasonScreen から「次の試合へ」を押した直後に
+            // 作戦タブの上に push される。push されている場合は戻るボタンが
+            // 自動表示される（canPop=true）。タブのルートとして表示する経路は
+            // 現状ないので、IndexedStack ルート時の挙動は意識しない。
             bottom: myGame == null
                 ? null
                 : TabBar(

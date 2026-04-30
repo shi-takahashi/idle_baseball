@@ -10,15 +10,15 @@ class Team {
   String name;
   // スコアボード等の狭い表示領域で使う英字1〜2文字の略称（例: フェニックス → "P"）
   String shortName;
-  // 9人。打順順に並ぶ:
-  //   players[0..7] = 1〜8番（スタメン野手）
-  //   players[8]    = 9番（投手）
-  // DH 非採用のため、投手は最弱打者として9番に固定する。
+  // 9人。打順順に並ぶ。投手は通常 players[8]（9番）に置くが、
+  // 大谷選手のように打撃が強い投手は他の打順にもできる
+  // （野球ルール上、投手の打順位置に制約はない）。
+  // 投手の特定は `players` を走査して `isPitcher == true` の選手で行うこと。
   final List<Player> players;
 
   // 先発ローテーション（6人想定）
-  // players[8] はこのリストの中から日々選出される。
-  // 既存テストコード等の互換のため省略可能（空なら従来どおり players[8] が固定の先発）
+  // 試合ごとに 1 人がローテから選出されて `players` に組み込まれる。
+  // 通常は 9 番（players[8]）に入るが、ユーザーの作戦指定で他の打順にも置ける。
   final List<Player> startingRotation;
 
   // 救援投手（8人想定: 抑え1 + セットアッパー1 + 中継ぎ2 + ワンポイント1 + ロング1 + 敗戦処理2）
@@ -108,8 +108,25 @@ class Team {
     return players[battingOrder % 9];
   }
 
-  /// 先発投手
-  Player get pitcher => players[8];
+  /// 先発投手（`players` 内で `isPitcher == true` の選手）
+  ///
+  /// 投手は通常 9 番（players[8]）だが、大谷型の選手のように他の打順にも置ける。
+  /// そのため index 固定で取らず、`players` を走査して isPitcher で特定する。
+  /// players に投手が含まれていない異常系では index 8 にフォールバックする。
+  Player get pitcher {
+    for (final p in players) {
+      if (p.isPitcher) return p;
+    }
+    return players[8];
+  }
+
+  /// 先発投手の打順 index（0-indexed）。投手がいない場合は 8。
+  int get pitcherBattingIndex {
+    for (int i = 0; i < players.length; i++) {
+      if (players[i].isPitcher) return i;
+    }
+    return 8;
+  }
 
   /// 指定ポジションの守備を担当する選手を取得
   /// defenseAlignment が設定されていない場合はデフォルト配置を使用
@@ -119,8 +136,9 @@ class Team {
       return defenseAlignment![position];
     }
 
-    // デフォルト配置（打順1〜8番が野手、9番が投手）
-    // 0: 捕手, 1: 一塁, 2: 二塁, 3: 三塁, 4: 遊撃, 5: 左翼, 6: 中堅, 7: 右翼, 8: 投手
+    // デフォルト配置（打順1〜8番が野手、9番が投手 を想定）
+    // 投手が打順の途中にいる場合（例: 1番投手）は alignment を明示することを推奨。
+    // ここのフォールバックは index ベースなので投手位置を変えると齟齬が出る。
     switch (position) {
       case FieldPosition.catcher:
         return players[0];
@@ -139,7 +157,7 @@ class Team {
       case FieldPosition.right:
         return players[7];
       case FieldPosition.pitcher:
-        return players[8];
+        return pitcher;
     }
   }
 

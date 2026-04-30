@@ -78,6 +78,7 @@
 - [x] チーム基本情報の表示・編集画面（チーム名 / 略称 / カラー、`SeasonController.updateTeam` で in-place 更新）
 - [x] チーム単位の日程・結果画面（消化試合はスコア・勝敗、未消化は対戦予定。タップで試合詳細へ）
 - [x] チーム単位の対戦成績画面（他5チームそれぞれと何勝何敗何分・得失点差・勝ち越し負け越しマーク）
+- [x] 作戦画面（次の試合の打順・守備配置・先発投手をユーザー指定。`NextGameStrategy` を `setMyStrategy`、試合後にクリア）
 
 **残課題:**
 - [ ] 犠飛の判定を厳密化（外野フライで打点ありを全て犠飛扱いにしている）
@@ -126,7 +127,8 @@ lib/
 │   ├── team_info_screen.dart          # チーム基本情報の表示
 │   ├── team_edit_screen.dart          # チーム名・略称・カラーの編集
 │   ├── team_schedule_screen.dart      # チーム単位の日程・結果（タップで試合詳細）
-│   └── team_head_to_head_screen.dart  # チーム単位の対戦成績（相手チーム別）
+│   ├── team_head_to_head_screen.dart  # チーム単位の対戦成績（相手チーム別）
+│   └── strategy_screen.dart           # 作戦画面（次の試合の編成指定）
 ├── widgets/
 │   ├── score_board.dart               # スコアボード（9回時単一テーブル / 延長時 2分割固定）
 │   ├── batting_stats.dart             # 打撃成績（左:選手固定 / 右:位置〜イニング横スクロール）
@@ -177,6 +179,7 @@ lib/
     │   ├── recent_form.dart           # 直近30打席ローリング窓・OPS算出（打順決定用）
     │   ├── lineup_planner.dart        # 当日の打順 + 守備配置を決定
     │   ├── batter_condition.dart      # 野手の調子（隠しパラメータ、Markov）
+    │   ├── next_game_strategy.dart    # 次試合用の作戦（打順・守備配置・先発投手の上書き）
     │   └── season.dart                # エクスポート
     └── engine.dart                    # エクスポート
 

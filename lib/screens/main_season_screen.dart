@@ -5,16 +5,20 @@ import 'daily_screen.dart';
 import 'individual_stats_screen.dart';
 import 'season_listenable.dart';
 import 'standings_screen.dart';
+import 'strategy_screen.dart';
 import 'team_list_screen.dart';
 
 /// シーズン中の主画面
 ///
-/// 下部 [NavigationBar] で「試合」「順位表」「個人成績」を切り替える。
-/// 各タブは独立した [Navigator] を持つので、他試合の詳細を push しても
-/// 下部のナビゲーションバーや「翌日へ」バーは画面に残る。
+/// メイン（タブ0）は **作戦画面** = 次の試合のラインナップ調整。
+/// 試合の時間が来るまではこの作戦画面が「ホーム」として表示され、
+/// 「次の試合へ」を押すと:
+///   1. シミュレートを実行 (`advanceDay`)
+///   2. その日の試合結果（自チーム + 他2試合）を [DailyScreen] で push
+///   3. 戻るボタンで作戦画面に戻り、翌日の作戦を組み直せる
+/// シーズン終了までこのループ。
 ///
-/// 「翌日へ」バー（自チーム戦績 + 翌日へ + 早送り）は MainSeasonScreen に常駐させ、
-/// `SeasonController`（ChangeNotifier）の通知で内容を更新する。
+/// 順位表 / 個人成績 / チーム は補助的なタブ。
 class MainSeasonScreen extends StatefulWidget {
   final SeasonController controller;
 
@@ -28,8 +32,7 @@ class _MainSeasonScreenState extends State<MainSeasonScreen> {
   int _selectedIndex = 0;
 
   /// 各タブの Navigator キー
-  /// - タブ切替時に既存ルートを保持
-  /// - WillPopScope などで個別に pop も可能
+  /// 順序: 作戦 / 順位表 / 個人成績 / チーム
   final List<GlobalKey<NavigatorState>> _navigatorKeys = [
     GlobalKey<NavigatorState>(),
     GlobalKey<NavigatorState>(),
@@ -37,18 +40,20 @@ class _MainSeasonScreenState extends State<MainSeasonScreen> {
     GlobalKey<NavigatorState>(),
   ];
 
+  /// 作戦画面への参照。早送り時にも作戦画面側のフォームを確定する必要があるため、
+  /// 親（このクラス）から `tryCommit()` を呼べるようにキーで保持する。
+  final GlobalKey<StrategyScreenState> _strategyKey =
+      GlobalKey<StrategyScreenState>();
+
   /// SeasonController の通知を Listenable に変換するアダプタ
-  /// 子画面・ListenableBuilder で共有する
   late final SeasonListenable _listenable;
 
   @override
   void initState() {
     super.initState();
     _listenable = SeasonListenable(widget.controller);
-    // シーズン開始直後なら自動的に Day 1 をシミュレート
-    if (widget.controller.currentDay == 0) {
-      widget.controller.advanceDay();
-    }
+    // シーズン開始直後は作戦画面で待機させたいので、Day 1 を自動消化はしない。
+    // ユーザーが「次の試合へ」を押した時点で Day 1 が走り、結果が表示される。
   }
 
   @override
@@ -59,7 +64,6 @@ class _MainSeasonScreenState extends State<MainSeasonScreen> {
 
   void _onSelect(int index) {
     if (index == _selectedIndex) {
-      // 同じタブを再タップした場合はそのタブの先頭ルートに戻る
       _navigatorKeys[index]
           .currentState
           ?.popUntil((route) => route.isFirst);
@@ -68,19 +72,49 @@ class _MainSeasonScreenState extends State<MainSeasonScreen> {
     setState(() => _selectedIndex = index);
   }
 
-  void _advanceDay() {
+  /// 「次の試合へ」: 試合は進めず、作戦タブに戻るだけ。
+  ///
+  /// 試合の実進行は作戦画面内の「試合開始」ボタンが担う。
+  /// 将来 real-time 化したら「試合時間を過ぎてたら結果へ、まだなら作戦へ」の
+  /// 分岐をここに入れる予定。
+  void _goToStrategy() {
+    if (_selectedIndex != 0) {
+      setState(() => _selectedIndex = 0);
+    }
+    _navigatorKeys[0].currentState?.popUntil((route) => route.isFirst);
+  }
+
+  /// 作戦画面の「試合開始」ボタンから呼ぶ:
+  /// 1日進めて、当日の結果画面 [DailyScreen] を作戦タブの上に push する。
+  /// 戻るで作戦画面に復帰 → 翌日の作戦が表示される。
+  void _runNextGame() {
     if (widget.controller.isSeasonOver) return;
     widget.controller.advanceDay();
-    // 進行後は前日の試合詳細などが残っていると紛らわしいので、
-    // 現在のタブを最初のルート（DailyScreen 等）まで戻す
-    _navigatorKeys[_selectedIndex]
-        .currentState
-        ?.popUntil((route) => route.isFirst);
+    if (_selectedIndex != 0) {
+      setState(() => _selectedIndex = 0);
+    }
+    final navigator = _navigatorKeys[0].currentState;
+    if (navigator == null) return;
+    navigator.popUntil((route) => route.isFirst);
+    navigator.push(MaterialPageRoute(
+      builder: (_) => DailyScreen(
+        controller: widget.controller,
+        listenable: _listenable,
+      ),
+    ));
   }
 
   void _advanceAll() {
     if (widget.controller.isSeasonOver) return;
+    // 作戦画面のフォームに編集が残っていれば、ここで確定して反映してから進める。
+    // 不整合があれば SnackBar が出て進行をキャンセル（`tryCommit` が false 返す）。
+    final ok = _strategyKey.currentState?.tryCommit() ?? true;
+    if (!ok) return;
+
     widget.controller.advanceAll();
+    if (_selectedIndex != 0) {
+      setState(() => _selectedIndex = 0);
+    }
     _navigatorKeys[_selectedIndex]
         .currentState
         ?.popUntil((route) => route.isFirst);
@@ -106,9 +140,11 @@ class _MainSeasonScreenState extends State<MainSeasonScreen> {
           children: [
             _buildTabNavigator(
               0,
-              DailyScreen(
+              StrategyScreen(
+                key: _strategyKey,
                 controller: widget.controller,
                 listenable: _listenable,
+                onStartGame: _runNextGame,
               ),
             ),
             _buildTabNavigator(
@@ -137,8 +173,6 @@ class _MainSeasonScreenState extends State<MainSeasonScreen> {
         bottomNavigationBar: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            // 自チーム戦績 + 翌日へ + 早送り
-            // controller の通知で再ビルドする
             ListenableBuilder(
               listenable: _listenable,
               builder: (context, _) => _buildAdvanceBar(),
@@ -148,8 +182,8 @@ class _MainSeasonScreenState extends State<MainSeasonScreen> {
               onDestinationSelected: _onSelect,
               destinations: const [
                 NavigationDestination(
-                  icon: Icon(Icons.sports_baseball),
-                  label: '試合',
+                  icon: Icon(Icons.assignment),
+                  label: '作戦',
                 ),
                 NavigationDestination(
                   icon: Icon(Icons.leaderboard),
@@ -182,7 +216,8 @@ class _MainSeasonScreenState extends State<MainSeasonScreen> {
   Widget _buildAdvanceBar() {
     final c = widget.controller;
     final ended = c.isSeasonOver;
-    final rec = c.standings.records.firstWhere((r) => r.team.id == c.myTeamId);
+    final rec =
+        c.standings.records.firstWhere((r) => r.team.id == c.myTeamId);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
@@ -206,7 +241,8 @@ class _MainSeasonScreenState extends State<MainSeasonScreen> {
                 Text(
                   '${rec.wins}勝 ${rec.losses}敗 ${rec.ties}分 '
                   '(${rec.winningPct.toStringAsFixed(3)})',
-                  style: TextStyle(fontSize: 11, color: Colors.grey.shade700),
+                  style:
+                      TextStyle(fontSize: 11, color: Colors.grey.shade700),
                 ),
               ],
             ),
@@ -217,13 +253,13 @@ class _MainSeasonScreenState extends State<MainSeasonScreen> {
             onPressed: ended ? null : _advanceAll,
           ),
           ElevatedButton(
-            onPressed: ended ? null : _advanceDay,
+            onPressed: ended ? null : _goToStrategy,
             style: ElevatedButton.styleFrom(
               padding:
                   const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
             ),
             child: Text(
-              ended ? 'シーズン終了' : '翌日へ',
+              ended ? 'シーズン終了' : '次の試合へ',
               style: const TextStyle(fontSize: 14),
             ),
           ),
