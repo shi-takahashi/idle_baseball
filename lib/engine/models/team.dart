@@ -4,9 +4,12 @@ import 'enums.dart';
 /// チーム
 class Team {
   final String id;
-  final String name;
+  // 名前・略称・チームカラーは TeamEditScreen から編集できるよう非final にしている。
+  // SeasonController.updateTeam が in-place で書き換えると、
+  // 同じ Team を参照しているスケジュール・統計すべてに反映される。
+  String name;
   // スコアボード等の狭い表示領域で使う英字1〜2文字の略称（例: フェニックス → "P"）
-  final String shortName;
+  String shortName;
   // 9人。打順順に並ぶ:
   //   players[0..7] = 1〜8番（スタメン野手）
   //   players[8]    = 9番（投手）
@@ -34,9 +37,9 @@ class Team {
   // チームカラー（ARGB int 値）
   // UI 層で Color に変換して、バナーやアイコンの色付けに使う。
   // engine 層を Flutter 非依存に保つため int で保持。
-  final int primaryColorValue;
+  int primaryColorValue;
 
-  const Team({
+  Team({
     required this.id,
     required this.name,
     this.shortName = '',

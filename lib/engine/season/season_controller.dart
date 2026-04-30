@@ -191,6 +191,23 @@ class SeasonController {
     _notify();
   }
 
+  /// チームの基本情報（名前 / 略称 / カラー）を編集する。
+  /// Player 編集と同じ理由で **in-place** で書き換えるため、
+  /// `ScheduledGame` や統計が保持している Team 参照すべてに反映される。
+  /// `null` を渡したフィールドは変更しない。
+  void updateTeam(
+    String teamId, {
+    String? name,
+    String? shortName,
+    int? primaryColorValue,
+  }) {
+    final t = teams.firstWhere((x) => x.id == teamId);
+    if (name != null) t.name = name;
+    if (shortName != null) t.shortName = shortName;
+    if (primaryColorValue != null) t.primaryColorValue = primaryColorValue;
+    _notify();
+  }
+
   void _replacePlayerInTeamInPlace(Team t, Player updated) {
     void swap(List<Player> list) {
       for (int i = 0; i < list.length; i++) {

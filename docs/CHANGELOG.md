@@ -5,6 +5,28 @@
 
 ---
 
+## 2026-04-30 チーム基本情報の編集機能
+
+**エンジン側:**
+- `Team.name` / `shortName` / `primaryColorValue` を非 final 化（`const Team` も廃止）
+- `SeasonController.updateTeam(teamId, {name, shortName, primaryColorValue})` を追加
+- Player 編集と同じく **in-place** 更新で、スケジュール・統計・順位表すべての参照に反映
+
+**新規 `TeamInfoScreen`:**
+- チーム一覧の「基本情報」リンクから push
+- チーム名 / 略称 / カラー（色サンプル + HEX）を表示
+- AppBar の編集ボタンから `TeamEditScreen` に遷移
+
+**新規 `TeamEditScreen`:**
+- チーム名（任意の文字列）/ 略称（英数字 1〜2 文字、自動大文字化）/ カラー（16色パレット）を編集
+- リアルタイムでバナーのプレビュー更新
+- 保存時に空文字をバリデーションして SnackBar で通知
+
+**`TeamListScreen`:**
+- 空きスロットだった右下に「基本情報」リンクを配置（リンク総数 6 → 6 のまま、無効2 → 1 に減）
+
+---
+
 ## 2026-04-30 球速の編集に上下限を追加
 
 - 球速の入力範囲を 100〜165 km/h に制限（保存時に clamp）
