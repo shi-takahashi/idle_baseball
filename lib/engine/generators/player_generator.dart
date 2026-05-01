@@ -97,6 +97,7 @@ class PlayerGenerator {
       id: _newId(),
       name: _uniqueName(),
       number: number,
+      age: _generateAge(),
       averageSpeed: avgSpeed,
       fastball: _r.normalInt(mean: 5.0 + abilityBoost),
       control: _r.normalInt(mean: 5.0 + abilityBoost),
@@ -131,6 +132,7 @@ class PlayerGenerator {
       id: _newId(),
       name: _uniqueName(),
       number: number,
+      age: _generateAge(),
       meet: _r.normalInt(),
       power: _r.normalInt(),
       speed: _r.normalInt(),
@@ -156,6 +158,7 @@ class PlayerGenerator {
       id: _newId(),
       name: _uniqueName(),
       number: number,
+      age: _generateAge(),
       meet: _r.normalInt(mean: 4.5, sd: 2.0),
       power: _r.normalInt(mean: 4.5, sd: 2.0),
       speed: _r.normalInt(),
@@ -166,6 +169,12 @@ class PlayerGenerator {
       throws: _r.chance(0.15) ? Handedness.left : Handedness.right,
       fielding: fielding,
     );
+  }
+
+  /// 開幕時の年齢分布: 平均 26、標準偏差 4、18〜36 にクリップ。
+  /// プロ野球の年齢構成（10代後半 〜 30代前半中心）に近い形。
+  int _generateAge() {
+    return _r.normalInt(mean: 26.0, sd: 4.0, min: 18, max: 36);
   }
 
   /// 打者の打席: 右65%、左30%、両5%

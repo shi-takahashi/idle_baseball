@@ -84,6 +84,7 @@ class PlayerDetailScreen extends StatelessWidget {
   // ---------------------------------------------------
   Widget _buildHeader(BuildContext context, Player player) {
     final tags = <String>[];
+    tags.add('${player.age}歳');
     if (player.isPitcher) {
       tags.add(player.reliefRole == null ? '先発' : '救援');
       if (player.reliefRole != null) {

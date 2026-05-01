@@ -5,6 +5,7 @@ class Player {
   final String id;
   final String name;
   final int number; // 背番号
+  final int age; // 年齢（オフシーズン毎に +1、能力変動の基準）
 
   // 投手能力
   final int? averageSpeed; // 平均球速（km/h）、野手はnull
@@ -49,6 +50,7 @@ class Player {
     required this.id,
     required this.name,
     required this.number,
+    this.age = 25,
     this.averageSpeed,
     this.fastball,
     this.control,
@@ -116,6 +118,7 @@ class Player {
       'id': id,
       'name': name,
       'number': number,
+      'age': age,
       if (averageSpeed != null) 'averageSpeed': averageSpeed,
       if (fastball != null) 'fastball': fastball,
       if (control != null) 'control': control,
@@ -159,6 +162,7 @@ class Player {
       id: json['id'] as String,
       name: json['name'] as String,
       number: json['number'] as int,
+      age: (json['age'] as int?) ?? 25,
       averageSpeed: json['averageSpeed'] as int?,
       fastball: json['fastball'] as int?,
       control: json['control'] as int?,

@@ -27,6 +27,7 @@ class PlayerEditScreen extends StatefulWidget {
 class _PlayerEditScreenState extends State<PlayerEditScreen> {
   late TextEditingController _nameCtrl;
   late TextEditingController _numberCtrl;
+  late TextEditingController _ageCtrl;
   late TextEditingController _speedCtrl;
 
   late Handedness _bats;
@@ -76,6 +77,7 @@ class _PlayerEditScreenState extends State<PlayerEditScreen> {
     final p = widget.initial;
     _nameCtrl = TextEditingController(text: p.name);
     _numberCtrl = TextEditingController(text: p.number.toString());
+    _ageCtrl = TextEditingController(text: p.age.toString());
     _speedCtrl =
         TextEditingController(text: (p.averageSpeed ?? 145).toString());
 
@@ -157,6 +159,7 @@ class _PlayerEditScreenState extends State<PlayerEditScreen> {
   void dispose() {
     _nameCtrl.dispose();
     _numberCtrl.dispose();
+    _ageCtrl.dispose();
     _speedCtrl.dispose();
     super.dispose();
   }
@@ -246,6 +249,27 @@ class _PlayerEditScreenState extends State<PlayerEditScreen> {
             style: const TextStyle(fontSize: 11, color: Colors.red),
           ),
         ],
+        const SizedBox(height: 8),
+        _LabelRow(
+          label: '年齢',
+          child: SizedBox(
+            width: 80,
+            child: TextField(
+              controller: _ageCtrl,
+              keyboardType: TextInputType.number,
+              maxLength: 2,
+              inputFormatters: [
+                FilteringTextInputFormatter.digitsOnly,
+                LengthLimitingTextInputFormatter(2),
+              ],
+              decoration: const InputDecoration(
+                isDense: true,
+                suffixText: '歳',
+                counterText: '',
+              ),
+            ),
+          ),
+        ),
         const SizedBox(height: 12),
         if (_isPitcher) ...[
           _LabelRow(
@@ -479,6 +503,7 @@ class _PlayerEditScreenState extends State<PlayerEditScreen> {
     final p = widget.initial;
     final name = _nameCtrl.text.trim().isEmpty ? p.name : _nameCtrl.text.trim();
     final number = int.tryParse(_numberCtrl.text) ?? p.number;
+    final age = (int.tryParse(_ageCtrl.text) ?? p.age).clamp(15, 60);
     final rawSpeed =
         int.tryParse(_speedCtrl.text) ?? (p.averageSpeed ?? 145);
     final speed = rawSpeed.clamp(_minSpeed, _maxSpeed);
@@ -501,6 +526,7 @@ class _PlayerEditScreenState extends State<PlayerEditScreen> {
       id: p.id,
       name: name,
       number: number,
+      age: age,
       // 投手能力
       averageSpeed: _isPitcher ? speed : null,
       fastball: _isPitcher ? _fastball : null,
