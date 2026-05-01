@@ -58,6 +58,9 @@ class _PlayerEditScreenState extends State<PlayerEditScreen> {
   // 守備力（0=守れない、1〜10=値）。常に6ポジション分のキーを持つ。
   late Map<DefensePosition, int> _fielding;
 
+  // 背番号の重複エラー（同一チームに同じ番号がいると非null）
+  String? _numberError;
+
   bool get _isPitcher => widget.initial.isPitcher;
 
   // 球速の許容範囲。
@@ -101,6 +104,53 @@ class _PlayerEditScreenState extends State<PlayerEditScreen> {
       for (final pos in DefensePosition.values)
         pos: p.fielding == null ? 5 : (p.fielding![pos] ?? 0),
     };
+
+    _numberCtrl.addListener(_validateNumber);
+  }
+
+  /// 同一チーム内で背番号が他の選手と重複していないかをチェック。
+  /// 重複していたら `_numberError` にメッセージを入れて TextField に表示する。
+  void _validateNumber() {
+    final text = _numberCtrl.text;
+    final n = int.tryParse(text);
+    String? error;
+    if (text.isNotEmpty && n != null) {
+      final team = _findTeamOf(widget.initial.id);
+      if (team != null) {
+        final seen = <String>{};
+        for (final p in [
+          ...team.players,
+          ...team.startingRotation,
+          ...team.bullpen,
+          ...team.bench,
+        ]) {
+          if (p.id == widget.initial.id) continue;
+          if (!seen.add(p.id)) continue; // 重複参照（先発ローテと players の交差）を除外
+          if (p.number == n) {
+            error = '背番号 $n は ${p.name} が使用中';
+            break;
+          }
+        }
+      }
+    }
+    if (error != _numberError) {
+      setState(() => _numberError = error);
+    }
+  }
+
+  /// 指定 id の選手が所属するチームを teams から探す。
+  Team? _findTeamOf(String playerId) {
+    for (final t in widget.controller.teams) {
+      for (final p in [
+        ...t.players,
+        ...t.startingRotation,
+        ...t.bullpen,
+        ...t.bench,
+      ]) {
+        if (p.id == playerId) return t;
+      }
+    }
+    return null;
   }
 
   @override
@@ -146,6 +196,7 @@ class _PlayerEditScreenState extends State<PlayerEditScreen> {
       title: '基本情報',
       children: [
         Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             Expanded(
               flex: 3,
@@ -163,15 +214,38 @@ class _PlayerEditScreenState extends State<PlayerEditScreen> {
               child: TextField(
                 controller: _numberCtrl,
                 keyboardType: TextInputType.number,
-                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                decoration: const InputDecoration(
+                maxLength: 3,
+                inputFormatters: [
+                  FilteringTextInputFormatter.digitsOnly,
+                  LengthLimitingTextInputFormatter(3),
+                ],
+                decoration: InputDecoration(
                   labelText: '背番号',
+                  counterText: '',
                   isDense: true,
+                  // errorText は TextField の幅で折り返されて見切れるので、
+                  // 行の下に全幅で表示する（下の if (_numberError != null) の行）。
+                  // ここでは枠だけ赤くする。
+                  enabledBorder: _numberError != null
+                      ? const UnderlineInputBorder(
+                          borderSide: BorderSide(color: Colors.red))
+                      : null,
+                  focusedBorder: _numberError != null
+                      ? const UnderlineInputBorder(
+                          borderSide: BorderSide(color: Colors.red, width: 2))
+                      : null,
                 ),
               ),
             ),
           ],
         ),
+        if (_numberError != null) ...[
+          const SizedBox(height: 4),
+          Text(
+            _numberError!,
+            style: const TextStyle(fontSize: 11, color: Colors.red),
+          ),
+        ],
         const SizedBox(height: 12),
         if (_isPitcher) ...[
           _LabelRow(
@@ -408,6 +482,18 @@ class _PlayerEditScreenState extends State<PlayerEditScreen> {
     final rawSpeed =
         int.tryParse(_speedCtrl.text) ?? (p.averageSpeed ?? 145);
     final speed = rawSpeed.clamp(_minSpeed, _maxSpeed);
+
+    // 背番号が同一チーム内の他選手と重複していたら保存をブロック
+    _validateNumber();
+    if (_numberError != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          duration: const Duration(seconds: 2),
+          content: Text(_numberError!),
+        ),
+      );
+      return;
+    }
 
     final canCatch = (_fielding[DefensePosition.catcher] ?? 0) > 0;
 
