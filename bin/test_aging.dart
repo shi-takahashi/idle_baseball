@@ -10,6 +10,7 @@
 import 'dart:math';
 
 import 'package:idle_baseball/engine/engine.dart';
+import 'package:idle_baseball/engine/offseason/player_aging.dart';
 
 void main() {
   final c = SeasonController.newSeason(random: Random(42));
@@ -34,15 +35,13 @@ void main() {
   print('合計選手数: ${initial.players.length}');
   print('平均年齢: ${initial.avgAge.toStringAsFixed(1)}');
 
-  // 検証: 平均年齢は毎年ほぼ +1 のはず（引退・新人補充がまだないので）
-  // ただし若返らないことだけ確認（aging は単方向）
+  // 検証: PlayerAging 単独で 1 年加齢して age が +1 になること
   final c2 = SeasonController.newSeason(random: Random(7));
-  final s0 = _snapshot(c2);
-  c2.advanceAll();
-  c2.advanceToNextSeason();
-  final s1 = _snapshot(c2);
-  if (s1.avgAge < s0.avgAge + 0.9) {
-    throw '加齢後の平均年齢が +1 になっていない (${s0.avgAge} → ${s1.avgAge})';
+  final p = c2.teams.first.players.first;
+  final aging = PlayerAging(random: Random(0));
+  final aged = aging.ageOneYear(p);
+  if (aged.age != p.age + 1) {
+    throw '加齢処理で age が +1 になっていない (${p.age} → ${aged.age})';
   }
   print('\nOK: 加齢が動作している');
 }

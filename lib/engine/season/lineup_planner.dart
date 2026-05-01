@@ -69,14 +69,51 @@ class LineupPlanner {
 
   /// `team.players[0..7]` を起点に、必要に応じてベンチ選手と入れ替える。
   /// ポジションは index に対応するデフォルト位置を維持する（位置を保ったままスワップ）。
+  ///
+  /// 2 段構え:
+  ///   Phase 1 = 強制スワップ。スタメン枠の選手がそのポジションを守れない場合
+  ///             （オフシーズンで守備プロファイルが合わない新人が入った等）、
+  ///             ベンチから守れる選手を必ず昇格させる。回数制限なし。
+  ///   Phase 2 = 通常スワップ。調子・能力差で最大 [maxSwapsPerGame] 件入れ替え。
   List<Player> _selectFielders() {
     final canonical = team.players.take(8).toList();
     if (canonical.length < 8) return canonical;
 
-    // 各スタメン枠でのスワップ候補を列挙
+    final result = List.of(canonical);
+    final usedReplacements = <String>{};
+
+    // ---- Phase 1: 守れない選手を強制スワップ ----
+    for (int i = 0; i < 8; i++) {
+      final starter = result[i];
+      final pos = _defaultPositions[i].defensePosition;
+      if (pos == null) continue;
+      if (starter.canPlay(pos)) continue;
+
+      Player? best;
+      double bestScore = -double.infinity;
+      for (final benchPlayer in team.bench) {
+        if (usedReplacements.contains(benchPlayer.id)) continue;
+        if (!benchPlayer.canPlay(pos)) continue;
+        final score = _formAdjustedAbility(benchPlayer);
+        if (score > bestScore) {
+          bestScore = score;
+          best = benchPlayer;
+        }
+      }
+      if (best != null) {
+        result[i] = best;
+        usedReplacements.add(best.id);
+      }
+      // ベンチに守れる選手がいなければ仕方なく canPlay=false の選手を起用。
+      // ここまで来たらチーム編成自体に問題があるので最終フォールバックとして許容。
+    }
+
+    // ---- Phase 2: 調子・能力で通常スワップ（最大 maxSwapsPerGame 件） ----
     final candidates = <_SwapCandidate>[];
     for (int i = 0; i < 8; i++) {
-      final starter = canonical[i];
+      final starter = result[i];
+      // Phase 1 で既に交代済みの枠は対象外
+      if (usedReplacements.contains(starter.id)) continue;
       final pos = _defaultPositions[i].defensePosition;
       if (pos == null) continue;
 
@@ -85,6 +122,7 @@ class LineupPlanner {
       Player? best;
       double bestScore = starterScore;
       for (final benchPlayer in team.bench) {
+        if (usedReplacements.contains(benchPlayer.id)) continue;
         if (!benchPlayer.canPlay(pos)) continue;
         final score = _formAdjustedAbility(benchPlayer);
         if (score > bestScore) {
@@ -106,14 +144,10 @@ class LineupPlanner {
       }
     }
 
-    // 入れ替えメリットが大きい順に最大 maxSwapsPerGame 件適用
     candidates.sort((a, b) => b.improvement.compareTo(a.improvement));
-    final usedReplacements = <String>{};
-    final result = List.of(canonical);
     int swapped = 0;
     for (final c in candidates) {
       if (swapped >= maxSwapsPerGame) break;
-      // 同じベンチ選手を複数枠に当てない
       if (usedReplacements.contains(c.replacement.id)) continue;
       result[c.slot] = c.replacement;
       usedReplacements.add(c.replacement.id);

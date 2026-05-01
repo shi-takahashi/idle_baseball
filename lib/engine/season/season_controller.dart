@@ -3,6 +3,7 @@ import 'dart:math';
 import '../generators/generators.dart';
 import '../models/models.dart';
 import '../offseason/player_aging.dart';
+import '../offseason/team_rebuilder.dart';
 import '../simulation/simulation.dart';
 import 'batter_condition.dart';
 import 'game_summary.dart';
@@ -116,6 +117,10 @@ class SeasonController {
   /// `advanceDay` で自チームが試合をした瞬間に消費（クリア）される。
   NextGameStrategy? _myStrategy;
 
+  /// 新人選手生成用の長寿命ジェネレータ。シーズン跨ぎでも id・名前が衝突しないよう
+  /// 各 Team 構築時に既存選手から復元される。
+  late PlayerGenerator _playerGen;
+
   SeasonController({
     required this.teams,
     required Schedule schedule,
@@ -127,12 +132,41 @@ class SeasonController {
         _gameSimulator = gameSimulator ?? GameSimulator(random: random),
         _rotationRandom = random ?? Random() {
     _batterConditions = BatterConditionTracker(random: random);
+    _playerGen = _buildPlayerGen(teams, random);
     // 開幕時、SP・RP 全員フレッシュ（100）でスタート
     for (final team in teams) {
       for (final p in [...team.startingRotation, ...team.bullpen]) {
         _pitcherFreshness[p.id] = 100;
       }
     }
+  }
+
+  /// 既存選手の id 連番と名前セットから PlayerGenerator を再構築する。
+  /// シーズン跨ぎで新人を追加する際に id・名前が重複しないようにするため。
+  static PlayerGenerator _buildPlayerGen(
+      List<Team> teams, Random? random) {
+    final names = <String>{};
+    int maxId = 0;
+    for (final team in teams) {
+      for (final p in [
+        ...team.players,
+        ...team.startingRotation,
+        ...team.bullpen,
+        ...team.bench,
+      ]) {
+        names.add(p.name);
+        final id = p.id;
+        if (id.startsWith('p_')) {
+          final num = int.tryParse(id.substring(2));
+          if (num != null && num > maxId) maxId = num;
+        }
+      }
+    }
+    return PlayerGenerator(
+      random: random,
+      idStart: maxId,
+      usedNames: names,
+    );
   }
 
   /// 6チームを自動生成して新しいシーズンを開始するファクトリ
@@ -577,6 +611,13 @@ class SeasonController {
         }
       }
     }
+
+    // 1b. CPU チームの引退・新人加入・スタメン再編成・投手ロール再編。自チームは Chunk 5 で対応予定。
+    // 再編成時に前シーズンの成績（OPS）をスコア要素として参照する。
+    TeamRebuilder(
+      playerGen: _playerGen,
+      previousBatterStats: _aggregator.batterStats,
+    ).rebuildCpuTeams(teams, myTeamId);
 
     // 2〜8.
     _seasonYear++;

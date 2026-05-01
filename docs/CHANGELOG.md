@@ -5,6 +5,145 @@
 
 ---
 
+## 2026-05-01 オフシーズンのスタメン再編成（前年成績考慮）
+
+**問題:**
+新人野手の守備プロファイル独立化（同日の修正）+ LineupPlanner 強制スワップだけでは、選手一覧 UI が `team.players[0..7]` をそのまま見るので「一塁スタメン: 木村大輔（実は二塁/遊撃）」のような表示崩れが起きていた。試合時には吸収されるが data structure として不整合。
+
+**設計変更:**
+姑息な「位置不整合スワップ」ではなく、引退・加入後にチーム内の全野手プールから各ポジションのスタメンを **改めて選び直す** 正攻法に。
+
+**実装 (`team_rebuilder.dart`):**
+- `_normalizeStarterPositions`（ベンチとの単純スワップ版）を撤廃
+- `_rebalanceStarters(team, previousStarterIds)` を追加
+  - 全野手プール = `players[0..7]` + `bench`
+  - 候補が少ないポジション（捕手 / 遊撃）から先に確定（取り合いを避ける）
+  - スコア = 打撃 (`meet + power*0.8 + eye*0.4`) + 守備 (`fielding[pos] * 0.6`) + 前年スタメン継続性 (+1.5) + 前年 OPS ボーナス (`(OPS-.700)*8`、最低 30 打席)
+  - 上位 8 人がスタメン、残りはベンチへ。投手スロット (`players[8]`) は触らない
+- `SeasonController.advanceToNextSeason` から `previousBatterStats: _aggregator.batterStats` を渡してから aggregator をリセット
+
+**動作確認:**
+全 CPU チームの不整合スロットが 0 / 8 に。シーズン 2 完走 OK。前年スタメンの継続性ボーナスで急に主力が外されない。
+
+---
+
+## 2026-05-01 新人野手の守備プロファイル個性化 + LineupPlanner 強制スワップ
+
+**問題:**
+最初の実装は「引退者と同じ守備位置を新人が継承」していた。これはゲーム都合のショートカットで、選手の個性が奪われる（指摘あり）。
+
+**設計変更:**
+新人野手は引退者と無関係に、自分独自の守備プロファイル（17 種パターンからランダム抽選）を持つ。
+
+**実装:**
+- `PlayerGenerator.generateRookieFielder({required int number})` — `positions` 引数を撤廃。内部で `_rookieFieldingPatterns` から抽選（スペシャリスト 8 / ユーティリティ 6 / スーパーユーティリティ 3）
+- `TeamRebuilder._retireAndReplaceFielders` — 引退者からポジション情報を渡さない
+- `LineupPlanner._selectFielders` に **Phase 1 強制スワップ** を追加
+  - 既定ポジションを守れない選手は、ベンチから守れる選手で必ず入れ替え（回数制限なし）
+  - 既存の Phase 2 通常スワップ（最大 2 件）はそのまま
+
+**この修正だけでは UI 表示問題が残った** ため、後の「スタメン再編成」修正につながる。
+
+---
+
+## 2026-05-01 Chunk 4: CPU チームの引退・新人加入・投手ロール再編
+
+**スコープ:**
+オフシーズンに自チーム以外のチームで自動的に選手入れ替え + 投手陣の役割再編。
+
+**実装:**
+- `lib/engine/offseason/team_rebuilder.dart` 新設
+- 引退スコア = `(年齢-25) + (10-平均能力)*1.5`、25 歳以下は引退対象外
+- 野手 2 名・投手 2 名を引退、各 DefensePosition で守れる選手が最低 2 人残る制約を満たす範囲で選定
+- 新人は `PlayerGenerator.generateRookieFielder` / `generateRookiePitcher`。年齢 18-22、能力は普通選手より少し低めで伸びしろあり
+- ブルペン投手を能力順に再アサイン: 能力 1 位 → 抑え、2 位 → セットアッパー、stamina 高 → ロング、左腕 → ワンポイント、残り → 中継ぎ / 敗戦処理
+- 引退者の背番号と先発/救援ロールは新人が引き継ぐ（投手のみ）
+- `SeasonController` に長寿命 `PlayerGenerator` を保持（id 連番・名前ユニーク性をシーズン跨ぎで維持。`_buildPlayerGen` で既存選手から復元）
+
+**動作確認 (`bin/test_rebuild.dart`):**
+- 自チーム不変、CPU は毎シーズン 4 名入れ替え
+- ポジション制約維持、抑え/セットアッパー必ず 1 人ずつ
+- 7 シーズン進めて平均年齢 24.7（若返りで暴走しない）
+
+---
+
+## 2026-05-01 Chunk 3: 年齢曲線による能力変動（PlayerAging）
+
+**実装 (`lib/engine/offseason/player_aging.dart`):**
+- 各選手を 1 年加齢、年齢に応じた平均変化量で能力をシフト
+
+| 加齢後の年齢 | 1〜10 能力の mean Δ | 球速 (km/h) の mean Δ |
+|---|---|---|
+| 18-21 | +1.5 | +2.25 |
+| 22-24 | +0.5 | +0.75 |
+| 25-28 | 0.0（ピーク） | 0.0 |
+| 29-31 | -0.3 | -0.45 |
+| 32-34 | -0.7 | -1.05 |
+| 35-37 | -1.2 | -1.8 |
+| 38+ | -1.8 | -2.7 |
+
+- 各能力に独立な正規ノイズ（sd 0.6）で個人差
+- `clamp(1, 10)` で範囲外を抑制、球速は `clamp(110, 165)`
+- 守備 (`fielding`) も同様に変動。値 0（守れない）は維持
+- `advanceToNextSeason` で全 Player に適用、in-place 置換でスケジュール参照も追従
+
+**観察 (5 シーズン):**
+- 平均長打力 3.37 → 3.60 → 3.47 → 3.27 と山なり
+- 平均走力 4.02 → 4.15 → ... → 3.55 と若手成長後に低下
+
+---
+
+## 2026-05-01 Chunk 2: シーズン終了 → オフシーズン進入
+
+**実装:**
+- `SeasonController.seasonYear`（1-indexed）+ JSON 永続化対応
+- `_schedule` / `_aggregator` / `_batterConditions` を再代入可能化
+- `advanceToNextSeason()`: 新 Schedule 生成 + Standings/Stats/Forms/Conditions/Results/Strategy/Freshness 全リセット + Day 0 へ
+- 表示文言が「Day N / 30 チーム名」→「Nシーズン目 Day N / 30 チーム名」に
+- 確認ダイアログ付きの「次シーズンへ」ボタンを advance バーに（シーズン終了時のみ）
+
+---
+
+## 2026-05-01 Chunk 1: Player.age 追加
+
+**実装:**
+- `Player.age`（int, デフォルト 25）追加 + JSON 往復対応
+- `PlayerGenerator._generateAge()`: mean 26 / sd 4 / 18-36 で正規分布
+- 全生成メソッド（先発投手・救援投手・スタメン野手・控え野手）で age を設定
+- `PlayerDetailScreen` ヘッダーに `25歳` チップ
+- `PlayerEditScreen` に年齢入力欄（2 桁、15-60 にクランプ）
+- 36 は **初期生成のみ** の上限。年齢進行で 40+ のベテランも普通に存在できる
+
+---
+
+## 2026-05-01 永続化（JSON ファイル方式）
+
+**動機:**
+複数シーズン化に進む前に、アプリの開閉で状態を失わないようにする土台として実装。
+
+**設計:**
+- `path_provider` で `ApplicationDocuments/save.json` に丸ごと保存
+- 全エンジンモデルに `toJson` / `fromJson` を追加
+- Player は master registry に id 単位で集約。他は id 参照（重複排除）
+- GameResult のホーム/アウェイ Team は試合時のスナップショットなので個別シリアライズ
+- バージョン管理: `saveFormatVersion = 1`、不一致時は FormatException
+
+**実装:**
+- `lib/persistence/save_service.dart`: hasSave / save / load / delete。temp ファイル経由で atomicity 確保
+- `lib/persistence/auto_saver.dart`: SeasonController のリスナを購読 + 500ms デバウンス
+- `MainSeasonScreen` で `AutoSaver` を起動、dispose 時 flush
+- `HomeScreen` を Stateful 化、起動時に save 検出 → 「続きから / 新規シーズン」を出し分け、新規時は確認ダイアログで上書き
+
+**動作確認 (`bin/test_persist.dart`):**
+- 10 日進行 + 作戦セット → JSON 往復 → 再度 1 日進行で全項目一致
+- 10 日経過時点のセーブサイズ約 1.3 MB（30 日完走時で ~4 MB 想定）
+
+**既知のトレードオフ:**
+- 全 GameResult を全球データで保存しているのでサイズ大きめ
+- SPEC で言及されている「過去の試合は詳細破棄」は今後の最適化余地
+
+---
+
 ## 2026-04-30 打順をドラッグ&ドロップで並び替え可能に
 
 `ReorderableListView` で 9 行の打順を長押しドラッグで並び替えられるように。

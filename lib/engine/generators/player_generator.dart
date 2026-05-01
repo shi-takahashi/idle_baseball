@@ -9,10 +9,19 @@ import 'random_utils.dart';
 /// - 能力値は平均5・標準偏差2の正規分布で1〜10にクリップ
 class PlayerGenerator {
   final RandomUtils _r;
-  final Set<String> _usedNames = {};
-  int _idCounter = 0;
+  final Set<String> _usedNames;
+  int _idCounter;
 
-  PlayerGenerator({Random? random}) : _r = RandomUtils(random);
+  /// - [random]: RNG
+  /// - [idStart]: id 連番の開始値（ロード時に既存選手の最大 id を渡してデフォ値を超えないようにする）
+  /// - [usedNames]: すでに使われている名前。ロード時に渡せばシーズン跨ぎでの重複を回避
+  PlayerGenerator({
+    Random? random,
+    int idStart = 0,
+    Set<String>? usedNames,
+  })  : _r = RandomUtils(random),
+        _idCounter = idStart,
+        _usedNames = usedNames ?? <String>{};
 
   /// 先発投手を生成
   Player generateStartingPitcher({required int number}) {
@@ -49,6 +58,7 @@ class PlayerGenerator {
     double abilityBoost = 0.0,
     Handedness? forcedThrows,
     int? minStamina,
+    int? ageOverride,
   }) {
     // 球速: 先発135〜150km前後、救援140〜155km前後
     // abilityBoost 1ポイントごとに 2km 補正
@@ -97,7 +107,7 @@ class PlayerGenerator {
       id: _newId(),
       name: _uniqueName(),
       number: number,
-      age: _generateAge(),
+      age: ageOverride ?? _generateAge(),
       averageSpeed: avgSpeed,
       fastball: _r.normalInt(mean: 5.0 + abilityBoost),
       control: _r.normalInt(mean: 5.0 + abilityBoost),
@@ -175,6 +185,86 @@ class PlayerGenerator {
   /// プロ野球の年齢構成（10代後半 〜 30代前半中心）に近い形。
   int _generateAge() {
     return _r.normalInt(mean: 26.0, sd: 4.0, min: 18, max: 36);
+  }
+
+  /// 新人選手の年齢分布: 平均 19.5、標準偏差 1、18〜22 にクリップ。
+  int _generateRookieAge() {
+    return _r.normalInt(mean: 19.5, sd: 1.0, min: 18, max: 22);
+  }
+
+  /// 新人の守備プロファイル候補（現実的な組み合わせ）。
+  /// 1〜3 ポジションをランダムに抽選してその選手の個性とする。
+  /// 引退者のポジションには連動させない（新人は新人で独立した個性を持つ）。
+  static const _rookieFieldingPatterns = <List<DefensePosition>>[
+    // スペシャリスト（1 ポジション）。外野は実数が多いので重複させて確率を上げる
+    [DefensePosition.catcher],
+    [DefensePosition.first],
+    [DefensePosition.second],
+    [DefensePosition.third],
+    [DefensePosition.shortstop],
+    [DefensePosition.outfield],
+    [DefensePosition.outfield],
+    [DefensePosition.outfield],
+    // 内外野ユーティリティ（2 ポジション）
+    [DefensePosition.first, DefensePosition.third],
+    [DefensePosition.second, DefensePosition.shortstop],
+    [DefensePosition.second, DefensePosition.third],
+    [DefensePosition.first, DefensePosition.outfield],
+    [DefensePosition.third, DefensePosition.outfield],
+    [DefensePosition.catcher, DefensePosition.first],
+    // スーパーユーティリティ（3 ポジション）
+    [DefensePosition.second, DefensePosition.shortstop, DefensePosition.third],
+    [DefensePosition.first, DefensePosition.third, DefensePosition.outfield],
+  ];
+
+  /// 引退者の代わりに加入する新人野手。
+  /// - 守備: 自分独自のプロファイル（[_rookieFieldingPatterns] からランダム抽選）
+  /// - 能力: スタメンと控えの中間（mean 5.0 / sd 1.8）
+  /// - 年齢: 18-22。新人なので [PlayerAging] で数年かけて伸びる前提
+  ///
+  /// 守備位置の整合性は LineupPlanner 側で吸収される
+  /// （守れない選手はベンチから昇格してきた選手と入れ替わる）。
+  Player generateRookieFielder({required int number}) {
+    final positions = _r.pick(_rookieFieldingPatterns);
+    final fielding = <DefensePosition, int>{};
+    // 1つ目（メイン）は若手平均、サブはやや低めにする
+    for (int i = 0; i < positions.length; i++) {
+      final mean = i == 0 ? 5.5 : 4.5;
+      fielding[positions[i]] = _r.normalInt(mean: mean, sd: 1.5);
+    }
+    return Player(
+      id: _newId(),
+      name: _uniqueName(),
+      number: number,
+      age: _generateRookieAge(),
+      meet: _r.normalInt(mean: 5.0, sd: 1.8),
+      power: _r.normalInt(mean: 5.0, sd: 1.8),
+      speed: _r.normalInt(mean: 5.5, sd: 1.5), // 若い分やや走れる
+      eye: _r.normalInt(mean: 4.5, sd: 1.5),
+      arm: _r.normalInt(),
+      lead: positions.contains(DefensePosition.catcher) ? _r.normalInt() : null,
+      bats: _batterHandedness(),
+      throws: _r.chance(0.15) ? Handedness.left : Handedness.right,
+      fielding: fielding,
+    );
+  }
+
+  /// 引退者の代わりに加入する新人投手。
+  /// - 役割: 引退者と同じロール（先発 or 救援＋ロール種類）
+  /// - 能力: 普通投手より少し低めだが、若いので伸びる
+  /// - 年齢: 18-22
+  Player generateRookiePitcher({
+    required int number,
+    bool isStarter = true,
+    ReliefRole? reliefRole,
+  }) {
+    return _generatePitcher(
+      number: number,
+      isStarter: isStarter,
+      reliefRole: reliefRole,
+      abilityBoost: -0.7,
+      ageOverride: _generateRookieAge(),
+    );
   }
 
   /// 打者の打席: 右65%、左30%、両5%
