@@ -2,6 +2,7 @@ import 'dart:math';
 
 import '../generators/generators.dart';
 import '../models/models.dart';
+import '../offseason/player_aging.dart';
 import '../simulation/simulation.dart';
 import 'batter_condition.dart';
 import 'game_summary.dart';
@@ -535,15 +536,20 @@ class SeasonController {
 
   /// シーズン終了状態から次シーズンへ進む（Day 0 / 新シーズンに準備）。
   ///
-  /// 現在のスコープ: 「素通し版」。能力変動・引退・新人加入は将来のチャンクで実装。
+  /// 実装スコープ:
+  ///   - 全選手の `age + 1` と能力変動（[PlayerAging] による年齢曲線）
+  ///   - シーズン進行状態のリセット（試合結果・統計・順位表など）
+  ///   - 引退・新人加入はまだ実装しない（後続チャンクで）
+  ///
   /// このメソッドが行うこと:
-  ///   1. シーズン番号 +1
-  ///   2. 新しい Schedule を再生成（同じチーム配列）
-  ///   3. SeasonAggregator を新規作成（順位表・個人成績をリセット）
-  ///   4. _results / _recentForms / _myStrategy / _pitcherLastStartDay を全クリア
-  ///   5. _pitcherFreshness を全員 100 にリセット
-  ///   6. _batterConditions は引き続きキャリーするより新シーズンらしくクリア
-  ///   7. _currentDay = 0
+  ///   1. 全選手の年齢を +1 し、能力値を年齢曲線に従って変動させる
+  ///   2. シーズン番号 +1
+  ///   3. 新しい Schedule を再生成（同じチーム配列）
+  ///   4. SeasonAggregator を新規作成（順位表・個人成績をリセット）
+  ///   5. _results / _recentForms / _myStrategy / _pitcherLastStartDay を全クリア
+  ///   6. _pitcherFreshness を全員 100 にリセット
+  ///   7. _batterConditions も新規作成（前シーズンの調子は引き継がない）
+  ///   8. _currentDay = 0
   ///
   /// 呼び出し条件: `isSeasonOver` が true。シーズン進行中に呼ぶと [StateError]。
   void advanceToNextSeason() {
@@ -551,6 +557,28 @@ class SeasonController {
       throw StateError('シーズン進行中は advanceToNextSeason を呼べません');
     }
 
+    // 1. 加齢 + 能力変動。各 Team 内の players/rotation/bullpen/bench/alignment を
+    //    in-place で書き換え（_replacePlayerInTeamInPlace 経由でスケジュール参照も追従）。
+    //    ※ updatePlayer は notify を発火させるのでループ向きでない。直接 in-place 置換。
+    final aging = PlayerAging(random: _rotationRandom);
+    final seenIds = <String>{};
+    for (final team in teams) {
+      for (final p in [
+        ...team.players,
+        ...team.startingRotation,
+        ...team.bullpen,
+        ...team.bench,
+      ]) {
+        if (!seenIds.add(p.id)) continue;
+        final updated = aging.ageOneYear(p);
+        // 全 Team 横断で in-place 置換（同じ Player 参照を持つ場所すべてを更新）
+        for (final t in teams) {
+          _replacePlayerInTeamInPlace(t, updated);
+        }
+      }
+    }
+
+    // 2〜8.
     _seasonYear++;
     _schedule = const ScheduleGenerator().generate(teams);
     _aggregator = SeasonAggregator(teams);
