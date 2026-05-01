@@ -35,15 +35,21 @@ import 'standings.dart';
 /// 経由して `ListenableBuilder` で購読する。
 class SeasonController {
   final List<Team> teams;
-  final Schedule schedule;
+  Schedule _schedule;
   final String myTeamId;
-  final SeasonAggregator _aggregator;
+  SeasonAggregator _aggregator;
   final GameSimulator _gameSimulator;
 
   /// gameNumber → GameResult のマップ（未実行の試合はキーなし）
   final Map<int, GameResult> _results = {};
 
   int _currentDay = 0;
+
+  /// シーズン番号（1-indexed）。新規シーズン作成で 1、`advanceToNextSeason` で +1。
+  int _seasonYear = 1;
+
+  /// Schedule を外部から参照する getter。シーズン跨ぎで差し替わるため非 final。
+  Schedule get schedule => _schedule;
 
   /// 進行通知を受け取るリスナー
   final List<void Function()> _listeners = [];
@@ -102,7 +108,8 @@ class SeasonController {
 
   /// 野手の調子（隠しパラメータ）。シミュレーションの能力に直接効く。
   /// 毎日朝に Markov 遷移で更新され、複数日にわたって持続する。
-  late final BatterConditionTracker _batterConditions;
+  /// シーズン跨ぎでリセットするので `late final` ではなく `late` にしてある。
+  late BatterConditionTracker _batterConditions;
 
   /// 自チームの「次の試合」用の作戦。`null` ならオート編成。
   /// `advanceDay` で自チームが試合をした瞬間に消費（クリア）される。
@@ -110,11 +117,12 @@ class SeasonController {
 
   SeasonController({
     required this.teams,
-    required this.schedule,
+    required Schedule schedule,
     required this.myTeamId,
     GameSimulator? gameSimulator,
     Random? random,
-  })  : _aggregator = SeasonAggregator(teams),
+  })  : _schedule = schedule,
+        _aggregator = SeasonAggregator(teams),
         _gameSimulator = gameSimulator ?? GameSimulator(random: random),
         _rotationRandom = random ?? Random() {
     _batterConditions = BatterConditionTracker(random: random);
@@ -145,6 +153,7 @@ class SeasonController {
   int get currentDay => _currentDay;
   int get totalDays => schedule.totalDays;
   bool get isSeasonOver => _currentDay >= schedule.totalDays;
+  int get seasonYear => _seasonYear;
   Team get myTeam => teams.firstWhere((t) => t.id == myTeamId);
   Standings get standings => _aggregator.standings;
   Map<String, BatterSeasonStats> get batterStats => _aggregator.batterStats;
@@ -524,6 +533,43 @@ class SeasonController {
     }
   }
 
+  /// シーズン終了状態から次シーズンへ進む（Day 0 / 新シーズンに準備）。
+  ///
+  /// 現在のスコープ: 「素通し版」。能力変動・引退・新人加入は将来のチャンクで実装。
+  /// このメソッドが行うこと:
+  ///   1. シーズン番号 +1
+  ///   2. 新しい Schedule を再生成（同じチーム配列）
+  ///   3. SeasonAggregator を新規作成（順位表・個人成績をリセット）
+  ///   4. _results / _recentForms / _myStrategy / _pitcherLastStartDay を全クリア
+  ///   5. _pitcherFreshness を全員 100 にリセット
+  ///   6. _batterConditions は引き続きキャリーするより新シーズンらしくクリア
+  ///   7. _currentDay = 0
+  ///
+  /// 呼び出し条件: `isSeasonOver` が true。シーズン進行中に呼ぶと [StateError]。
+  void advanceToNextSeason() {
+    if (!isSeasonOver) {
+      throw StateError('シーズン進行中は advanceToNextSeason を呼べません');
+    }
+
+    _seasonYear++;
+    _schedule = const ScheduleGenerator().generate(teams);
+    _aggregator = SeasonAggregator(teams);
+    _results.clear();
+    _recentForms.clear();
+    _myStrategy = null;
+    _pitcherLastStartDay.clear();
+    _pitcherFreshness.clear();
+    for (final team in teams) {
+      for (final p in [...team.startingRotation, ...team.bullpen]) {
+        _pitcherFreshness[p.id] = 100;
+      }
+    }
+    _batterConditions = BatterConditionTracker(random: _rotationRandom);
+    _currentDay = 0;
+
+    _notify();
+  }
+
   // ---- 投手スタミナ管理 ----
 
   /// 1日分の回復を全投手（SP + RP）に適用
@@ -836,6 +882,7 @@ class SeasonController {
     return {
       'version': saveFormatVersion,
       'myTeamId': myTeamId,
+      'seasonYear': _seasonYear,
       'currentDay': _currentDay,
       'players': {
         for (final entry in allPlayers.entries)
@@ -907,6 +954,7 @@ class SeasonController {
 
     // 5. 内部状態を直接復元
     controller._currentDay = json['currentDay'] as int? ?? 0;
+    controller._seasonYear = json['seasonYear'] as int? ?? 1;
 
     // 5a. 試合結果
     controller._results.clear();
