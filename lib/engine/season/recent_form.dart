@@ -15,6 +15,20 @@ class _PA {
     required this.totalBases,
   });
 
+  Map<String, dynamic> toJson() => {
+        'isAB': isAB,
+        'isHit': isHit,
+        'isWalk': isWalk,
+        'totalBases': totalBases,
+      };
+
+  factory _PA.fromJson(Map<String, dynamic> json) => _PA._(
+        isAB: json['isAB'] as bool,
+        isHit: json['isHit'] as bool,
+        isWalk: json['isWalk'] as bool,
+        totalBases: json['totalBases'] as int,
+      );
+
   factory _PA.from(AtBatResult ab) {
     final type = ab.result;
     final isWalk = type == AtBatResultType.walk;
@@ -63,6 +77,8 @@ class RecentForm {
 
   final List<_PA> _window = [];
 
+  RecentForm();
+
   void recordAtBat(AtBatResult ab) {
     if (ab.isIncomplete) return;
     // 送りバントは打者が「打ちに行った打席」ではないので調子の指標から除外
@@ -87,5 +103,17 @@ class RecentForm {
     final obp = (hits + walks) / pa;
     final slg = ab == 0 ? 0.0 : totalBases / ab;
     return obp + slg;
+  }
+
+  Map<String, dynamic> toJson() => {
+        'window': [for (final pa in _window) pa.toJson()],
+      };
+
+  factory RecentForm.fromJson(Map<String, dynamic> json) {
+    final f = RecentForm();
+    for (final pa in (json['window'] as List)) {
+      f._window.add(_PA.fromJson(pa as Map<String, dynamic>));
+    }
+    return f;
   }
 }

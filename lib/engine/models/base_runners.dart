@@ -17,6 +17,26 @@ class StealAttempt {
     this.isOut = false,
   });
 
+  Map<String, dynamic> toJson() => {
+        'runner': runner.id,
+        'fromBase': fromBase.name,
+        'toBase': toBase.name,
+        'success': success,
+        'isOut': isOut,
+      };
+
+  factory StealAttempt.fromJson(
+    Map<String, dynamic> json,
+    Map<String, Player> playerById,
+  ) =>
+      StealAttempt(
+        runner: playerById[json['runner']]!,
+        fromBase: Base.values.firstWhere((b) => b.name == json['fromBase']),
+        toBase: Base.values.firstWhere((b) => b.name == json['toBase']),
+        success: json['success'] as bool,
+        isOut: (json['isOut'] as bool?) ?? false,
+      );
+
   @override
   String toString() {
     final result = success ? '成功' : '失敗';
@@ -38,6 +58,24 @@ class TagUpAttempt {
     required this.success,
   });
 
+  Map<String, dynamic> toJson() => {
+        'runner': runner.id,
+        'fromBase': fromBase.name,
+        'toBase': toBase.name,
+        'success': success,
+      };
+
+  factory TagUpAttempt.fromJson(
+    Map<String, dynamic> json,
+    Map<String, Player> playerById,
+  ) =>
+      TagUpAttempt(
+        runner: playerById[json['runner']]!,
+        fromBase: Base.values.firstWhere((b) => b.name == json['fromBase']),
+        toBase: Base.values.firstWhere((b) => b.name == json['toBase']),
+        success: json['success'] as bool,
+      );
+
   @override
   String toString() {
     final result = success ? '成功' : '失敗';
@@ -55,6 +93,23 @@ class StealEvent {
     required this.attempts,
     required this.beforeAtBatIndex,
   });
+
+  Map<String, dynamic> toJson() => {
+        'attempts': [for (final a in attempts) a.toJson()],
+        'beforeAtBatIndex': beforeAtBatIndex,
+      };
+
+  factory StealEvent.fromJson(
+    Map<String, dynamic> json,
+    Map<String, Player> playerById,
+  ) =>
+      StealEvent(
+        attempts: [
+          for (final a in (json['attempts'] as List))
+            StealAttempt.fromJson(a as Map<String, dynamic>, playerById),
+        ],
+        beforeAtBatIndex: json['beforeAtBatIndex'] as int,
+      );
 }
 
 /// 走者の状態
@@ -206,4 +261,20 @@ class BaseRunners {
 
     return BaseRunners(first: newFirst, second: newSecond, third: newThird);
   }
+
+  Map<String, dynamic> toJson() => {
+        if (first != null) 'first': first!.id,
+        if (second != null) 'second': second!.id,
+        if (third != null) 'third': third!.id,
+      };
+
+  factory BaseRunners.fromJson(
+    Map<String, dynamic> json,
+    Map<String, Player> playerById,
+  ) =>
+      BaseRunners(
+        first: json['first'] == null ? null : playerById[json['first']],
+        second: json['second'] == null ? null : playerById[json['second']],
+        third: json['third'] == null ? null : playerById[json['third']],
+      );
 }

@@ -46,6 +46,51 @@ class BatterSeasonStats {
 
   /// OPS = 出塁率 + 長打率
   double get ops => onBasePct + sluggingPct;
+
+  Map<String, dynamic> toJson() => {
+        'playerId': player.id,
+        'teamId': team.id,
+        'games': games,
+        'plateAppearances': plateAppearances,
+        'atBats': atBats,
+        'hits': hits,
+        'doubles': doubles,
+        'triples': triples,
+        'homeRuns': homeRuns,
+        'rbi': rbi,
+        'walks': walks,
+        'strikeouts': strikeouts,
+        'stolenBases': stolenBases,
+        'caughtStealing': caughtStealing,
+        'sacFlies': sacFlies,
+        'sacrificeBunts': sacrificeBunts,
+      };
+
+  factory BatterSeasonStats.fromJson(
+    Map<String, dynamic> json,
+    Map<String, Player> playerById,
+    Map<String, Team> teamById,
+  ) {
+    final s = BatterSeasonStats(
+      player: playerById[json['playerId']]!,
+      team: teamById[json['teamId']]!,
+    );
+    s.games = (json['games'] as int?) ?? 0;
+    s.plateAppearances = (json['plateAppearances'] as int?) ?? 0;
+    s.atBats = (json['atBats'] as int?) ?? 0;
+    s.hits = (json['hits'] as int?) ?? 0;
+    s.doubles = (json['doubles'] as int?) ?? 0;
+    s.triples = (json['triples'] as int?) ?? 0;
+    s.homeRuns = (json['homeRuns'] as int?) ?? 0;
+    s.rbi = (json['rbi'] as int?) ?? 0;
+    s.walks = (json['walks'] as int?) ?? 0;
+    s.strikeouts = (json['strikeouts'] as int?) ?? 0;
+    s.stolenBases = (json['stolenBases'] as int?) ?? 0;
+    s.caughtStealing = (json['caughtStealing'] as int?) ?? 0;
+    s.sacFlies = (json['sacFlies'] as int?) ?? 0;
+    s.sacrificeBunts = (json['sacrificeBunts'] as int?) ?? 0;
+    return s;
+  }
 }
 
 /// 投手のシーズン成績
@@ -90,5 +135,48 @@ class PitcherSeasonStats {
   double get whip {
     if (outsRecorded == 0) return 0;
     return (walksAllowed + hitsAllowed) * 3 / outsRecorded;
+  }
+
+  Map<String, dynamic> toJson() => {
+        'playerId': player.id,
+        'teamId': team.id,
+        'games': games,
+        'starts': starts,
+        'wins': wins,
+        'losses': losses,
+        'saves': saves,
+        'holds': holds,
+        'outsRecorded': outsRecorded,
+        'hitsAllowed': hitsAllowed,
+        'homeRunsAllowed': homeRunsAllowed,
+        'walksAllowed': walksAllowed,
+        'strikeoutsRecorded': strikeoutsRecorded,
+        'runsAllowed': runsAllowed,
+        'earnedRuns': earnedRuns,
+      };
+
+  factory PitcherSeasonStats.fromJson(
+    Map<String, dynamic> json,
+    Map<String, Player> playerById,
+    Map<String, Team> teamById,
+  ) {
+    final s = PitcherSeasonStats(
+      player: playerById[json['playerId']]!,
+      team: teamById[json['teamId']]!,
+    );
+    s.games = (json['games'] as int?) ?? 0;
+    s.starts = (json['starts'] as int?) ?? 0;
+    s.wins = (json['wins'] as int?) ?? 0;
+    s.losses = (json['losses'] as int?) ?? 0;
+    s.saves = (json['saves'] as int?) ?? 0;
+    s.holds = (json['holds'] as int?) ?? 0;
+    s.outsRecorded = (json['outsRecorded'] as int?) ?? 0;
+    s.hitsAllowed = (json['hitsAllowed'] as int?) ?? 0;
+    s.homeRunsAllowed = (json['homeRunsAllowed'] as int?) ?? 0;
+    s.walksAllowed = (json['walksAllowed'] as int?) ?? 0;
+    s.strikeoutsRecorded = (json['strikeoutsRecorded'] as int?) ?? 0;
+    s.runsAllowed = (json['runsAllowed'] as int?) ?? 0;
+    s.earnedRuns = (json['earnedRuns'] as int?) ?? 0;
+    return s;
   }
 }

@@ -65,4 +65,66 @@ class AtBatResult {
 
   /// タッチアップ失敗があったかどうか
   bool get hasFailedTagUp => tagUps?.any((t) => !t.success) ?? false;
+
+  Map<String, dynamic> toJson() => {
+        'batter': batter.id,
+        'pitcher': pitcher.id,
+        'inning': inning,
+        'isTop': isTop,
+        'pitches': [for (final p in pitches) p.toJson()],
+        'result': result.name,
+        if (fieldPosition != null) 'fieldPosition': fieldPosition!.name,
+        'rbiCount': rbiCount,
+        'outsBefore': outsBefore,
+        'runnersBefore': runnersBefore.toJson(),
+        if (tagUps != null) 'tagUps': [for (final t in tagUps!) t.toJson()],
+        if (fieldingError != null) 'fieldingError': fieldingError!.toJson(),
+        'isIncomplete': isIncomplete,
+        if (runsByPitcher.isNotEmpty) 'runsByPitcher': runsByPitcher,
+        if (earnedRunsByPitcher.isNotEmpty)
+          'earnedRunsByPitcher': earnedRunsByPitcher,
+      };
+
+  factory AtBatResult.fromJson(
+    Map<String, dynamic> json,
+    Map<String, Player> playerById,
+  ) =>
+      AtBatResult(
+        batter: playerById[json['batter']]!,
+        pitcher: playerById[json['pitcher']]!,
+        inning: json['inning'] as int,
+        isTop: json['isTop'] as bool,
+        pitches: [
+          for (final p in (json['pitches'] as List))
+            PitchResult.fromJson(p as Map<String, dynamic>, playerById),
+        ],
+        result: AtBatResultType.values
+            .firstWhere((r) => r.name == json['result']),
+        fieldPosition: json['fieldPosition'] == null
+            ? null
+            : FieldPosition.values
+                .firstWhere((p) => p.name == json['fieldPosition']),
+        rbiCount: json['rbiCount'] as int,
+        outsBefore: json['outsBefore'] as int,
+        runnersBefore: BaseRunners.fromJson(
+            json['runnersBefore'] as Map<String, dynamic>, playerById),
+        tagUps: json['tagUps'] == null
+            ? null
+            : [
+                for (final t in (json['tagUps'] as List))
+                  TagUpAttempt.fromJson(
+                      t as Map<String, dynamic>, playerById),
+              ],
+        fieldingError: json['fieldingError'] == null
+            ? null
+            : FieldingError.fromJson(
+                json['fieldingError'] as Map<String, dynamic>),
+        isIncomplete: (json['isIncomplete'] as bool?) ?? false,
+        runsByPitcher: json['runsByPitcher'] == null
+            ? const {}
+            : Map<String, int>.from(json['runsByPitcher'] as Map),
+        earnedRunsByPitcher: json['earnedRunsByPitcher'] == null
+            ? const {}
+            : Map<String, int>.from(json['earnedRunsByPitcher'] as Map),
+      );
 }

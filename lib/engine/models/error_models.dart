@@ -36,6 +36,17 @@ class BatteryError {
     required this.runsScored,
   });
 
+  Map<String, dynamic> toJson() => {
+        'type': type.name,
+        'runsScored': runsScored,
+      };
+
+  factory BatteryError.fromJson(Map<String, dynamic> json) => BatteryError(
+        type: BatteryErrorType.values
+            .firstWhere((t) => t.name == json['type']),
+        runsScored: json['runsScored'] as int,
+      );
+
   @override
   String toString() => '$type.displayName${runsScored > 0 ? "($runsScored点)" : ""}';
 }
@@ -82,6 +93,20 @@ class FieldingError {
     required this.position,
     required this.runsScored,
   });
+
+  Map<String, dynamic> toJson() => {
+        'type': type.name,
+        'position': position.name,
+        'runsScored': runsScored,
+      };
+
+  factory FieldingError.fromJson(Map<String, dynamic> json) => FieldingError(
+        type: FieldingErrorType.values
+            .firstWhere((t) => t.name == json['type']),
+        position: FieldPosition.values
+            .firstWhere((p) => p.name == json['position']),
+        runsScored: json['runsScored'] as int,
+      );
 
   @override
   String toString() => '${position.shortName}${type.shortName}${runsScored > 0 ? "($runsScored点)" : ""}';

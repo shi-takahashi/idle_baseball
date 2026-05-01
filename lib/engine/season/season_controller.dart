@@ -811,4 +811,164 @@ class SeasonController {
   /// 投手の最終登板日参照（UI 用）
   int? pitcherLastStartDay(String pitcherId) =>
       _pitcherLastStartDay[pitcherId];
+
+  // ---- 永続化 ----
+  // フォーマットバージョン。スキーマ変更時に古いセーブを弾くために使う。
+  static const int saveFormatVersion = 1;
+
+  /// 全状態を JSON-serializable な Map にまとめる。
+  /// Player は teams 内に登場するすべての一意の選手を `players` セクションに集約し、
+  /// 他の場所では id 参照のみ。
+  Map<String, dynamic> toJson() {
+    // 全 Player を id 単位で集約（teams から重複なく抽出）
+    final allPlayers = <String, Player>{};
+    for (final team in teams) {
+      for (final p in [
+        ...team.players,
+        ...team.startingRotation,
+        ...team.bullpen,
+        ...team.bench,
+      ]) {
+        allPlayers[p.id] = p;
+      }
+    }
+
+    return {
+      'version': saveFormatVersion,
+      'myTeamId': myTeamId,
+      'currentDay': _currentDay,
+      'players': {
+        for (final entry in allPlayers.entries)
+          entry.key: entry.value.toJson(),
+      },
+      'teams': [for (final t in teams) t.toJson()],
+      'schedule': schedule.toJson(),
+      'results': {
+        for (final entry in _results.entries)
+          entry.key.toString(): entry.value.toJson(),
+      },
+      'standings': _aggregator.standings.toJson(),
+      'batterStats': {
+        for (final entry in _aggregator.batterStats.entries)
+          entry.key: entry.value.toJson(),
+      },
+      'pitcherStats': {
+        for (final entry in _aggregator.pitcherStats.entries)
+          entry.key: entry.value.toJson(),
+      },
+      'pitcherFreshness': _pitcherFreshness,
+      'pitcherLastStartDay': _pitcherLastStartDay,
+      'recentForms': {
+        for (final entry in _recentForms.entries)
+          entry.key: entry.value.toJson(),
+      },
+      'batterConditions': _batterConditions.exportStates(),
+      if (_myStrategy != null) 'myStrategy': _myStrategy!.toJson(),
+    };
+  }
+
+  /// JSON から SeasonController を復元する。
+  /// バージョンが合わない場合は [FormatException] を投げる。
+  factory SeasonController.fromJson(
+    Map<String, dynamic> json, {
+    Random? random,
+  }) {
+    final version = json['version'] as int? ?? 0;
+    if (version != saveFormatVersion) {
+      throw FormatException(
+          '保存形式のバージョンが違います (期待: $saveFormatVersion, 実際: $version)');
+    }
+
+    // 1. Player registry
+    final playerById = <String, Player>{};
+    for (final entry in (json['players'] as Map).entries) {
+      playerById[entry.key as String] =
+          Player.fromJson(entry.value as Map<String, dynamic>);
+    }
+
+    // 2. Teams
+    final teams = <Team>[
+      for (final t in (json['teams'] as List))
+        Team.fromJson(t as Map<String, dynamic>, playerById),
+    ];
+    final teamById = {for (final t in teams) t.id: t};
+
+    // 3. Schedule
+    final schedule = Schedule.fromJson(
+        json['schedule'] as Map<String, dynamic>, teamById);
+
+    // 4. Construct controller (aggregator は空で初期化される)
+    final controller = SeasonController(
+      teams: teams,
+      schedule: schedule,
+      myTeamId: json['myTeamId'] as String,
+      random: random,
+    );
+
+    // 5. 内部状態を直接復元
+    controller._currentDay = json['currentDay'] as int? ?? 0;
+
+    // 5a. 試合結果
+    controller._results.clear();
+    final resultsJson = json['results'] as Map?;
+    if (resultsJson != null) {
+      for (final entry in resultsJson.entries) {
+        final num = int.parse(entry.key as String);
+        controller._results[num] = GameResult.fromJson(
+            entry.value as Map<String, dynamic>, playerById);
+      }
+    }
+
+    // 5b. Standings (aggregator のリストを書き換え)
+    final st = controller._aggregator.standings;
+    st.records.clear();
+    for (final r in (json['standings']['records'] as List)) {
+      st.records.add(
+          TeamRecord.fromJson(r as Map<String, dynamic>, teamById));
+    }
+
+    // 5c. BatterStats / PitcherStats
+    final bs = controller._aggregator.batterStats;
+    bs.clear();
+    for (final entry in (json['batterStats'] as Map).entries) {
+      bs[entry.key as String] = BatterSeasonStats.fromJson(
+          entry.value as Map<String, dynamic>, playerById, teamById);
+    }
+    final ps = controller._aggregator.pitcherStats;
+    ps.clear();
+    for (final entry in (json['pitcherStats'] as Map).entries) {
+      ps[entry.key as String] = PitcherSeasonStats.fromJson(
+          entry.value as Map<String, dynamic>, playerById, teamById);
+    }
+
+    // 5d. Pitcher freshness / last start day
+    controller._pitcherFreshness.clear();
+    for (final e in (json['pitcherFreshness'] as Map? ?? {}).entries) {
+      controller._pitcherFreshness[e.key as String] = e.value as int;
+    }
+    controller._pitcherLastStartDay.clear();
+    for (final e in (json['pitcherLastStartDay'] as Map? ?? {}).entries) {
+      controller._pitcherLastStartDay[e.key as String] = e.value as int;
+    }
+
+    // 5e. RecentForms
+    controller._recentForms.clear();
+    for (final e in (json['recentForms'] as Map? ?? {}).entries) {
+      controller._recentForms[e.key as String] =
+          RecentForm.fromJson(e.value as Map<String, dynamic>);
+    }
+
+    // 5f. BatterConditions
+    final bcJson = json['batterConditions'] as Map? ?? {};
+    controller._batterConditions.importStates({
+      for (final e in bcJson.entries) e.key as String: e.value as int,
+    });
+
+    // 5g. MyStrategy
+    final ms = json['myStrategy'] as Map<String, dynamic>?;
+    controller._myStrategy =
+        ms == null ? null : NextGameStrategy.fromJson(ms, playerById);
+
+    return controller;
+  }
 }

@@ -23,6 +23,32 @@ class TeamRecord {
 
   /// 得失点差
   int get runDifferential => runsScored - runsAllowed;
+
+  Map<String, dynamic> toJson() => {
+        'teamId': team.id,
+        'games': games,
+        'wins': wins,
+        'losses': losses,
+        'ties': ties,
+        'runsScored': runsScored,
+        'runsAllowed': runsAllowed,
+        'errors': errors,
+      };
+
+  factory TeamRecord.fromJson(
+    Map<String, dynamic> json,
+    Map<String, Team> teamById,
+  ) {
+    final r = TeamRecord(teamById[json['teamId']]!);
+    r.games = (json['games'] as int?) ?? 0;
+    r.wins = (json['wins'] as int?) ?? 0;
+    r.losses = (json['losses'] as int?) ?? 0;
+    r.ties = (json['ties'] as int?) ?? 0;
+    r.runsScored = (json['runsScored'] as int?) ?? 0;
+    r.runsAllowed = (json['runsAllowed'] as int?) ?? 0;
+    r.errors = (json['errors'] as int?) ?? 0;
+    return r;
+  }
 }
 
 /// 順位表
@@ -51,4 +77,17 @@ class Standings {
     return ((leader.wins - record.wins) + (record.losses - leader.losses)) /
         2.0;
   }
+
+  Map<String, dynamic> toJson() => {
+        'records': [for (final r in records) r.toJson()],
+      };
+
+  factory Standings.fromJson(
+    Map<String, dynamic> json,
+    Map<String, Team> teamById,
+  ) =>
+      Standings([
+        for (final r in (json['records'] as List))
+          TeamRecord.fromJson(r as Map<String, dynamic>, teamById),
+      ]);
 }

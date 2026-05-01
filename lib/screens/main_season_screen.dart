@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../engine/engine.dart';
+import '../persistence/auto_saver.dart';
+import '../persistence/save_service.dart';
 import 'daily_screen.dart';
 import 'individual_stats_screen.dart';
 import 'season_listenable.dart';
@@ -48,16 +50,23 @@ class _MainSeasonScreenState extends State<MainSeasonScreen> {
   /// SeasonController の通知を Listenable に変換するアダプタ
   late final SeasonListenable _listenable;
 
+  /// SeasonController の通知に応じてセーブデータを自動更新するヘルパ
+  late final AutoSaver _autoSaver;
+
   @override
   void initState() {
     super.initState();
     _listenable = SeasonListenable(widget.controller);
+    _autoSaver = AutoSaver(widget.controller, SaveService());
     // シーズン開始直後は作戦画面で待機させたいので、Day 1 を自動消化はしない。
     // ユーザーが「次の試合へ」を押した時点で Day 1 が走り、結果が表示される。
   }
 
   @override
   void dispose() {
+    // 画面を離れる前に未書き込みの編集を確実にディスクへ書き出す
+    _autoSaver.flush();
+    _autoSaver.dispose();
     _listenable.dispose();
     super.dispose();
   }

@@ -22,6 +22,26 @@ class ScheduledGame {
     required this.awayTeam,
   });
 
+  Map<String, dynamic> toJson() => {
+        'gameNumber': gameNumber,
+        'day': day,
+        'slotInDay': slotInDay,
+        'homeTeamId': homeTeam.id,
+        'awayTeamId': awayTeam.id,
+      };
+
+  factory ScheduledGame.fromJson(
+    Map<String, dynamic> json,
+    Map<String, Team> teamById,
+  ) =>
+      ScheduledGame(
+        gameNumber: json['gameNumber'] as int,
+        day: json['day'] as int,
+        slotInDay: json['slotInDay'] as int,
+        homeTeam: teamById[json['homeTeamId']]!,
+        awayTeam: teamById[json['awayTeamId']]!,
+      );
+
   @override
   String toString() =>
       'Day$day-#$slotInDay: ${awayTeam.name} @ ${homeTeam.name}';

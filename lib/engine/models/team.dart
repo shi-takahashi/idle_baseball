@@ -173,6 +173,61 @@ class Team {
     return fielder.getFielding(defensePos);
   }
 
+  // ---- 永続化 ----
+  // Player は id のみ保存。fromJson 時に PlayerRegistry から resolve する。
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'name': name,
+      'shortName': shortName,
+      'primaryColorValue': primaryColorValue,
+      'players': [for (final p in players) p.id],
+      'startingRotation': [for (final p in startingRotation) p.id],
+      'bullpen': [for (final p in bullpen) p.id],
+      'bench': [for (final p in bench) p.id],
+      if (defenseAlignment != null)
+        'defenseAlignment': {
+          for (final e in defenseAlignment!.entries) e.key.name: e.value.id,
+        },
+    };
+  }
+
+  factory Team.fromJson(
+    Map<String, dynamic> json,
+    Map<String, Player> playerById,
+  ) {
+    Player resolve(Object? v) => playerById[v as String]!;
+
+    Map<FieldPosition, Player>? alignment;
+    final a = json['defenseAlignment'];
+    if (a is Map) {
+      alignment = {};
+      for (final e in a.entries) {
+        final pos =
+            FieldPosition.values.firstWhere((p) => p.name == e.key);
+        alignment[pos] = resolve(e.value);
+      }
+    }
+
+    return Team(
+      id: json['id'] as String,
+      name: json['name'] as String,
+      shortName: (json['shortName'] as String?) ?? '',
+      primaryColorValue: (json['primaryColorValue'] as int?) ?? 0xFF9E9E9E,
+      players: [for (final id in (json['players'] as List)) resolve(id)],
+      startingRotation: [
+        for (final id in (json['startingRotation'] as List? ?? []))
+          resolve(id),
+      ],
+      bullpen: [
+        for (final id in (json['bullpen'] as List? ?? [])) resolve(id),
+      ],
+      bench: [for (final id in (json['bench'] as List? ?? [])) resolve(id)],
+      defenseAlignment: alignment,
+    );
+  }
+
   @override
   String toString() => name;
 }

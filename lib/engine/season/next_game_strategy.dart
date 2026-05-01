@@ -69,4 +69,28 @@ class NextGameStrategy {
 
   /// 1〜9 番の打順（互換用 alias）
   List<Player> get fullLineup => lineup;
+
+  Map<String, dynamic> toJson() => {
+        'lineup': [for (final p in lineup) p.id],
+        'alignment': {
+          for (final e in alignment.entries) e.key.name: e.value.id,
+        },
+      };
+
+  factory NextGameStrategy.fromJson(
+    Map<String, dynamic> json,
+    Map<String, Player> playerById,
+  ) {
+    final alignment = <FieldPosition, Player>{};
+    for (final e in (json['alignment'] as Map).entries) {
+      final pos = FieldPosition.values.firstWhere((p) => p.name == e.key);
+      alignment[pos] = playerById[e.value]!;
+    }
+    return NextGameStrategy(
+      lineup: [
+        for (final id in (json['lineup'] as List)) playerById[id]!,
+      ],
+      alignment: alignment,
+    );
+  }
 }

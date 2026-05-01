@@ -37,6 +37,16 @@ class BatterConditionTracker {
     _states[playerId] = state.clamp(minState, maxState);
   }
 
+  /// 永続化用: 全状態を Map で取り出す
+  Map<String, int> exportStates() => Map<String, int>.from(_states);
+
+  /// 永続化用: 全状態を一括復元（既存値は上書き）
+  void importStates(Map<String, int> states) {
+    _states
+      ..clear()
+      ..addAll(states);
+  }
+
   /// Markov 遷移
   ///   普通 → 80% 普通 / 10% 好調 / 10% 不調
   ///   好調 → 60% 好調 / 35% 普通 / 5% 不調

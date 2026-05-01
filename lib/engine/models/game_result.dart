@@ -2,6 +2,7 @@ import 'at_bat_result.dart';
 import 'base_runners.dart';
 import 'fielder_change.dart';
 import 'pitcher_change.dart';
+import 'player.dart';
 import 'team.dart';
 
 /// 1イニングの結果（表または裏）
@@ -33,6 +34,55 @@ class HalfInningResult {
     this.fielderChanges = const [],
     this.defensiveChangesAtStart = const [],
   });
+
+  Map<String, dynamic> toJson() => {
+        'inning': inning,
+        'isTop': isTop,
+        'atBats': [for (final ab in atBats) ab.toJson()],
+        'runs': runs,
+        'stealEvents': [for (final s in stealEvents) s.toJson()],
+        'stolenBases': stolenBases,
+        'caughtStealing': caughtStealing,
+        'pitcherChanges': [for (final c in pitcherChanges) c.toJson()],
+        'fielderChanges': [for (final c in fielderChanges) c.toJson()],
+        'defensiveChangesAtStart':
+            [for (final d in defensiveChangesAtStart) d.toJson()],
+      };
+
+  factory HalfInningResult.fromJson(
+    Map<String, dynamic> json,
+    Map<String, Player> playerById,
+  ) =>
+      HalfInningResult(
+        inning: json['inning'] as int,
+        isTop: json['isTop'] as bool,
+        atBats: [
+          for (final ab in (json['atBats'] as List))
+            AtBatResult.fromJson(ab as Map<String, dynamic>, playerById),
+        ],
+        runs: json['runs'] as int,
+        stealEvents: [
+          for (final s in (json['stealEvents'] as List? ?? []))
+            StealEvent.fromJson(s as Map<String, dynamic>, playerById),
+        ],
+        stolenBases: (json['stolenBases'] as int?) ?? 0,
+        caughtStealing: (json['caughtStealing'] as int?) ?? 0,
+        pitcherChanges: [
+          for (final c in (json['pitcherChanges'] as List? ?? []))
+            PitcherChangeEvent.fromJson(
+                c as Map<String, dynamic>, playerById),
+        ],
+        fielderChanges: [
+          for (final c in (json['fielderChanges'] as List? ?? []))
+            FielderChangeEvent.fromJson(
+                c as Map<String, dynamic>, playerById),
+        ],
+        defensiveChangesAtStart: [
+          for (final d in (json['defensiveChangesAtStart'] as List? ?? []))
+            DefensiveChange.fromJson(
+                d as Map<String, dynamic>, playerById),
+        ],
+      );
 }
 
 /// イニングごとのスコア
@@ -44,6 +94,16 @@ class InningScore {
     this.top,
     this.bottom,
   });
+
+  Map<String, dynamic> toJson() => {
+        if (top != null) 'top': top,
+        if (bottom != null) 'bottom': bottom,
+      };
+
+  factory InningScore.fromJson(Map<String, dynamic> json) => InningScore(
+        top: json['top'] as int?,
+        bottom: json['bottom'] as int?,
+      );
 }
 
 /// 試合結果
@@ -73,6 +133,40 @@ class GameResult {
     if (awayScore > homeScore) return awayTeamName;
     return null;
   }
+
+  /// 永続化: home/away Team はその試合時点でのスナップショットなので Team を直接シリアライズする
+  /// （Schedule の Team とは copyWith で異なるリストを持つため、共有 Team registry に
+  /// 押し込むと打順情報が失われる）。Player は id 参照で共有 registry から resolve。
+  Map<String, dynamic> toJson() => {
+        'homeTeam': homeTeam.toJson(),
+        'awayTeam': awayTeam.toJson(),
+        'inningScores': [for (final s in inningScores) s.toJson()],
+        'halfInnings': [for (final h in halfInnings) h.toJson()],
+        'homeScore': homeScore,
+        'awayScore': awayScore,
+      };
+
+  factory GameResult.fromJson(
+    Map<String, dynamic> json,
+    Map<String, Player> playerById,
+  ) =>
+      GameResult(
+        homeTeam: Team.fromJson(
+            json['homeTeam'] as Map<String, dynamic>, playerById),
+        awayTeam: Team.fromJson(
+            json['awayTeam'] as Map<String, dynamic>, playerById),
+        inningScores: [
+          for (final s in (json['inningScores'] as List))
+            InningScore.fromJson(s as Map<String, dynamic>),
+        ],
+        halfInnings: [
+          for (final h in (json['halfInnings'] as List))
+            HalfInningResult.fromJson(
+                h as Map<String, dynamic>, playerById),
+        ],
+        homeScore: json['homeScore'] as int,
+        awayScore: json['awayScore'] as int,
+      );
 
   /// スコアボードの文字列表現
   String toScoreBoard() {

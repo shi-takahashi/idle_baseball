@@ -1,3 +1,4 @@
+import '../models/team.dart';
 import 'scheduled_game.dart';
 
 /// シーズンの試合日程
@@ -16,4 +17,19 @@ class Schedule {
     result.sort((a, b) => a.slotInDay.compareTo(b.slotInDay));
     return result;
   }
+
+  Map<String, dynamic> toJson() => {
+        'games': [for (final g in games) g.toJson()],
+      };
+
+  factory Schedule.fromJson(
+    Map<String, dynamic> json,
+    Map<String, Team> teamById,
+  ) =>
+      Schedule(
+        games: [
+          for (final g in (json['games'] as List))
+            ScheduledGame.fromJson(g as Map<String, dynamic>, teamById),
+        ],
+      );
 }

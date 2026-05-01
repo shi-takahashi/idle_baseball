@@ -1,6 +1,7 @@
 import 'base_runners.dart';
 import 'enums.dart';
 import 'error_models.dart';
+import 'player.dart';
 
 /// 1球の結果
 class PitchResult {
@@ -30,4 +31,45 @@ class PitchResult {
 
   /// バッテリーエラーがあったかどうか
   bool get hasBatteryError => batteryError != null;
+
+  Map<String, dynamic> toJson() => {
+        'type': type.name,
+        'pitchType': pitchType.name,
+        if (battedBallType != null) 'battedBallType': battedBallType!.name,
+        if (fieldPosition != null) 'fieldPosition': fieldPosition!.name,
+        'speed': speed,
+        if (steals != null) 'steals': [for (final s in steals!) s.toJson()],
+        if (batteryError != null) 'batteryError': batteryError!.toJson(),
+      };
+
+  factory PitchResult.fromJson(
+    Map<String, dynamic> json,
+    Map<String, Player> playerById,
+  ) =>
+      PitchResult(
+        type: PitchResultType.values
+            .firstWhere((t) => t.name == json['type']),
+        pitchType: PitchType.values
+            .firstWhere((p) => p.name == json['pitchType']),
+        battedBallType: json['battedBallType'] == null
+            ? null
+            : BattedBallType.values
+                .firstWhere((b) => b.name == json['battedBallType']),
+        fieldPosition: json['fieldPosition'] == null
+            ? null
+            : FieldPosition.values
+                .firstWhere((f) => f.name == json['fieldPosition']),
+        speed: json['speed'] as int,
+        steals: json['steals'] == null
+            ? null
+            : [
+                for (final s in (json['steals'] as List))
+                  StealAttempt.fromJson(
+                      s as Map<String, dynamic>, playerById),
+              ],
+        batteryError: json['batteryError'] == null
+            ? null
+            : BatteryError.fromJson(
+                json['batteryError'] as Map<String, dynamic>),
+      );
 }

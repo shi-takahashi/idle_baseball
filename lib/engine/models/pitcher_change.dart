@@ -26,6 +26,30 @@ class PitcherChangeEvent {
     required this.reason,
   });
 
+  Map<String, dynamic> toJson() => {
+        'oldPitcher': oldPitcher.id,
+        'newPitcher': newPitcher.id,
+        'inning': inning,
+        'isTop': isTop,
+        'atBatIndex': atBatIndex,
+        'battingOrder': battingOrder,
+        'reason': reason,
+      };
+
+  factory PitcherChangeEvent.fromJson(
+    Map<String, dynamic> json,
+    Map<String, Player> playerById,
+  ) =>
+      PitcherChangeEvent(
+        oldPitcher: playerById[json['oldPitcher']]!,
+        newPitcher: playerById[json['newPitcher']]!,
+        inning: json['inning'] as int,
+        isTop: json['isTop'] as bool,
+        atBatIndex: json['atBatIndex'] as int,
+        battingOrder: json['battingOrder'] as int,
+        reason: json['reason'] as String,
+      );
+
   @override
   String toString() =>
       '$inning回${isTop ? "表" : "裏"} ${oldPitcher.name} → ${newPitcher.name} ($reason)';

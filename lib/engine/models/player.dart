@@ -109,6 +109,80 @@ class Player {
     return value != 0; // 0は明示的に守れない
   }
 
+  // ---- 永続化 ----
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'name': name,
+      'number': number,
+      if (averageSpeed != null) 'averageSpeed': averageSpeed,
+      if (fastball != null) 'fastball': fastball,
+      if (control != null) 'control': control,
+      if (stamina != null) 'stamina': stamina,
+      if (slider != null) 'slider': slider,
+      if (curve != null) 'curve': curve,
+      if (splitter != null) 'splitter': splitter,
+      if (changeup != null) 'changeup': changeup,
+      if (meet != null) 'meet': meet,
+      if (power != null) 'power': power,
+      if (speed != null) 'speed': speed,
+      if (eye != null) 'eye': eye,
+      if (arm != null) 'arm': arm,
+      if (lead != null) 'lead': lead,
+      if (fielding != null)
+        'fielding': {
+          for (final e in fielding!.entries) e.key.name: e.value,
+        },
+      if (throws != null) 'throws': throws!.name,
+      if (bats != null) 'bats': bats!.name,
+      if (reliefRole != null) 'reliefRole': reliefRole!.name,
+    };
+  }
+
+  factory Player.fromJson(Map<String, dynamic> json) {
+    Map<DefensePosition, int>? fielding;
+    final f = json['fielding'];
+    if (f is Map) {
+      fielding = {};
+      for (final e in f.entries) {
+        final pos = DefensePosition.values.firstWhere((p) => p.name == e.key);
+        fielding[pos] = e.value as int;
+      }
+    }
+    Handedness? parseHand(Object? v) {
+      if (v == null) return null;
+      return Handedness.values.firstWhere((h) => h.name == v);
+    }
+
+    return Player(
+      id: json['id'] as String,
+      name: json['name'] as String,
+      number: json['number'] as int,
+      averageSpeed: json['averageSpeed'] as int?,
+      fastball: json['fastball'] as int?,
+      control: json['control'] as int?,
+      stamina: json['stamina'] as int?,
+      slider: json['slider'] as int?,
+      curve: json['curve'] as int?,
+      splitter: json['splitter'] as int?,
+      changeup: json['changeup'] as int?,
+      meet: json['meet'] as int?,
+      power: json['power'] as int?,
+      speed: json['speed'] as int?,
+      eye: json['eye'] as int?,
+      arm: json['arm'] as int?,
+      lead: json['lead'] as int?,
+      fielding: fielding,
+      throws: parseHand(json['throws']),
+      bats: parseHand(json['bats']),
+      reliefRole: json['reliefRole'] == null
+          ? null
+          : ReliefRole.values
+              .firstWhere((r) => r.name == json['reliefRole']),
+    );
+  }
+
   @override
   String toString() => '$name (#$number)';
 }
