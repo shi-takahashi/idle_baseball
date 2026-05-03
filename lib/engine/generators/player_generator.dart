@@ -187,9 +187,35 @@ class PlayerGenerator {
     return _r.normalInt(mean: 26.0, sd: 4.0, min: 18, max: 36);
   }
 
-  /// 新人選手の年齢分布: 平均 19.5、標準偏差 1、18〜22 にクリップ。
-  int _generateRookieAge() {
-    return _r.normalInt(mean: 19.5, sd: 1.0, min: 18, max: 22);
+  /// 新人タイプ別の年齢:
+  /// - 高卒: 18 固定
+  /// - 大卒: 22 固定
+  /// - 社会人: 21〜25 (mean 23, sd 1)
+  int _ageForRookieType(RookieType type) {
+    switch (type) {
+      case RookieType.highSchool:
+        return 18;
+      case RookieType.college:
+        return 22;
+      case RookieType.corporate:
+        return _r.normalInt(mean: 23.0, sd: 1.0, min: 21, max: 25);
+    }
+  }
+
+  /// 新人タイプ別の能力ブースト（年齢が高いほど能力高め、ただし sd は維持なので
+  /// まれに高卒の即戦力や、社会人の伸び悩みも出る）。
+  /// - 高卒: -1.5 (能力低、伸びしろ)
+  /// - 大卒: -0.3 (中堅）
+  /// - 社会人: 0.0 (即戦力）
+  double _abilityBoostForRookieType(RookieType type) {
+    switch (type) {
+      case RookieType.highSchool:
+        return -1.5;
+      case RookieType.college:
+        return -0.3;
+      case RookieType.corporate:
+        return 0.0;
+    }
   }
 
   /// 新人の守備プロファイル候補（現実的な組み合わせ）。
@@ -219,30 +245,40 @@ class PlayerGenerator {
 
   /// 引退者の代わりに加入する新人野手。
   /// - 守備: 自分独自のプロファイル（[_rookieFieldingPatterns] からランダム抽選）
-  /// - 能力: スタメンと控えの中間（mean 5.0 / sd 1.8）
-  /// - 年齢: 18-22。新人なので [PlayerAging] で数年かけて伸びる前提
+  /// - 能力: タイプによって平均能力が変わる
+  ///   - 高卒: 平均 -1.5（伸びしろ重視）
+  ///   - 大卒: 平均 -0.3（中堅）
+  ///   - 社会人: 平均 0.0（即戦力）
+  ///   ただし sd は維持しているので、まれに高卒の即戦力や社会人の凡才も出る
+  /// - 年齢: タイプによる（[_ageForRookieType] 参照）
   ///
   /// 守備位置の整合性は LineupPlanner 側で吸収される
   /// （守れない選手はベンチから昇格してきた選手と入れ替わる）。
-  Player generateRookieFielder({required int number}) {
+  Player generateRookieFielder({
+    required int number,
+    RookieType type = RookieType.college,
+  }) {
+    final boost = _abilityBoostForRookieType(type);
     final positions = _r.pick(_rookieFieldingPatterns);
     final fielding = <DefensePosition, int>{};
     // 1つ目（メイン）は若手平均、サブはやや低めにする
     for (int i = 0; i < positions.length; i++) {
-      final mean = i == 0 ? 5.5 : 4.5;
+      final mean = (i == 0 ? 5.5 : 4.5) + boost;
       fielding[positions[i]] = _r.normalInt(mean: mean, sd: 1.5);
     }
     return Player(
       id: _newId(),
       name: _uniqueName(),
       number: number,
-      age: _generateRookieAge(),
-      meet: _r.normalInt(mean: 5.0, sd: 1.8),
-      power: _r.normalInt(mean: 5.0, sd: 1.8),
-      speed: _r.normalInt(mean: 5.5, sd: 1.5), // 若い分やや走れる
-      eye: _r.normalInt(mean: 4.5, sd: 1.5),
-      arm: _r.normalInt(),
-      lead: positions.contains(DefensePosition.catcher) ? _r.normalInt() : null,
+      age: _ageForRookieType(type),
+      meet: _r.normalInt(mean: 5.0 + boost, sd: 1.8),
+      power: _r.normalInt(mean: 5.0 + boost, sd: 1.8),
+      speed: _r.normalInt(mean: 5.5 + boost, sd: 1.5), // 若い分やや走れる
+      eye: _r.normalInt(mean: 4.5 + boost, sd: 1.5),
+      arm: _r.normalInt(mean: 5.0 + boost),
+      lead: positions.contains(DefensePosition.catcher)
+          ? _r.normalInt(mean: 5.0 + boost)
+          : null,
       bats: _batterHandedness(),
       throws: _r.chance(0.15) ? Handedness.left : Handedness.right,
       fielding: fielding,
@@ -251,19 +287,20 @@ class PlayerGenerator {
 
   /// 引退者の代わりに加入する新人投手。
   /// - 役割: 引退者と同じロール（先発 or 救援＋ロール種類）
-  /// - 能力: 普通投手より少し低めだが、若いので伸びる
-  /// - 年齢: 18-22
+  /// - 能力: タイプ別の abilityBoost を適用（[_abilityBoostForRookieType]）
+  /// - 年齢: タイプによる（[_ageForRookieType] 参照）
   Player generateRookiePitcher({
     required int number,
     bool isStarter = true,
     ReliefRole? reliefRole,
+    RookieType type = RookieType.college,
   }) {
     return _generatePitcher(
       number: number,
       isStarter: isStarter,
       reliefRole: reliefRole,
-      abilityBoost: -0.7,
-      ageOverride: _generateRookieAge(),
+      abilityBoost: _abilityBoostForRookieType(type),
+      ageOverride: _ageForRookieType(type),
     );
   }
 

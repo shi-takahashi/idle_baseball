@@ -2,6 +2,7 @@ import 'dart:math';
 
 import '../generators/generators.dart';
 import '../models/models.dart';
+import '../offseason/offseason_plan.dart';
 import '../offseason/player_aging.dart';
 import '../offseason/team_rebuilder.dart';
 import '../simulation/simulation.dart';
@@ -568,27 +569,56 @@ class SeasonController {
     }
   }
 
+  /// 自チームのオフシーズン編成候補を生成する（チームの状態は変更しない）。
+  ///
+  /// シーズン終了後に UI から呼んで、ユーザーに引退候補・新人候補を提示するための
+  /// データを取得する。`commitOffseason(selection)` を呼ぶまでチームは変更されない。
+  ///
+  /// 同じセッション中に複数回呼ぶと、その度に新しい新人候補が生成される
+  /// （前回の候補は破棄される）。アプリ再起動後の再呼出も、別の新人が生成される
+  /// （未確定の候補はディスクに保存しない）。
+  OffseasonPlan prepareOffseason() {
+    if (!isSeasonOver) {
+      throw StateError('シーズン進行中は prepareOffseason を呼べません');
+    }
+    return TeamRebuilder(
+      playerGen: _playerGen,
+      previousBatterStats: _aggregator.batterStats,
+      random: _rotationRandom,
+    ).buildOffseasonPlan(myTeam);
+  }
+
   /// シーズン終了状態から次シーズンへ進む（Day 0 / 新シーズンに準備）。
   ///
-  /// 実装スコープ:
-  ///   - 全選手の `age + 1` と能力変動（[PlayerAging] による年齢曲線）
-  ///   - シーズン進行状態のリセット（試合結果・統計・順位表など）
-  ///   - 引退・新人加入はまだ実装しない（後続チャンクで）
-  ///
-  /// このメソッドが行うこと:
-  ///   1. 全選手の年齢を +1 し、能力値を年齢曲線に従って変動させる
-  ///   2. シーズン番号 +1
-  ///   3. 新しい Schedule を再生成（同じチーム配列）
-  ///   4. SeasonAggregator を新規作成（順位表・個人成績をリセット）
-  ///   5. _results / _recentForms / _myStrategy / _pitcherLastStartDay を全クリア
-  ///   6. _pitcherFreshness を全員 100 にリセット
-  ///   7. _batterConditions も新規作成（前シーズンの調子は引き継がない）
-  ///   8. _currentDay = 0
+  /// オフシーズン処理の順序:
+  ///   1. 全選手の `age + 1` と能力変動（[PlayerAging] による年齢曲線）
+  ///   2. CPU チームの引退・新人加入・スタメン再編成・投手ロール再編
+  ///   3. 自チーム: [selection] と [plan] が両方与えられた場合のみ、
+  ///      ユーザー選択に従って引退・新人加入・スタメン再編成を実行
+  ///      （未指定の場合は自チームは無編集で次シーズンへ）
+  ///   4. シーズン番号 +1、Schedule・統計・順位表のリセット
+  ///   5. _pitcherFreshness を全員 100 にリセット
+  ///   6. _batterConditions も新規作成、_currentDay = 0
   ///
   /// 呼び出し条件: `isSeasonOver` が true。シーズン進行中に呼ぶと [StateError]。
-  void advanceToNextSeason() {
+  void commitOffseason({
+    OffseasonPlan? plan,
+    OffseasonSelection? selection,
+  }) {
     if (!isSeasonOver) {
-      throw StateError('シーズン進行中は advanceToNextSeason を呼べません');
+      throw StateError('シーズン進行中は commitOffseason を呼べません');
+    }
+    if ((plan == null) != (selection == null)) {
+      throw ArgumentError('plan と selection は両方指定するか、両方省略してください');
+    }
+
+    // 自チーム再編で参照する「前年スタメン」を加齢前にスナップショット。
+    // 加齢で player object 自体は差し替わるが id は不変なので、id を保存しておけば
+    // 加齢後も継続性ボーナスを正しく付与できる。
+    final myTeamPreviousStarterIds = <String>{};
+    if (selection != null) {
+      myTeamPreviousStarterIds
+          .addAll(myTeam.players.take(8).map((p) => p.id));
     }
 
     // 1. 加齢 + 能力変動。各 Team 内の players/rotation/bullpen/bench/alignment を
@@ -612,14 +642,26 @@ class SeasonController {
       }
     }
 
-    // 1b. CPU チームの引退・新人加入・スタメン再編成・投手ロール再編。自チームは Chunk 5 で対応予定。
-    // 再編成時に前シーズンの成績（OPS）をスコア要素として参照する。
-    TeamRebuilder(
+    // 2. CPU チームの引退・新人加入・スタメン再編成・投手ロール再編。
+    //    再編成時に前シーズンの成績（OPS）をスコア要素として参照する。
+    final rebuilder = TeamRebuilder(
       playerGen: _playerGen,
       previousBatterStats: _aggregator.batterStats,
-    ).rebuildCpuTeams(teams, myTeamId);
+      random: _rotationRandom,
+    );
+    rebuilder.rebuildCpuTeams(teams, myTeamId);
 
-    // 2〜8.
+    // 3. 自チーム: ユーザー選択を反映（プランが渡されたときのみ）
+    if (plan != null && selection != null) {
+      rebuilder.applyUserSelection(
+        myTeam,
+        plan,
+        selection,
+        myTeamPreviousStarterIds,
+      );
+    }
+
+    // 4〜6.
     _seasonYear++;
     _schedule = const ScheduleGenerator().generate(teams);
     _aggregator = SeasonAggregator(teams);
@@ -637,6 +679,12 @@ class SeasonController {
     _currentDay = 0;
 
     _notify();
+  }
+
+  /// 自チームの編成変更なしで次シーズンへ進む（後方互換用エイリアス）。
+  /// テストや、UI で「自チームは無編集」を選んだケースから呼ぶ。
+  void advanceToNextSeason() {
+    commitOffseason();
   }
 
   // ---- 投手スタミナ管理 ----

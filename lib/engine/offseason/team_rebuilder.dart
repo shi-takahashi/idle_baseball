@@ -1,6 +1,9 @@
+import 'dart:math';
+
 import '../generators/player_generator.dart';
 import '../models/models.dart';
 import '../season/player_season_stats.dart';
+import 'offseason_plan.dart';
 
 /// オフシーズンの CPU チーム再構築。
 ///
@@ -9,7 +12,9 @@ import '../season/player_season_stats.dart';
 /// 野手は「各守備位置を最低 2 人が守れる」制約を満たす範囲で引退者を決める。
 /// 投手は引退後にブルペンのロール（抑え/セットアッパー/中継ぎ等）を能力順に再アサインする。
 ///
-/// 自チームは対象外。Chunk 5 でユーザー選択 UI を実装する想定。
+/// 自チームについては UI 経由でユーザーが選択するため、別 API を用意:
+///   - [buildOffseasonPlan]: 候補一覧を生成
+///   - [applyUserSelection]: 選択結果をチームに反映 + スタメン再編成
 class TeamRebuilder {
   static const int retireFieldersPerTeam = 2;
   static const int retirePitchersPerTeam = 2;
@@ -23,10 +28,24 @@ class TeamRebuilder {
   /// 前シーズンの野手成績。スタメン選定で OPS ボーナスとして参照する。null なら成績考慮なし。
   final Map<String, BatterSeasonStats>? previousBatterStats;
 
+  /// 新人タイプの抽選などに使う乱数。playerGen と独立に持たせるのは、
+  /// 「生成順を変えても抽選結果がブレない」ようにするため。
+  final Random _random;
+
   TeamRebuilder({
     required this.playerGen,
     this.previousBatterStats,
-  });
+    Random? random,
+  }) : _random = random ?? Random();
+
+  /// CPU 新人のタイプ重み: 大卒 40% / 高卒 30% / 社会人 30%。
+  /// リーグ内に 3 タイプが混ざるよう適度に分散させる。
+  RookieType _pickCpuRookieType() {
+    final r = _random.nextDouble();
+    if (r < 0.4) return RookieType.college;
+    if (r < 0.7) return RookieType.highSchool;
+    return RookieType.corporate;
+  }
 
   /// `team.players[0..7]` の既定守備位置（catcher / first / .. / outfield × 3）。
   /// オフシーズンのスタメン再編成や試合時の LineupPlanner と共通の構造。
@@ -253,6 +272,7 @@ class TeamRebuilder {
     for (final retiredPlayer in retiredPlayers) {
       final rookie = playerGen.generateRookieFielder(
         number: retiredPlayer.number,
+        type: _pickCpuRookieType(),
       );
       _replacePlayerInTeam(team, retiredPlayer, rookie);
     }
@@ -288,6 +308,7 @@ class TeamRebuilder {
         number: retiredPlayer.number,
         isStarter: wasStarter,
         reliefRole: wasStarter ? null : retiredPlayer.reliefRole,
+        type: _pickCpuRookieType(),
       );
       _replacePlayerInTeam(team, retiredPlayer, rookie);
     }
@@ -477,5 +498,219 @@ class TeamRebuilder {
         align[k] = replacement;
       }
     }
+  }
+
+  // ---------------------------------------------------
+  // 自チーム向け API
+  // ---------------------------------------------------
+
+  /// 自チームの引退候補・新人候補リストを生成する。
+  /// チームの状態は変更しない。
+  ///
+  /// 引退候補は野手・投手それぞれ全選手をスコア降順で含み、UI 側で表示する。
+  /// 推奨選択は CPU と同じ条件: 26 歳以上 + スコア > 0 の上位最大 [retireFieldersPerTeam] 名。
+  ///
+  /// 新人候補は野手・投手それぞれ [rookieCandidatesPerType] × 3 タイプ = 6 名生成する
+  /// （高卒 / 大卒 / 社会人 を各 [rookieCandidatesPerType] 名）。
+  /// 推奨は能力スコア上位を選ぶ（基本的には大卒・社会人寄りに偏るが、
+  /// まれな高卒の即戦力もここで拾える）。
+  OffseasonPlan buildOffseasonPlan(
+    Team team, {
+    int rookieCandidatesPerType = 2,
+  }) {
+    final fielders = <Player>[
+      ...team.players.where((p) => !p.isPitcher),
+      ...team.bench,
+    ]..sort(
+        (a, b) => _retirementScore(b).compareTo(_retirementScore(a)),
+      );
+
+    final pitchers = <Player>[
+      ...team.startingRotation,
+      ...team.bullpen,
+    ]..sort(
+        (a, b) => _retirementScore(b).compareTo(_retirementScore(a)),
+      );
+
+    final recommendedRetireFielders = _recommendedRetirements(
+      fielders,
+      retireFieldersPerTeam,
+    );
+    final recommendedRetirePitchers = _recommendedRetirements(
+      pitchers,
+      retirePitchersPerTeam,
+    );
+
+    // 新人は背番号未確定のままプール生成（commit 時に引退者の番号を引き継ぐ）。
+    // 先発寄り（reliefRole = null）に生成し、救援に振られる場合は
+    // [applyUserSelection] で reliefRole を上書きする。
+    final rookieFielders = <RookieCandidate>[
+      for (final type in RookieType.values)
+        for (int i = 0; i < rookieCandidatesPerType; i++)
+          RookieCandidate(
+            player:
+                playerGen.generateRookieFielder(number: 0, type: type),
+            type: type,
+          ),
+    ];
+    final rookiePitchers = <RookieCandidate>[
+      for (final type in RookieType.values)
+        for (int i = 0; i < rookieCandidatesPerType; i++)
+          RookieCandidate(
+            player:
+                playerGen.generateRookiePitcher(number: 0, type: type),
+            type: type,
+          ),
+    ];
+
+    // 推奨新人: 引退人数に合わせて、能力スコア降順で上位を選ぶ。
+    // _abilityScore は野手・投手両方に対応しているのでそのまま使える。
+    List<RookieCandidate> topByAbility(
+        List<RookieCandidate> pool, int count) {
+      final sorted = [...pool]..sort((a, b) =>
+          _abilityScore(b.player).compareTo(_abilityScore(a.player)));
+      return sorted.take(count).toList();
+    }
+
+    return OffseasonPlan(
+      retireCandidateFielders: fielders,
+      retireCandidatePitchers: pitchers,
+      rookieFielderCandidates: rookieFielders,
+      rookiePitcherCandidates: rookiePitchers,
+      recommendedRetireFielderIds:
+          recommendedRetireFielders.map((p) => p.id).toList(),
+      recommendedRetirePitcherIds:
+          recommendedRetirePitchers.map((p) => p.id).toList(),
+      recommendedTakeFielderIds: topByAbility(
+              rookieFielders, recommendedRetireFielders.length)
+          .map((c) => c.id)
+          .toList(),
+      recommendedTakePitcherIds: topByAbility(
+              rookiePitchers, recommendedRetirePitchers.length)
+          .map((c) => c.id)
+          .toList(),
+    );
+  }
+
+  /// CPU と同じ「26 歳以上 + スコア > 0 の上位 [count] 名」を返す。
+  /// ただしポジション制約（最低 2 人/位置）は守らない（UI 側でユーザーが調整できるため）。
+  List<Player> _recommendedRetirements(List<Player> sorted, int count) {
+    final picks = <Player>[];
+    for (final p in sorted) {
+      if (picks.length >= count) break;
+      if (_retirementScore(p) <= 0) break;
+      picks.add(p);
+    }
+    return picks;
+  }
+
+  /// ユーザー選択をチームに反映する。
+  ///
+  /// [previousStarterIds] は再編成時の前年スタメン継続性ボーナスに使う
+  /// （`SeasonController` 側で commit 直前にスナップショットを取る）。
+  ///
+  /// 引退・新人のペアリングは順序ベース:
+  /// `selection.retireFielderIds[i]` を引退させ、`selection.takeFielderIds[i]` を加入させる。
+  /// 新人は引退者の背番号と先発／救援ロールを引き継ぐ。
+  void applyUserSelection(
+    Team team,
+    OffseasonPlan plan,
+    OffseasonSelection selection,
+    Set<String> previousStarterIds,
+  ) {
+    if (!selection.isValid) {
+      throw ArgumentError(
+        '引退と新人の人数が一致していません: '
+        'fielder ${selection.retireFielderIds.length} retire / '
+        '${selection.takeFielderIds.length} take, '
+        'pitcher ${selection.retirePitcherIds.length} retire / '
+        '${selection.takePitcherIds.length} take',
+      );
+    }
+
+    Player findFielderRetiree(String id) =>
+        plan.retireCandidateFielders.firstWhere(
+          (p) => p.id == id,
+          orElse: () =>
+              throw ArgumentError('引退候補に存在しない野手 id: $id'),
+        );
+    Player findPitcherRetiree(String id) =>
+        plan.retireCandidatePitchers.firstWhere(
+          (p) => p.id == id,
+          orElse: () =>
+              throw ArgumentError('引退候補に存在しない投手 id: $id'),
+        );
+    Player findRookieFielder(String id) =>
+        plan.rookieFielderCandidates
+            .firstWhere(
+              (c) => c.id == id,
+              orElse: () =>
+                  throw ArgumentError('新人候補に存在しない野手 id: $id'),
+            )
+            .player;
+    Player findRookiePitcher(String id) =>
+        plan.rookiePitcherCandidates
+            .firstWhere(
+              (c) => c.id == id,
+              orElse: () =>
+                  throw ArgumentError('新人候補に存在しない投手 id: $id'),
+            )
+            .player;
+
+    for (int i = 0; i < selection.retireFielderIds.length; i++) {
+      final retired = findFielderRetiree(selection.retireFielderIds[i]);
+      final rookie = findRookieFielder(selection.takeFielderIds[i]);
+      final replacement = _withNumber(rookie, retired.number);
+      _replacePlayerInTeam(team, retired, replacement);
+    }
+
+    for (int i = 0; i < selection.retirePitcherIds.length; i++) {
+      final retired = findPitcherRetiree(selection.retirePitcherIds[i]);
+      final rookie = findRookiePitcher(selection.takePitcherIds[i]);
+      final wasStarter =
+          team.startingRotation.any((p) => p.id == retired.id);
+      Player replacement = _withNumberAndRole(
+        rookie,
+        retired.number,
+        wasStarter ? null : (retired.reliefRole ?? ReliefRole.middle),
+      );
+      _replacePlayerInTeam(team, retired, replacement);
+    }
+
+    _rebalanceStarters(team, previousStarterIds);
+    _reorganizeBullpenRoles(team);
+  }
+
+  /// id・能力はそのまま、背番号だけを差し替えた Player を返す。
+  Player _withNumber(Player p, int number) {
+    return _withNumberAndRole(p, number, p.reliefRole);
+  }
+
+  /// id・能力はそのまま、背番号とリリーフロールを差し替えた Player を返す。
+  Player _withNumberAndRole(Player p, int number, ReliefRole? role) {
+    return Player(
+      id: p.id,
+      name: p.name,
+      number: number,
+      age: p.age,
+      averageSpeed: p.averageSpeed,
+      fastball: p.fastball,
+      control: p.control,
+      stamina: p.stamina,
+      slider: p.slider,
+      curve: p.curve,
+      splitter: p.splitter,
+      changeup: p.changeup,
+      meet: p.meet,
+      power: p.power,
+      speed: p.speed,
+      eye: p.eye,
+      arm: p.arm,
+      lead: p.lead,
+      fielding: p.fielding,
+      throws: p.throws,
+      bats: p.bats,
+      reliefRole: role,
+    );
   }
 }

@@ -8,6 +8,31 @@ enum Handedness {
   both,
 }
 
+/// 新人選手のタイプ（オフシーズンの加入経路）
+/// - highSchool: 高卒。18 歳。能力低めだが将来性あり
+/// - college: 大卒。22 歳。中堅、即戦力寄り
+/// - corporate: 社会人。21〜25 歳。即戦力期待
+///
+/// 標準偏差は維持しているので、まれに高卒で社会人並みの選手も生成される。
+enum RookieType {
+  highSchool,
+  college,
+  corporate,
+}
+
+extension RookieTypeExtension on RookieType {
+  String get displayName {
+    switch (this) {
+      case RookieType.highSchool:
+        return '高卒';
+      case RookieType.college:
+        return '大卒';
+      case RookieType.corporate:
+        return '社会人';
+    }
+  }
+}
+
 /// 救援投手のロール
 /// - closer: 抑え。基本9回限定でセーブ機会担当
 /// - setup: セットアッパー。8回でリードを守る

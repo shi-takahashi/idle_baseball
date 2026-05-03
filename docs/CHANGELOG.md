@@ -5,6 +5,99 @@
 
 ---
 
+## 2026-05-03 新人 3 種別（高卒 / 大卒 / 社会人）
+
+**動機:**
+新人候補が 4 名 / 全員 18-22 歳 / 能力分布も画一的でリアリティに欠けるという指摘。
+プロ野球の入団経路に合わせて 3 種別を設けて選択肢を増やす。
+
+**`RookieType` enum (`models/enums.dart`):**
+- `highSchool` 高卒 (18 歳固定 / abilityBoost -1.5、伸びしろ重視)
+- `college` 大卒 (22 歳固定 / abilityBoost -0.3、中堅)
+- `corporate` 社会人 (21-25 歳, mean 23 sd 1 / abilityBoost 0.0、即戦力)
+- 標準偏差は維持しているので、まれに高卒の即戦力や社会人の凡才も出る
+
+**`PlayerGenerator` 拡張:**
+- `_ageForRookieType(type)` / `_abilityBoostForRookieType(type)` を追加
+- `generateRookieFielder(type)` / `generateRookiePitcher(type)` がタイプを受け取る形に
+  - 野手: meet/power/speed/eye/arm の mean に boost、守備値の mean にも boost
+  - 投手: 既存の `_generatePitcher(abilityBoost)` 経路にそのまま流す
+- 後方互換: `type` のデフォルトは `RookieType.college`
+
+**`OffseasonPlan` リファクタ:**
+- `RookieCandidate(player, type)` 値オブジェクトを追加
+- `rookieFielderCandidates` / `rookiePitcherCandidates` を `List<Player>` → `List<RookieCandidate>` に変更
+- `rookieFielderTypeOf(id)` / `rookiePitcherTypeOf(id)` の逆引きを追加（UI でバッジ表示用）
+
+**`TeamRebuilder` 変更:**
+- コンストラクタに `Random` を追加（`SeasonController._rotationRandom` を渡す）
+- 自チーム用 `buildOffseasonPlan(team, rookieCandidatesPerType: 2)`:
+  - 野手・投手それぞれ 6 候補（3 タイプ × 2 名）を生成
+  - 推奨は能力スコア降順 (`_abilityScore`) の上位 N 名
+- CPU 用 `_pickCpuRookieType()`: 大卒 40% / 高卒 30% / 社会人 30% の重み抽選
+- CPU の野手・投手新人生成も type を渡すよう更新
+
+**`OffseasonScreen` 更新:**
+- 新人タイル (`_RookieFielderTile` / `_RookiePitcherTile`) が `RookieCandidate` を受け取る形に
+- `_RookieTypeBadge` ウィジェットを追加（高卒=青 / 大卒=黄 / 社会人=紫）
+- 候補は age 昇順（高卒 → 大卒 → 社会人）で並ぶ
+
+**動作確認 (`bin/test_offseason_user.dart` を更新):**
+- 各タイプ 2 名ずつ生成されている
+- 推奨選択（能力上位 2 名）は大卒・社会人寄りに、ただし高卒の高能力も拾われる（seed 42 では「[大卒] 松田翔 ミ8 長7」が推奨に入った）
+- 引退者背番号と SP/RP・reliefRole の継承も従来通り
+- CPU 引退者の test_rebuild / test_rebuild_play、test_persist も全 OK
+- CPU 平均年齢は 24.7 → 25.7（社会人混入により 1 歳上昇）でリアリティ向上
+
+---
+
+## 2026-05-03 Chunk 5: 自チームのオフシーズン編成 UI（OffseasonScreen）
+
+**スコープ:**
+シーズン終了 → 次シーズンの間に、自チームの引退者と新人をユーザーが選択できる画面を追加。
+CPU の引退・新人加入は引き続き自動で実行される。
+
+**エンジン側の分離 (`lib/engine/offseason/`):**
+- `offseason_plan.dart` を新設
+  - `OffseasonPlan`: 引退候補（野手 + 投手、スコア降順）、新人候補（野手 4 + 投手 4）、推奨選択 id のスナップショット
+  - `OffseasonSelection`: ユーザー選択（引退・加入の id ペア）。`isValid` / `recommended(plan)` / `empty` を提供
+- `team_rebuilder.dart` を拡張
+  - `buildOffseasonPlan(team)`: チームを変えずに候補を計算（**新人投手は SP 寄り = `reliefRole = null` で生成**。commit 時に引退者の SP/RP・reliefRole を継承する）
+  - `applyUserSelection(team, plan, selection, previousStarterIds)`: 選択順のペアリングで引退者の背番号と役割を新人に引き継ぎ、`_rebalanceStarters` + `_reorganizeBullpenRoles` を実行
+  - 推奨は CPU と同じ条件: 26 歳以上 + 引退スコア > 0 の上位 2 名
+- `engine.dart` から `offseason/offseason.dart` をエクスポート（`OffseasonPlan` / `OffseasonSelection` のみ。実装詳細は非エクスポート）
+
+**SeasonController API:**
+- `prepareOffseason()`: チームを変更せず `OffseasonPlan` を返す（同一セッション内で複数回呼ぶと毎回新しい新人候補が生成される）
+- `commitOffseason({plan, selection})`: 加齢 → CPU 再編 → 自チーム再編（plan/selection 指定時のみ）→ 状態リセット → seasonYear++
+- `advanceToNextSeason()`: `commitOffseason()` のエイリアス（後方互換）。テストや「自チーム無編集」ケースから呼ぶ
+
+**設計判断:**
+- mid-offseason の永続化は実装しない。アプリを閉じた場合は「シーズン終了状態」に戻り、`OffseasonScreen` 再 push で新しい候補が生成される
+- `_playerGen` の再構築（`_buildPlayerGen` がチームから idCounter / usedNames を復元）により、再起動後も id 衝突しない
+- 加齢は `prepareOffseason` ではなく `commitOffseason` で実行。これにより未確定の状態でアプリを閉じてもチームは未変更のまま
+
+**新規 `OffseasonScreen`:**
+- 「次シーズンへ」ボタンから push される全画面モーダル
+- 4 セクション: 引退候補（野手） / 引退候補（投手） / 新人候補（野手） / 新人候補（投手）
+- 各候補にチェックボックス。引退と新人の人数が一致すると「次シーズン開始」が有効化
+- 「自動推奨」ボタンで CPU と同じ条件のセレクションをワンタップで適用 / 「全解除」で 0+0 に
+- 0+0 で確定すると `commitOffseason()`（自チーム無編集）が走る
+- 確定後は `Navigator.pop` でメイン画面に戻り、新シーズン Day 0 の作戦タブが表示される
+
+**配線:**
+- `MainSeasonScreen._advanceToNextSeason` を「確認ダイアログ → advanceToNextSeason()」から「OffseasonScreen を push → commit 後にタブ復帰」に変更
+
+**動作確認 (`bin/test_offseason_user.dart`):**
+- `prepareOffseason` がチームを変更しないこと
+- 推奨選択で commit → 引退選手 4 名がチームから消え、新人 4 名が引退者の背番号で加入
+- 救援投手の引退者には reliefRole（closer 等）が新人に継承される
+- シーズン 2 を完走できる
+- selection 省略時の `commitOffseason()` は自チームの id 構成を変えない（CPU のみ更新）
+- 既存の `test_rebuild` / `test_rebuild_play` / `test_persist` / `test_next_season` も引き続き全 OK
+
+---
+
 ## 2026-05-01 オフシーズンのスタメン再編成（前年成績考慮）
 
 **問題:**

@@ -5,6 +5,7 @@ import '../persistence/auto_saver.dart';
 import '../persistence/save_service.dart';
 import 'daily_screen.dart';
 import 'individual_stats_screen.dart';
+import 'offseason_screen.dart';
 import 'season_listenable.dart';
 import 'standings_screen.dart';
 import 'strategy_screen.dart';
@@ -223,31 +224,18 @@ class _MainSeasonScreenState extends State<MainSeasonScreen> {
   }
 
   /// シーズン終了状態から次シーズンへ進む。
-  /// 確認ダイアログ → `advanceToNextSeason()` → 作戦タブをルートに戻す。
+  /// [OffseasonScreen] を push して、ユーザーに引退者・新人の選択をさせる。
+  /// 確定で commit が走った後にここに戻り、作戦タブをルートに戻して
+  /// 新シーズン Day 0 の作戦画面を表示する。
   Future<void> _advanceToNextSeason() async {
     final c = widget.controller;
     if (!c.isSeasonOver) return;
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('次のシーズンへ'),
-        content: Text(
-            '${c.seasonYear}シーズン目を終了して、${c.seasonYear + 1}シーズン目を開始します。\n'
-            '前シーズンの個人成績・順位は引き継がれません。'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('キャンセル'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('開始'),
-          ),
-        ],
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => OffseasonScreen(controller: c),
       ),
     );
-    if (ok != true || !mounted) return;
-    c.advanceToNextSeason();
+    if (!mounted) return;
     if (_selectedIndex != 0) {
       setState(() => _selectedIndex = 0);
     }
