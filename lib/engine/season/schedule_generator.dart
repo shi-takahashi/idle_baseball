@@ -10,12 +10,45 @@ import 'scheduled_game.dart';
 /// - 後半15日: 同じ5ラウンドを再度消化（ホーム/ビジターは反転）
 /// - 各カード合計6試合、ホーム3:ビジター3
 /// - Day15→Day16の境界で対戦相手が必ず変わる（=6連戦回避）
+///
+/// 1チームの年間試合数は `15 × halves`（halves=2 なら 30 試合）。
+/// UI で選択できる試合数（30 / 90 / 150）はそれぞれ halves=2 / 6 / 10 に対応。
 class ScheduleGenerator {
   const ScheduleGenerator();
 
+  /// 1チームあたりの試合数として UI から選択できる値。
+  /// halves に変換する際は `gamesPerTeam ~/ 15`。
+  static const List<int> allowedGamesPerTeam = [30, 90, 150];
+
+  /// デフォルトの 1 チームあたり試合数。
+  static const int defaultGamesPerTeam = 30;
+
+  /// 1チームあたりの試合数 → halves の変換。
+  /// 6 チーム × サークル法では 1 half あたり 15 試合（前半 or 後半 1 周分）。
+  static int halvesForGamesPerTeam(int gamesPerTeam) {
+    if (gamesPerTeam <= 0 || gamesPerTeam % 15 != 0) {
+      throw ArgumentError(
+          'gamesPerTeam は 15 の倍数である必要があります (受け取り: $gamesPerTeam)');
+    }
+    return gamesPerTeam ~/ 15;
+  }
+
+  /// 1チームあたりの試合数を指定して日程を生成（UI 連携用の薄いラッパー）。
+  Schedule generateForGamesPerTeam(
+    List<Team> teams,
+    int gamesPerTeam, {
+    int gamesPerCard = 3,
+  }) {
+    return generate(
+      teams,
+      gamesPerCard: gamesPerCard,
+      halves: halvesForGamesPerTeam(gamesPerTeam),
+    );
+  }
+
   /// 指定チームで日程を生成
   /// `gamesPerCard`: 1連戦の試合数（デフォルト3）
-  /// `halves`: 前半・後半を何周するか（デフォルト2）
+  /// `halves`: 前半・後半を何周するか（デフォルト2 = 30試合シーズン）
   Schedule generate(
     List<Team> teams, {
     int gamesPerCard = 3,

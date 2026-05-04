@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../engine/engine.dart';
+import 'home_screen.dart' show SeasonLengthSelector;
 
 /// オフシーズン編成画面（自チーム用）。
 ///
@@ -29,10 +30,14 @@ class _OffseasonScreenState extends State<OffseasonScreen> {
   final _takeFielderSelected = <String>{};
   final _takePitcherSelected = <String>{};
 
+  /// 次シーズンの試合数（30 / 90 / 150）。デフォルトは前シーズンの試合数。
+  late int _nextGamesPerTeam;
+
   @override
   void initState() {
     super.initState();
     _plan = widget.controller.prepareOffseason();
+    _nextGamesPerTeam = widget.controller.gamesPerTeam;
     _applyRecommended();
   }
 
@@ -95,6 +100,7 @@ class _OffseasonScreenState extends State<OffseasonScreen> {
         content: Text(
           '${c.seasonYear}シーズン目を終了して、'
           '${c.seasonYear + 1}シーズン目を開始します。\n\n'
+          '次シーズンの試合数: $_nextGamesPerTeam試合\n'
           '$_summaryText\n\n'
           '前シーズンの個人成績・順位は引き継がれません。',
         ),
@@ -124,9 +130,13 @@ class _OffseasonScreenState extends State<OffseasonScreen> {
     // 引退・新人どちらも 0 件なら selection を渡さない（自チーム無編集）。
     if (selection.retireFielderIds.isEmpty &&
         selection.retirePitcherIds.isEmpty) {
-      c.commitOffseason();
+      c.commitOffseason(gamesPerTeam: _nextGamesPerTeam);
     } else {
-      c.commitOffseason(plan: _plan, selection: selection);
+      c.commitOffseason(
+        plan: _plan,
+        selection: selection,
+        gamesPerTeam: _nextGamesPerTeam,
+      );
     }
 
     if (!mounted) return;
@@ -264,6 +274,16 @@ class _OffseasonScreenState extends State<OffseasonScreen> {
               '引退・新人どちらも 0 名にすればチームを変えずに進めます。\n'
               '他球団 (CPU) の入れ替えは「次シーズン開始」時に自動実行されます。',
               style: TextStyle(fontSize: 12),
+            ),
+            const SizedBox(height: 12),
+            const Text(
+              '次シーズンの試合数',
+              style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 6),
+            SeasonLengthSelector(
+              value: _nextGamesPerTeam,
+              onChanged: (v) => setState(() => _nextGamesPerTeam = v),
             ),
           ],
         ),

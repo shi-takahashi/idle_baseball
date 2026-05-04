@@ -43,6 +43,11 @@ class SeasonController {
   SeasonAggregator _aggregator;
   final GameSimulator _gameSimulator;
 
+  /// 1チームあたりのシーズン試合数（30 / 90 / 150 を想定）。
+  /// 開幕時に UI から選択され、`commitOffseason` で次シーズンへも明示的に
+  /// 引き渡される（未指定の場合は前シーズンの値を継承）。
+  int _gamesPerTeam;
+
   /// gameNumber → GameResult のマップ（未実行の試合はキーなし）
   final Map<int, GameResult> _results = {};
 
@@ -126,9 +131,11 @@ class SeasonController {
     required this.teams,
     required Schedule schedule,
     required this.myTeamId,
+    int gamesPerTeam = ScheduleGenerator.defaultGamesPerTeam,
     GameSimulator? gameSimulator,
     Random? random,
   })  : _schedule = schedule,
+        _gamesPerTeam = gamesPerTeam,
         _aggregator = SeasonAggregator(teams),
         _gameSimulator = gameSimulator ?? GameSimulator(random: random),
         _rotationRandom = random ?? Random() {
@@ -174,13 +181,16 @@ class SeasonController {
   factory SeasonController.newSeason({
     Random? random,
     String myTeamId = 'team_phoenix',
+    int gamesPerTeam = ScheduleGenerator.defaultGamesPerTeam,
   }) {
     final teams = TeamGenerator(random: random).generateLeague();
-    final schedule = const ScheduleGenerator().generate(teams);
+    final schedule = const ScheduleGenerator()
+        .generateForGamesPerTeam(teams, gamesPerTeam);
     return SeasonController(
       teams: teams,
       schedule: schedule,
       myTeamId: myTeamId,
+      gamesPerTeam: gamesPerTeam,
       random: random,
     );
   }
@@ -190,6 +200,10 @@ class SeasonController {
   int get totalDays => schedule.totalDays;
   bool get isSeasonOver => _currentDay >= schedule.totalDays;
   int get seasonYear => _seasonYear;
+
+  /// 1チームあたりの今シーズン試合数（30 / 90 / 150）。
+  /// 翌シーズンの選択肢のデフォルト値や、UI 表示に使う。
+  int get gamesPerTeam => _gamesPerTeam;
   Team get myTeam => teams.firstWhere((t) => t.id == myTeamId);
   Standings get standings => _aggregator.standings;
   Map<String, BatterSeasonStats> get batterStats => _aggregator.batterStats;
@@ -600,10 +614,14 @@ class SeasonController {
   ///   5. _pitcherFreshness を全員 100 にリセット
   ///   6. _batterConditions も新規作成、_currentDay = 0
   ///
+  /// [gamesPerTeam] を渡すとそのシーズンの試合数を更新する（30 / 90 / 150）。
+  /// 省略時は前シーズンの値を継承する。
+  ///
   /// 呼び出し条件: `isSeasonOver` が true。シーズン進行中に呼ぶと [StateError]。
   void commitOffseason({
     OffseasonPlan? plan,
     OffseasonSelection? selection,
+    int? gamesPerTeam,
   }) {
     if (!isSeasonOver) {
       throw StateError('シーズン進行中は commitOffseason を呼べません');
@@ -663,7 +681,11 @@ class SeasonController {
 
     // 4〜6.
     _seasonYear++;
-    _schedule = const ScheduleGenerator().generate(teams);
+    if (gamesPerTeam != null) {
+      _gamesPerTeam = gamesPerTeam;
+    }
+    _schedule = const ScheduleGenerator()
+        .generateForGamesPerTeam(teams, _gamesPerTeam);
     _aggregator = SeasonAggregator(teams);
     _results.clear();
     _recentForms.clear();
@@ -1000,6 +1022,7 @@ class SeasonController {
       'version': saveFormatVersion,
       'myTeamId': myTeamId,
       'seasonYear': _seasonYear,
+      'gamesPerTeam': _gamesPerTeam,
       'currentDay': _currentDay,
       'players': {
         for (final entry in allPlayers.entries)
@@ -1062,10 +1085,14 @@ class SeasonController {
         json['schedule'] as Map<String, dynamic>, teamById);
 
     // 4. Construct controller (aggregator は空で初期化される)
+    // 旧フォーマット (v1 with gamesPerTeam 未保存) では 30 試合扱いで復元する。
+    final gamesPerTeam = json['gamesPerTeam'] as int? ??
+        ScheduleGenerator.defaultGamesPerTeam;
     final controller = SeasonController(
       teams: teams,
       schedule: schedule,
       myTeamId: json['myTeamId'] as String,
+      gamesPerTeam: gamesPerTeam,
       random: random,
     );
 
