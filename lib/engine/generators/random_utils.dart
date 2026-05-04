@@ -15,8 +15,15 @@ class RandomUtils {
   }
 
   /// 正規分布ベースの整数（範囲クリップ）
-  /// デフォルトは平均5、標準偏差2で 1〜10 にクリップ
-  int normalInt({double mean = 5.0, double sd = 2.0, int min = 1, int max = 10}) {
+  /// デフォルトは平均5、標準偏差1.5で 1〜10 にクリップ。
+  ///
+  /// 1〜10 の整数値の出現率（mean=5, sd=1.5）:
+  ///   1:1.0% 2:3.8% 3:11.1% 4:21.2% 5:25.9%
+  ///   6:21.2% 7:11.1% 8:3.8% 9:0.9% 10:0.13%
+  /// 中央付近に集中させて、両端（1 や 10）は希少にしてある。
+  /// mean=5 が 1〜10 の中点 5.5 から少しズレている都合で、10 側は
+  /// 1 側よりさらに希少（数年に一人現れるホームラン王のイメージ）。
+  int normalInt({double mean = 5.0, double sd = 1.5, int min = 1, int max = 10}) {
     final value = mean + nextGaussian() * sd;
     return value.round().clamp(min, max);
   }
