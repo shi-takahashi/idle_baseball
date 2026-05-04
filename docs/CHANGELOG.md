@@ -5,6 +5,171 @@
 
 ---
 
+## 2026-05-04 リアリティ調整セッション
+
+選手生成・成長・確率まわりの磨き込み。新機能ではなくバランス調整中心。
+
+### 1. シーズン試合数の選択化（30 / 90 / 150）
+
+**動機:**
+30 試合は NPB の 143 試合と乖離が大きく、成績比較が難しい。1 リーグ・交流戦なしの本作では 150 試合を上限に、デバッグ用途も兼ねて 90 試合も選択可能にする。
+
+**`ScheduleGenerator` 拡張 (`lib/engine/season/schedule_generator.dart`):**
+- `allowedGamesPerTeam = [30, 90, 150]` / `defaultGamesPerTeam = 30` を公開
+- `halvesForGamesPerTeam(int)`: gamesPerTeam ÷ 15 で halves を算出（30→2, 90→6, 150→10）
+- `generateForGamesPerTeam(teams, gamesPerTeam)`: UI 連携用の薄いラッパー
+
+**`SeasonController` 拡張:**
+- `_gamesPerTeam` フィールド + `gamesPerTeam` getter を追加
+- `newSeason({gamesPerTeam = 30})` ファクトリ
+- `commitOffseason({gamesPerTeam})`: 未指定なら前シーズン値を継承
+- JSON 永続化に `gamesPerTeam` を追加（旧フォーマットは 30 にフォールバック、バージョンは据え置きで後方互換）
+
+**UI:**
+- `HomeScreen`: 「新規シーズン」ボタン押下時のダイアログに `SeasonLengthSelector`（SegmentedButton）を表示。デフォルト 30。既存セーブ上書き警告と統合
+- `OffseasonScreen`: イントロカードに「次シーズンの試合数」セレクタを配置。デフォルト = 前シーズンの試合数
+
+**動作確認 (`bin/test_games_per_team.dart`):**
+- halves 算出 / 試合総数（3 × gamesPerTeam）/ チーム別出場数 / 永続化往復 / 旧フォーマット fallback / 不正値拒否 すべて OK
+- 既存の test_persist / test_next_season / test_rebuild_play / test_aging も全 OK
+
+---
+
+### 2. 失策数を 2 倍化
+
+**動機:**
+1チーム30試合あたり 3.97 失策（143 試合換算 18.9）で、NPB の 60〜80 失策の 1/3〜1/4。一方、失策の集計対象は内野ゴロエラーのみで、外野クッションエラー（コードはあるが未配線）・送球エラーは未実装。
+
+**判断:**
+完全実装を待たず、**先行する内野ゴロエラーは 2 倍に留める**。未実装エラー実装時に NPB 水準を超えないよう余白を残す。
+
+**`ErrorSimulator` 変更 (`lib/engine/simulation/error_simulator.dart`):**
+- `_baseGroundBallErrorRate`: 0.02 → 0.04
+- `_fieldingErrorModifier`: 0.003 → 0.006
+- `_positionErrorModifier` 各値: × 2
+- `clamp(0.005, 0.06)` → `clamp(0.010, 0.12)`
+
+**実測 (`bin/measure_errors.dart`):**
+- 1チーム 30 試合あたり 3.97 → **8.13 失策**（× 2.05）
+- 143 試合換算 18.9 → **38.8 失策**（NPB 水準 60〜80 の半分強で着地）
+
+**学んだ知見** (memory に保存):
+集計指標が「複数要素の合算」で構成される場合、一部しか実装されていない段階で現実水準に合わせきると、後から残り要素を実装したときに水準を超えてしまう。控えめに留めるのが無難。
+
+---
+
+### 3. 能力値分布の中央寄せ
+
+**動機:**
+ユーザー要望: 「もう少し中央に集中するように。1 や 10 は 1% 程度でもいい」。
+
+**`RandomUtils` 変更 (`lib/engine/generators/random_utils.dart`):**
+- `normalInt` のデフォルト sd を 2.0 → 1.5
+- `generateBenchFielder` 内の `meet/power` の明示 `sd: 2.0` も削除（デフォルトに揃える）
+
+**実測 (`bin/measure_ability_dist.dart`、スタメン野手の power, n=9600):**
+
+| 値 | 旧 (sd=2.0) | 新 (sd=1.5) |
+|---|---|---|
+| 5 | 19.10% | **25.53%** |
+| 4 / 6 | 各 17% | 各 21% |
+| 3 / 7 | 各 12% | 各 11% |
+| 1 | 4.22% | **0.96%** |
+| 10 | 1.20% | **0.15%** |
+
+mean=5.0 / sd=1.54 で計画通りの中央集中。10 は「数年に一人レベル」（0.15%）に。
+
+**非対称性について:**
+mean=5 は 1〜10 の中点 5.5 から少しズレているため、P(10)=0.15% に対し P(1)=1.0%。10 側がさらに希少という非対称は、ホームラン王の絶対希少性として妥当と判断（NPB 系ゲームで S ランクが超レアな扱いと整合）。
+
+---
+
+### 4. 能力ポテンシャル機能の導入
+
+**動機:**
+sd=1.5 で初期分布を絞っても、**5 シーズン経過後に 9-10 が約 10% に膨れる**ことが判明（meet で 0.69% → 10.03%、× 14.5）。中央寄せの意味が薄れる。
+
+ユーザーから方針指示:
+> 初期能力でミート1の選手が数年後に 2 や 3 に成長するのは普通だが、10 になるのはありえない。
+> ポテンシャルを別パラメータとして導入。+2 や +3 ぐらいでよく、ある程度のランダム性が必要。
+> 高卒は初期低め・ポテンシャル高め、大卒/社会人は初期高め・ポテンシャル低め。
+> 10 は基本的に出現しない方針を維持。
+
+**`Player` モデル拡張 (`lib/engine/models/player.dart`):**
+- `potentials: Map<String, int>?` — 1〜10 能力（meet, power, fastball, slider 等）の上限
+- `potentialFielding: Map<DefensePosition, int>?` — ポジション別守備力の上限
+- `potentialAverageSpeed: int?` — 球速 (km/h) の上限
+- ヘルパー: `potentialOf(key, currentValue)` / `potentialFieldingOf(...)` / `potentialAverageSpeedOf(...)`
+  - 未設定（旧セーブ）時は currentValue を返して成長停止
+  - 設定済みでも現在値を下回らないよう保証
+- toJson / fromJson 対応
+
+**`PlayerGenerator` 拡張 (`lib/engine/generators/player_generator.dart`):**
+- パラメータ:
+  - `_potentialBaseMargin = 2.0`（共通の伸びしろ）
+  - `_potentialSd = 1.0`（個人差: 晩成・期待外れ）
+  - `_abilityCeiling = 9`（10 は initial=10 の選手のみ維持）
+  - `_speedBaseMargin = 4.0` / `_speedSd = 2.0` / `_speedCeiling = 158`
+- `_potentialBonusForRookieType`:
+  - 高卒: +1.5 / 大卒: 0.0 / 社会人: -0.5 / 既存リーグ: 0.0
+- 計算: `potential = round(initial + baseMargin + rookieBonus + gauss * sd).clamp(initial, ceiling)`
+  - initial >= ceiling のときは initial そのまま（初期値を下回らない）
+- `_buildPotentials(...)` / `_buildPotentialFielding(...)` で能力一式のマップを構築
+- 全生成パス（starter / bench / rookie 野手 + 投手 + リリーフ）に配線
+
+**`PlayerAging` 変更 (`lib/engine/offseason/player_aging.dart`):**
+- `ageOneYear` 内の `adjust` で各能力を `p.potentialOf(key, v)` の上限でクランプ
+- 守備・球速も同様に potential 上限でクランプ
+- potential 自体は加齢で変動しない（生まれもっての素質として固定）
+
+**実測 (`bin/measure_growth.dart`、5 シーズン経過後):**
+
+| 能力 | ポテンシャル前 | ポテンシャル後 |
+|---|---|---|
+| meet 9-10 合計 | 0.69% → 10.03% (× 14.5) | 0.45% → **4.41%** (× 9.8) |
+| power 9-10 合計 | 0.87% → 10.31% (× 11.9) | 0.63% → 4.69% (× 7.5) |
+| meet 10 単独 | 0.28% → 5.10% | 0.00% → **0.03%** |
+| power 10 単独 | 0.14% → 5.14% | 0.10% → **0.17%** |
+
+**結論:**
+- **10 のインフレはほぼ完全に防止できた**（0.05〜0.20% で安定）
+- 9 はまだ 4-5% 程度に膨れる（初期 7 がポテンシャル ~9 で「8 を経て 9 に到達」する自然な帰結）
+- 「+2 仕様」のままなら、9 が 4-5% は妥当。さらに抑えたければ `_potentialBaseMargin` を 1.5 に下げるか、`_abilityCeiling` を 8 に下げる選択肢あり
+
+---
+
+### 5. 投手球速を NPB 水準に合わせる
+
+**動機:**
+ユーザー指摘: NPB の平均球速は 147 km/h。147 km/h ≒ ability 5 / 160 km/h ≒ ability 10 のイメージで揃えたい。165 km/h は編集 UI からのみ設定可能で、自然には出ない値。
+
+**変更 (`lib/engine/generators/player_generator.dart`):**
+- 球速 mean: `(isStarter ? 140.0 : 145.0)` → **147.0** に統一（先発・救援とも）
+- 抑え・セットアッパーの差は引き続き abilityBoost で表現（boost 1 ポイントごとに +2 km/h）
+- ポテンシャル上限 `_speedCeiling`: 165 → **158**（ability 9 相当の自然上限）
+- `_potentialAverageSpeed` は initial >= ceiling のときに initial を維持（初期 159〜160 km/h は保たれる）
+
+**実測 (`bin/measure_speed_growth.dart`):**
+
+| | 開幕時 | 5 シーズン後 |
+|---|---|---|
+| 平均 | 147.1 km/h | 147.0 km/h |
+| ≥160 km/h | 1.03% | 0.56%（数年に一人レベル維持）|
+| ≥163 km/h | 0% | **0%** |
+| ≥165 km/h | 0% | **0%** |
+
+165 km/h は自然には出現せず、編集 UI からのみ設定可能という方針が達成された。
+
+---
+
+### 動作確認サマリ
+
+すべての回帰テスト OK:
+- test_persist / test_next_season / test_aging / test_offseason_user / test_games_per_team / test_rebuild_play
+- 新規 measure_* スクリプト 6 種で能力分布を継続的にウォッチ可能
+
+---
+
 ## 2026-05-03 新人 3 種別（高卒 / 大卒 / 社会人）
 
 **動機:**

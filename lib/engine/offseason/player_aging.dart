@@ -22,17 +22,21 @@ class PlayerAging {
     // 能力ごとの個人差。小さめの sd で「全能力が同じ向きに動きすぎる」のを抑える
     const sd = 0.6;
 
-    int? adjust(int? v) {
+    /// 1〜10 能力の加齢適用。potential 上限でクランプ。
+    /// potential 未設定の選手（旧セーブ等）は現在値を上限とする = 成長停止。
+    int? adjust(String key, int? v) {
       if (v == null) return null;
       final delta = mean + _gauss() * sd;
-      return (v + delta.round()).clamp(1, 10);
+      final cap = p.potentialOf(key, v);
+      return (v + delta.round()).clamp(1, cap);
     }
 
     int? adjustSpeed(int? v) {
       if (v == null) return null;
       // 球速は 1〜10 とスケールが違うので別係数。1 ポイントあたり 1〜2 km の重み感
       final delta = mean * 1.5 + _gauss() * 1.0;
-      return (v + delta.round()).clamp(110, 165);
+      final cap = p.potentialAverageSpeedOf(v);
+      return (v + delta.round()).clamp(110, cap);
     }
 
     Map<DefensePosition, int>? adjustFielding(
@@ -44,7 +48,9 @@ class PlayerAging {
           // 「守れない」は維持（年齢で守備位置が増えることはない）
           out[entry.key] = 0;
         } else {
-          out[entry.key] = adjust(entry.value)!;
+          final delta = mean + _gauss() * sd;
+          final cap = p.potentialFieldingOf(entry.key, entry.value);
+          out[entry.key] = (entry.value + delta.round()).clamp(1, cap);
         }
       }
       return out;
@@ -56,23 +62,27 @@ class PlayerAging {
       number: p.number,
       age: newAge,
       averageSpeed: adjustSpeed(p.averageSpeed),
-      fastball: adjust(p.fastball),
-      control: adjust(p.control),
-      stamina: adjust(p.stamina),
-      slider: adjust(p.slider),
-      curve: adjust(p.curve),
-      splitter: adjust(p.splitter),
-      changeup: adjust(p.changeup),
-      meet: adjust(p.meet),
-      power: adjust(p.power),
-      speed: adjust(p.speed),
-      eye: adjust(p.eye),
-      arm: adjust(p.arm),
-      lead: adjust(p.lead),
+      fastball: adjust('fastball', p.fastball),
+      control: adjust('control', p.control),
+      stamina: adjust('stamina', p.stamina),
+      slider: adjust('slider', p.slider),
+      curve: adjust('curve', p.curve),
+      splitter: adjust('splitter', p.splitter),
+      changeup: adjust('changeup', p.changeup),
+      meet: adjust('meet', p.meet),
+      power: adjust('power', p.power),
+      speed: adjust('speed', p.speed),
+      eye: adjust('eye', p.eye),
+      arm: adjust('arm', p.arm),
+      lead: adjust('lead', p.lead),
       fielding: adjustFielding(p.fielding),
       throws: p.throws,
       bats: p.bats,
       reliefRole: p.reliefRole,
+      // potential は加齢で変動しない（生まれもっての素質として固定）
+      potentials: p.potentials,
+      potentialFielding: p.potentialFielding,
+      potentialAverageSpeed: p.potentialAverageSpeed,
     );
   }
 

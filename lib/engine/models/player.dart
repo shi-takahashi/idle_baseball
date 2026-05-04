@@ -46,6 +46,18 @@ class Player {
   //   - キー無し: 守れない（マップは「守れるポジションのリスト」として解釈）
   final Map<DefensePosition, int>? fielding;
 
+  // ---- ポテンシャル（隠しパラメータ）----
+  // 加齢成長時の上限値。生成時に確定し、UI には表示しない。
+  // - potentials: 1〜10 の能力（meet, power, speed, eye, arm, lead, fastball,
+  //   control, stamina, slider, curve, splitter, changeup）の上限。
+  //   キーは Player の同名フィールドの文字列。
+  // - potentialFielding: 守備力（ポジションごと）の上限。
+  // - potentialAverageSpeed: 球速（km/h）の上限。
+  // null の場合は「上限不明」→ 加齢ロジック側で現在値以上に伸びないようにフォールバック。
+  final Map<String, int>? potentials;
+  final Map<DefensePosition, int>? potentialFielding;
+  final int? potentialAverageSpeed;
+
   const Player({
     required this.id,
     required this.name,
@@ -69,7 +81,33 @@ class Player {
     this.throws,
     this.bats,
     this.reliefRole,
+    this.potentials,
+    this.potentialFielding,
+    this.potentialAverageSpeed,
   });
+
+  /// 指定能力（meet, fastball, ...）のポテンシャル上限を返す。
+  /// 未設定なら現在値を上限として扱う（= 成長停止）。
+  int potentialOf(String key, int currentValue) {
+    final p = potentials?[key];
+    if (p == null) return currentValue;
+    // 現在値を下回らないよう保証（衰えで現在値が下がっても上限はそのまま）
+    return p > currentValue ? p : currentValue;
+  }
+
+  /// 守備力のポテンシャル上限を返す。未設定なら現在値。
+  int potentialFieldingOf(DefensePosition position, int currentValue) {
+    final p = potentialFielding?[position];
+    if (p == null) return currentValue;
+    return p > currentValue ? p : currentValue;
+  }
+
+  /// 球速（km/h）のポテンシャル上限を返す。未設定なら現在値。
+  int potentialAverageSpeedOf(int currentValue) {
+    final p = potentialAverageSpeed;
+    if (p == null) return currentValue;
+    return p > currentValue ? p : currentValue;
+  }
 
   /// 投手かどうか
   bool get isPitcher => averageSpeed != null;
@@ -140,6 +178,13 @@ class Player {
       if (throws != null) 'throws': throws!.name,
       if (bats != null) 'bats': bats!.name,
       if (reliefRole != null) 'reliefRole': reliefRole!.name,
+      if (potentials != null) 'potentials': potentials,
+      if (potentialFielding != null)
+        'potentialFielding': {
+          for (final e in potentialFielding!.entries) e.key.name: e.value,
+        },
+      if (potentialAverageSpeed != null)
+        'potentialAverageSpeed': potentialAverageSpeed,
     };
   }
 
@@ -152,6 +197,22 @@ class Player {
         final pos = DefensePosition.values.firstWhere((p) => p.name == e.key);
         fielding[pos] = e.value as int;
       }
+    }
+    Map<DefensePosition, int>? potentialFielding;
+    final pf = json['potentialFielding'];
+    if (pf is Map) {
+      potentialFielding = {};
+      for (final e in pf.entries) {
+        final pos = DefensePosition.values.firstWhere((p) => p.name == e.key);
+        potentialFielding[pos] = e.value as int;
+      }
+    }
+    Map<String, int>? potentials;
+    final pj = json['potentials'];
+    if (pj is Map) {
+      potentials = {
+        for (final e in pj.entries) e.key as String: e.value as int,
+      };
     }
     Handedness? parseHand(Object? v) {
       if (v == null) return null;
@@ -184,6 +245,9 @@ class Player {
           ? null
           : ReliefRole.values
               .firstWhere((r) => r.name == json['reliefRole']),
+      potentials: potentials,
+      potentialFielding: potentialFielding,
+      potentialAverageSpeed: json['potentialAverageSpeed'] as int?,
     );
   }
 
