@@ -120,17 +120,21 @@ class ErrorSimulator {
 
   // === 内野エラー関連 ===
   // ゴロエラー基本確率
-  static const double _baseGroundBallErrorRate = 0.02; // 2%
+  // 現状の失策集計は内野ゴロエラーのみ（外野クッションエラー・送球エラー等は
+  // 未実装）。それらを後から追加した時に NPB 水準（1チーム143試合で60〜80失策）
+  // を超えないよう、内野ゴロ単体では 2 倍に留めて余裕を残してある。
+  // 守備力差・ポジション差の比率は元のまま保持される。
+  static const double _baseGroundBallErrorRate = 0.04; // 4%
   // 守備力による補正（1ポイントあたり）
-  static const double _fieldingErrorModifier = 0.003; // 守備力1で+1.2%、10で-1.5%
+  static const double _fieldingErrorModifier = 0.006; // 守備力1で+2.4%、10で-3.0%
   // ポジション別の難易度補正
   static const Map<FieldPosition, double> _positionErrorModifier = {
-    FieldPosition.pitcher: 0.005,   // 投手は守備機会少なく難しい
-    FieldPosition.catcher: 0.003,   // 捕手も難しい
-    FieldPosition.first: -0.005,    // 一塁は比較的簡単
+    FieldPosition.pitcher: 0.010,   // 投手は守備機会少なく難しい
+    FieldPosition.catcher: 0.006,   // 捕手も難しい
+    FieldPosition.first: -0.010,    // 一塁は比較的簡単
     FieldPosition.second: 0.0,      // 二塁は標準
-    FieldPosition.third: 0.005,     // 三塁は強い打球が多い
-    FieldPosition.shortstop: 0.003, // 遊撃は守備範囲広く難しい
+    FieldPosition.third: 0.010,     // 三塁は強い打球が多い
+    FieldPosition.shortstop: 0.006, // 遊撃は守備範囲広く難しい
   };
 
   // === 外野エラー関連 ===
@@ -211,7 +215,7 @@ class ErrorSimulator {
     final fieldingModifier = fieldingDiff * _fieldingErrorModifier;
     final posModifier = _positionErrorModifier[position] ?? 0.0;
 
-    final probability = (_baseGroundBallErrorRate - fieldingModifier + posModifier).clamp(0.005, 0.06);
+    final probability = (_baseGroundBallErrorRate - fieldingModifier + posModifier).clamp(0.010, 0.12);
     return _random.nextDouble() < probability;
   }
 
