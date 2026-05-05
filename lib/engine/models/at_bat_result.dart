@@ -24,6 +24,11 @@ class AtBatResult {
   /// 用途: batting統計では打席として数えない。pitching統計では投球数・盗塁死のみ計上
   final bool isIncomplete;
 
+  /// バント打席だったかどうか。
+  /// `simulateBuntAtBat` 経由で構築された打席は true、通常打席は false。
+  /// バント結果の分布計測（test_bunt.dart）や UI 表示の出し分けに使う。
+  final bool isBunt;
+
   /// この打席で記録された失点を投手別に分配したもの（pitcher.id → 失点数）
   /// インヘリット走者（前任投手が出した走者）が生還した場合、その失点は前任投手に
   /// 計上される。打席で生還した走者の責任投手を追跡して算出する。
@@ -57,6 +62,7 @@ class AtBatResult {
     this.tagUps,
     this.fieldingError,
     this.isIncomplete = false,
+    this.isBunt = false,
     this.runsByPitcher = const {},
     this.earnedRunsByPitcher = const {},
     this.scoringRunners = const [],
@@ -88,6 +94,7 @@ class AtBatResult {
         if (tagUps != null) 'tagUps': [for (final t in tagUps!) t.toJson()],
         if (fieldingError != null) 'fieldingError': fieldingError!.toJson(),
         'isIncomplete': isIncomplete,
+        if (isBunt) 'isBunt': true,
         if (runsByPitcher.isNotEmpty) 'runsByPitcher': runsByPitcher,
         if (earnedRunsByPitcher.isNotEmpty)
           'earnedRunsByPitcher': earnedRunsByPitcher,
@@ -130,6 +137,7 @@ class AtBatResult {
             : FieldingError.fromJson(
                 json['fieldingError'] as Map<String, dynamic>),
         isIncomplete: (json['isIncomplete'] as bool?) ?? false,
+        isBunt: (json['isBunt'] as bool?) ?? false,
         runsByPitcher: json['runsByPitcher'] == null
             ? const {}
             : Map<String, int>.from(json['runsByPitcher'] as Map),

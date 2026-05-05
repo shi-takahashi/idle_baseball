@@ -6,6 +6,11 @@ import '../models/player.dart';
 /// 送りバントの試行判定に必要なコンテキスト
 class BuntContext {
   final Player batter;
+
+  /// 次打者（バント後にこの打者が打つ）。null の場合は中立補正。
+  /// 次打者が強打者ほど「ここはバントで進めて彼に打たせたい」となる。
+  final Player? nextBatter;
+
   final BaseRunners runners;
   final int outs;
   final int inning;
@@ -21,6 +26,7 @@ class BuntContext {
 
   const BuntContext({
     required this.batter,
+    this.nextBatter,
     required this.runners,
     required this.outs,
     required this.inning,
@@ -116,14 +122,47 @@ class SimpleBuntDecisionStrategy implements BuntDecisionStrategy {
       mod *= 1.1;
     }
 
-    // 終盤の接戦は積極的に犠打を選択
-    if (ctx.inning >= 7 && ctx.scoreDiff.abs() <= 2) {
-      mod *= 1.4;
+    // イニング補正: 後半になるほどバント率↑（1点の重みが増す）
+    // 1〜5回 ×1.0 / 6回 ×1.15 / 7回 ×1.30 / 8回 ×1.45 / 9回以降 ×1.60
+    if (ctx.inning == 6) {
+      mod *= 1.15;
+    } else if (ctx.inning == 7) {
+      mod *= 1.30;
+    } else if (ctx.inning == 8) {
+      mod *= 1.45;
+    } else if (ctx.inning >= 9) {
+      mod *= 1.60;
     }
 
-    // 大量ビハインド時はバントしない（一発狙い）
+    // 得点差補正: 接戦になるほどバント率↑、点差が大きいほどバント率↓
+    // 同点 ×1.30 / 1点差 ×1.20 / 2点差 ×1.10 / 3点差 ×1.0 / それ以上 ×0.6
+    final absDiff = ctx.scoreDiff.abs();
+    if (absDiff == 0) {
+      mod *= 1.30;
+    } else if (absDiff == 1) {
+      mod *= 1.20;
+    } else if (absDiff == 2) {
+      mod *= 1.10;
+    } else if (absDiff >= 4) {
+      mod *= 0.6;
+    }
+
+    // 大量ビハインド時はバントしない（一発狙い）。上の補正と複合で減衰。
     if (ctx.scoreDiff <= -4) {
       mod *= 0.3;
+    }
+
+    // 次打者補正: 次打者が強打者なら「彼に打たせたい」のでバント率↑、
+    //              次打者が弱打者なら「打たせても期待薄」のでバント率↓
+    final nextPower = ctx.nextBatter?.power ?? 5;
+    if (nextPower >= 8) {
+      mod *= 1.30;
+    } else if (nextPower >= 6) {
+      mod *= 1.10;
+    } else if (nextPower <= 3) {
+      mod *= 0.5;
+    } else if (nextPower == 4) {
+      mod *= 0.8;
     }
 
     return (base * mod).clamp(0.0, 0.95);

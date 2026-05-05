@@ -973,6 +973,10 @@ class AtBatSimulator {
     int pitchCount = 0, // この打席前までの投球数
     PitcherCondition condition = const PitcherCondition(), // 投手の調子
     int batterConditionModifier = 0, // 野手の調子（-1/0/+1）。攻撃面の能力に一律加算
+    // バント途中でヒッティングに切り替わった場合に、現在カウントと既出投球を引き継ぐ
+    int initialBalls = 0,
+    int initialStrikes = 0,
+    List<PitchResult> previousPitches = const [],
   }) {
     // 投手の平均球速（設定されていなければ145km）+ 調子補正
     final avgSpeed = (pitcher.averageSpeed ?? 145) + condition.speedModifier;
@@ -999,13 +1003,13 @@ class AtBatSimulator {
     final isPlatoonDisadvantage =
         pitcher.effectiveThrows == Handedness.left && isLeftBatter;
 
-    int balls = 0;
-    int strikes = 0;
-    final pitches = <PitchResult>[];
+    int balls = initialBalls;
+    int strikes = initialStrikes;
+    final pitches = <PitchResult>[...previousPitches];
     final recordedSteals = <StealAttempt>[]; // 記録される盗塁
     var currentRunners = runners;
     int additionalOuts = 0;
-    int currentPitchCount = pitchCount; // 打席中の投球数を追跡
+    int currentPitchCount = pitchCount + previousPitches.length; // 打席中の投球数を追跡
     int batteryErrorRuns = 0; // バッテリーエラーによる得点
     final batteryErrorScorers = <({Player runner, BatteryErrorType type})>[];
     // 捕手の守備力（パスボール判定に使用）
@@ -1214,16 +1218,22 @@ class AtBatSimulator {
 
   /// バント打席をシミュレートする
   ///
-  /// 通常の打席ループ（球種選択 → 結果判定）とは異なり、
-  /// 結果を能力ベースの確率テーブルから直接決定し、表示用に簡易的な
-  /// 投球シーケンスを合成して返す。
+  /// 球ごとにカウントを進めるループ構造:
+  /// - 各球: バントの結果を抽選（ボール / 見逃しストライク / ファール / ポップ / インプレー）
+  /// - 4ボール → 四球 / 3ストライク（見逃し含む）→ 三振
+  /// - 2ストライクからのバントファール → 三振（スリーバント失敗）
+  /// - 2ストライク到達時に「バント続行 vs ヒッティング切替」判断（打者の power に依存）
+  /// - ヒッティング切替時は [simulateAtBat] にカウントを引き継いで委譲
   ///
-  /// ランナー進塁処理は呼び出し側（GameSimulator._advanceRunners）が
-  /// 結果タイプに応じて行う。
+  /// インプレー時は方向抽選 + 守備能力 vs 走力で結果を決定。
   AtBatSimulationResult simulateBuntAtBat(
     Player pitcher,
     Player batter, {
+    required Team pitchingTeam,
     required BaseRunners runners,
+    required int outs,
+    required StealSimulator stealSimulator,
+    int pitchCount = 0,
     PitcherCondition condition = const PitcherCondition(),
     int batterConditionModifier = 0,
   }) {
@@ -1231,65 +1241,183 @@ class AtBatSimulator {
         ((batter.meet ?? 5) + batterConditionModifier).clamp(1, 10);
     final batterSpeed =
         ((batter.speed ?? 5) + batterConditionModifier).clamp(1, 10);
+    final power = batter.power ?? 5;
+    final control =
+        ((pitcher.control ?? 5) + condition.controlModifier).clamp(1, 10);
     final avgSpeed = (pitcher.averageSpeed ?? 145) + condition.speedModifier;
 
-    final outcome = _rollBuntOutcome(meet: meet, batterSpeed: batterSpeed);
-    final fieldPosition =
-        outcome == AtBatResultType.walk || outcome == AtBatResultType.strikeout
-            ? null
-            : _pickBuntFieldPosition(outcome);
-    final pitches = _synthesizeBuntPitches(outcome, avgSpeed, fieldPosition);
+    int balls = 0;
+    int strikes = 0;
+    final pitches = <PitchResult>[];
 
-    return AtBatSimulationResult(
-      result: outcome,
-      pitches: pitches,
-      updatedRunners: runners, // ランナー進塁は GameSimulator 側で行う
-    );
+    while (true) {
+      // 2ストライクで「バント続行 vs ヒッティング切替」判断。
+      // 続行を選ばなかった場合、残りの打席を通常打席に委譲する。
+      if (strikes >= 2 && !_shouldContinueBuntOn2Strikes(power)) {
+        return simulateAtBat(
+          pitcher,
+          batter,
+          pitchingTeam,
+          runners: runners,
+          outs: outs,
+          stealSimulator: stealSimulator,
+          pitchCount: pitchCount,
+          condition: condition,
+          batterConditionModifier: batterConditionModifier,
+          initialBalls: balls,
+          initialStrikes: strikes,
+          previousPitches: pitches,
+        );
+      }
+
+      // バント球を投げる
+      final pitchOutcome =
+          _rollBuntPitch(meet: meet, control: control, strikes: strikes);
+
+      switch (pitchOutcome) {
+        case _BuntPitchOutcome.ball:
+          pitches.add(PitchResult(
+            type: PitchResultType.ball,
+            pitchType: PitchType.fastball,
+            speed: avgSpeed,
+          ));
+          balls++;
+          if (balls >= 4) {
+            return AtBatSimulationResult(
+              result: AtBatResultType.walk,
+              pitches: pitches,
+              updatedRunners: runners,
+            );
+          }
+          break;
+
+        case _BuntPitchOutcome.calledStrike:
+          pitches.add(PitchResult(
+            type: PitchResultType.strikeLooking,
+            pitchType: PitchType.fastball,
+            speed: avgSpeed,
+          ));
+          strikes++;
+          if (strikes >= 3) {
+            return AtBatSimulationResult(
+              result: AtBatResultType.strikeout,
+              pitches: pitches,
+              updatedRunners: runners,
+            );
+          }
+          break;
+
+        case _BuntPitchOutcome.foul:
+          pitches.add(PitchResult(
+            type: PitchResultType.foul,
+            pitchType: PitchType.fastball,
+            speed: avgSpeed,
+          ));
+          if (strikes < 2) {
+            strikes++;
+          } else {
+            // 2ストライクからのバントファール = スリーバント失敗（三振）
+            return AtBatSimulationResult(
+              result: AtBatResultType.strikeout,
+              pitches: pitches,
+              updatedRunners: runners,
+            );
+          }
+          break;
+
+        case _BuntPitchOutcome.popOut:
+          final fieldPosition = _pickBuntPopOutPosition();
+          pitches.add(PitchResult(
+            type: PitchResultType.inPlay,
+            pitchType: PitchType.fastball,
+            battedBallType: BattedBallType.flyBall,
+            fieldPosition: fieldPosition,
+            speed: avgSpeed,
+          ));
+          return AtBatSimulationResult(
+            result: AtBatResultType.flyOut,
+            pitches: pitches,
+            updatedRunners: runners,
+          );
+
+        case _BuntPitchOutcome.inPlay:
+          final fieldPosition = _pickBuntDirection();
+          pitches.add(PitchResult(
+            type: PitchResultType.inPlay,
+            pitchType: PitchType.fastball,
+            battedBallType: BattedBallType.groundBall,
+            fieldPosition: fieldPosition,
+            speed: avgSpeed,
+          ));
+          final outcome = _resolveBuntInPlay(
+            fieldPosition: fieldPosition,
+            pitchingTeam: pitchingTeam,
+            batter: batter,
+            batterSpeed: batterSpeed,
+            runners: runners,
+            outs: outs,
+          );
+          return AtBatSimulationResult(
+            result: outcome,
+            pitches: pitches,
+            updatedRunners: runners,
+          );
+      }
+    }
   }
 
-  /// バント打席の結果を確率テーブルで決定
-  AtBatResultType _rollBuntOutcome({
+  /// バント 1 球の結果を抽選。
+  /// meet が高いほどファールやインプレーを成功させやすく、ポップフライが減る。
+  /// 制球が悪い投手はボール球が増える。
+  /// 2ストライクからは打者がより慎重になり、無理にバットを出さず見送る確率が上がる。
+  _BuntPitchOutcome _rollBuntPitch({
     required int meet,
-    required int batterSpeed,
+    required int control,
+    required int strikes,
   }) {
-    final mF = (meet - 5) / 5.0; // -0.8 〜 +1.0
-    final sF = (batterSpeed - 5) / 5.0;
-
-    final pStrikeout = (0.06 - mF * 0.04).clamp(0.02, 0.15);
-    const pWalk = 0.03;
-    final pDP = (0.05 - mF * 0.03 - sF * 0.015).clamp(0.005, 0.10);
-    final pPopOut = (0.08 - mF * 0.045).clamp(0.02, 0.15);
-    final pFC = (0.10 - mF * 0.05 - sF * 0.02).clamp(0.02, 0.20);
-    final pBuntSafe = (0.05 + sF * 0.10 + mF * 0.02).clamp(0.01, 0.30);
+    // ボール球確率: 投手の制球力に依存
+    final pBall = (0.30 - (control - 5) * 0.02).clamp(0.18, 0.45);
+    // 見逃しストライク: バット引いてストライク取られる
+    // 2ストライクでは「無理に当てに行かず見送る」率が下がるので少なめ
+    final pCalled = strikes >= 2 ? 0.03 : 0.05;
+    // ポップフライ: meet が低いほど高い
+    final pPop = (0.04 - (meet - 5) * 0.005).clamp(0.015, 0.08);
+    // ファール: meet が低いほど高い（バットがボールに上手く当たらず擦る）
+    final pFoul = (0.20 - (meet - 5) * 0.005).clamp(0.15, 0.25);
+    // インプレー（ゴロ）: 残り
+    final pInPlay = (1.0 - pBall - pCalled - pPop - pFoul).clamp(0.10, 0.60);
 
     final r = _random.nextDouble();
     double cum = 0;
-    cum += pStrikeout;
-    if (r < cum) return AtBatResultType.strikeout;
-    cum += pWalk;
-    if (r < cum) return AtBatResultType.walk;
-    cum += pDP;
-    if (r < cum) return AtBatResultType.doublePlay;
-    cum += pPopOut;
-    if (r < cum) return AtBatResultType.flyOut;
-    cum += pFC;
-    if (r < cum) return AtBatResultType.fieldersChoice;
-    cum += pBuntSafe;
-    if (r < cum) return AtBatResultType.infieldHit;
-    return AtBatResultType.sacrificeBunt;
+    cum += pBall;
+    if (r < cum) return _BuntPitchOutcome.ball;
+    cum += pCalled;
+    if (r < cum) return _BuntPitchOutcome.calledStrike;
+    cum += pPop;
+    if (r < cum) return _BuntPitchOutcome.popOut;
+    cum += pFoul;
+    if (r < cum) return _BuntPitchOutcome.foul;
+    cum += pInPlay;
+    if (r < cum) return _BuntPitchOutcome.inPlay;
+    return _BuntPitchOutcome.inPlay; // 余りはインプレー
   }
 
-  /// バント打球の方向を結果に応じて決定（投手前・三塁前・一塁前・捕手前のいずれか）
-  FieldPosition _pickBuntFieldPosition(AtBatResultType outcome) {
-    if (outcome == AtBatResultType.flyOut) {
-      // バント小フライ: 投手前/捕手前/一塁前/三塁前 が多い（外野には飛ばない）
-      final r = _random.nextDouble();
-      if (r < 0.40) return FieldPosition.pitcher;
-      if (r < 0.70) return FieldPosition.catcher;
-      if (r < 0.85) return FieldPosition.third;
-      return FieldPosition.first;
-    }
-    // 通常のバント: 投手前と三塁前が多い
+  /// 2ストライクで「バント続行か」を判定。
+  /// 投手レベル（power ≤ 2）はヒッティングしてもダメなのでバント続行が多め。
+  /// 強打者（バント自体しないので来ないが念のため）は切替が高い。
+  bool _shouldContinueBuntOn2Strikes(int power) {
+    final continueProb = power <= 2
+        ? 0.80
+        : power <= 4
+            ? 0.45
+            : power <= 6
+                ? 0.25
+                : 0.10;
+    return _random.nextDouble() < continueProb;
+  }
+
+  /// バントゴロの打球方向を抽選（投手前 45% / 三塁前 35% / 一塁前 15% / 捕手前 5%）
+  FieldPosition _pickBuntDirection() {
     final r = _random.nextDouble();
     if (r < 0.45) return FieldPosition.pitcher;
     if (r < 0.80) return FieldPosition.third;
@@ -1297,45 +1425,162 @@ class AtBatSimulator {
     return FieldPosition.catcher;
   }
 
-  /// 結果に応じた表示用の投球シーケンスを合成
-  List<PitchResult> _synthesizeBuntPitches(
-    AtBatResultType outcome,
-    int avgSpeed,
-    FieldPosition? fieldPosition,
-  ) {
-    PitchResult ball() => PitchResult(
-          type: PitchResultType.ball,
-          pitchType: PitchType.fastball,
-          speed: avgSpeed,
-        );
-    PitchResult foul() => PitchResult(
-          type: PitchResultType.foul,
-          pitchType: PitchType.fastball,
-          speed: avgSpeed,
-        );
-    PitchResult inPlay() => PitchResult(
-          type: PitchResultType.inPlay,
-          pitchType: PitchType.fastball,
-          battedBallType: BattedBallType.groundBall,
+  /// バント小フライの方向（外野には飛ばない、捕手寄り）
+  FieldPosition _pickBuntPopOutPosition() {
+    final r = _random.nextDouble();
+    if (r < 0.40) return FieldPosition.pitcher;
+    if (r < 0.70) return FieldPosition.catcher;
+    if (r < 0.85) return FieldPosition.third;
+    return FieldPosition.first;
+  }
+
+  /// Phase 2: ゴロでインプレーした後の解決。
+  /// 守備側は「先頭走者を狙うか、安全に 1 塁送球で打者をアウトにするか」を判断し、
+  /// 該当走者の走力 vs 守備力（fielding + arm）で結果を決定する。
+  AtBatResultType _resolveBuntInPlay({
+    required FieldPosition fieldPosition,
+    required Team pitchingTeam,
+    required Player batter,
+    required int batterSpeed,
+    required BaseRunners runners,
+    required int outs,
+  }) {
+    final fielder = pitchingTeam.getFielder(fieldPosition);
+    // 投手位置は fielding マップに無いので、フォールバック 5。
+    final fielderFielding =
+        fieldPosition.defensePosition == null
+            ? 5
+            : (fielder?.getFielding(fieldPosition.defensePosition!) ?? 5);
+    final fielderArm = fielder?.arm ?? 5;
+
+    // 先頭走者: 2塁にいれば 2塁走者、それ以外は 1塁走者。bunt strategy 上
+    // 必ずどちらかが居る前提だが、防御的に処理する。
+    final leadRunner = runners.second ?? runners.first;
+    final leadRunnerSpeed = leadRunner?.speed ?? 5;
+
+    // 守備側の判断: 先頭走者を狙うか
+    // 三塁手前は 3 塁・2 塁が近い、投手前は 2 塁送球がやや楽、
+    // 一塁手前は 1 塁が一番近いので普通に 1 塁、捕手前は 1 塁にタッチ近い
+    final goForLead = leadRunner != null &&
+        _shouldThrowToLead(
+          fielderFielding: fielderFielding,
+          fielderArm: fielderArm,
+          leadRunnerSpeed: leadRunnerSpeed,
           fieldPosition: fieldPosition,
-          speed: avgSpeed,
         );
 
-    switch (outcome) {
-      case AtBatResultType.walk:
-        // バント中の四球（稀）: 4ボール
-        return [ball(), ball(), ball(), ball()];
-      case AtBatResultType.strikeout:
-        // 3バント失敗: ファウル3つ
-        return [foul(), foul(), foul()];
-      default:
-        // インプレー: 0〜1ボール + バント
-        final preBalls = _random.nextInt(2);
-        return [
-          for (int i = 0; i < preBalls; i++) ball(),
-          inPlay(),
-        ];
+    if (goForLead) {
+      final pLeadOut = _leadRunnerOutProb(
+        fielderFielding: fielderFielding,
+        fielderArm: fielderArm,
+        leadRunnerSpeed: leadRunnerSpeed,
+        fieldPosition: fieldPosition,
+      );
+      if (_random.nextDouble() < pLeadOut) {
+        // 先頭走者刺殺。さらに 1塁転送で打者も刺せるか?
+        // 1アウト時のみ DP のチャンス（0アウトで DP 完成は稀ではあるが、
+        // 実装簡略化のため「打者足遅い + 守備力高い」で確率発火）
+        final pDP = _doublePlayProb(
+          batterSpeed: batterSpeed,
+          fielderArm: fielderArm,
+        );
+        if (_random.nextDouble() < pDP) {
+          return AtBatResultType.doublePlay;
+        }
+        return AtBatResultType.fieldersChoice;
+      }
+      // 先頭走者刺殺失敗 → 全員セーフ = バント安打
+      return AtBatResultType.infieldHit;
+    } else {
+      // 1塁送球。打者を刺せれば送りバント成功、間に合わなければバント安打。
+      final pFirstOut = _firstBaseOutProb(
+        fielderFielding: fielderFielding,
+        fielderArm: fielderArm,
+        batterSpeed: batterSpeed,
+        fieldPosition: fieldPosition,
+      );
+      if (_random.nextDouble() < pFirstOut) {
+        return AtBatResultType.sacrificeBunt;
+      }
+      return AtBatResultType.infieldHit;
     }
+  }
+
+  /// 先頭走者を狙うかどうかの判定。
+  /// 守備力と肩が高い + 走者が遅い + 守備位置が有利 で攻めの送球を選ぶ確率が上がる。
+  bool _shouldThrowToLead({
+    required int fielderFielding,
+    required int fielderArm,
+    required int leadRunnerSpeed,
+    required FieldPosition fieldPosition,
+  }) {
+    final positionMod = switch (fieldPosition) {
+      FieldPosition.third => 0.15, // 三塁手は 3塁/2塁が視野内
+      FieldPosition.pitcher => 0.05,
+      FieldPosition.catcher => 0.10,
+      FieldPosition.first => -0.10, // 1塁手は 1塁タッチが楽
+      _ => 0.0,
+    };
+    final p = (0.10 +
+            positionMod +
+            (fielderFielding - 5) * 0.04 +
+            (fielderArm - 5) * 0.03 -
+            (leadRunnerSpeed - 5) * 0.06)
+        .clamp(0.02, 0.50);
+    return _random.nextDouble() < p;
+  }
+
+  /// 先頭走者を刺せる確率
+  double _leadRunnerOutProb({
+    required int fielderFielding,
+    required int fielderArm,
+    required int leadRunnerSpeed,
+    required FieldPosition fieldPosition,
+  }) {
+    final positionMod = switch (fieldPosition) {
+      FieldPosition.third => 0.10,
+      FieldPosition.pitcher => 0.0,
+      _ => -0.05,
+    };
+    return (0.65 +
+            positionMod +
+            (fielderFielding - 5) * 0.04 +
+            (fielderArm - 5) * 0.04 -
+            (leadRunnerSpeed - 5) * 0.05)
+        .clamp(0.30, 0.90);
+  }
+
+  /// 先頭走者を刺した後、1塁転送で打者も刺せる確率（バント DP）。
+  double _doublePlayProb({
+    required int batterSpeed,
+    required int fielderArm,
+  }) {
+    return (0.10 -
+            (batterSpeed - 5) * 0.03 +
+            (fielderArm - 5) * 0.02)
+        .clamp(0.02, 0.25);
+  }
+
+  /// 1塁送球で打者を刺せる確率（送りバント成功）
+  double _firstBaseOutProb({
+    required int fielderFielding,
+    required int fielderArm,
+    required int batterSpeed,
+    required FieldPosition fieldPosition,
+  }) {
+    final positionMod = switch (fieldPosition) {
+      FieldPosition.pitcher => 0.10, // 投手前は 1塁送球が短い
+      FieldPosition.first => 0.05,
+      FieldPosition.catcher => 0.05,
+      FieldPosition.third => 0.0, // 3塁前は 1塁送球が長い分やや不利
+      _ => 0.0,
+    };
+    return (0.90 +
+            positionMod +
+            (fielderFielding - 5) * 0.04 +
+            (fielderArm - 5) * 0.03 -
+            (batterSpeed - 5) * 0.05)
+        .clamp(0.55, 0.99);
   }
 
   /// 盗塁と投球の組み合わせを解決
@@ -1466,4 +1711,13 @@ class _StealPitchResult {
   final List<StealAttempt> recordedSteals;
 
   const _StealPitchResult({required this.newRunners, required this.additionalOuts, required this.recordedSteals});
+}
+
+/// バント 1 球の結果（_rollBuntPitch の戻り値）
+enum _BuntPitchOutcome {
+  ball,          // ボール（投球が外れた / 見送り）
+  calledStrike,  // 見逃しストライク（バントを引いて見送る）
+  foul,          // バントしたがファール
+  popOut,        // バント小フライ（捕球でアウト）
+  inPlay,        // バントゴロでインプレー
 }

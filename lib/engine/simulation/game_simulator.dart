@@ -314,9 +314,14 @@ class GameSimulator {
       // 守備側のスナップショット（現在の守備配置を反映したTeam）
       final pitchingTeamSnapshot = pitchingFieldingState.asTeamSnapshot();
 
-      // バント判定: 試行する状況なら simulateBuntAtBat を使う
+      // バント判定: 試行する状況なら simulateBuntAtBat を使う。
+      // 次打者を渡して「次が強打者なら積極的にバント」を判定に反映する。
+      final nextOrder = (currentBattingOrder + 1) % 9;
+      final nextBatter =
+          battingFieldingState.currentBatter(nextOrder);
       final buntCtx = BuntContext(
         batter: batter,
+        nextBatter: nextBatter,
         runners: runners,
         outs: outs,
         inning: inning,
@@ -331,7 +336,11 @@ class GameSimulator {
           ? _atBatSimulator.simulateBuntAtBat(
               pitcher,
               batter,
+              pitchingTeam: pitchingTeamSnapshot,
               runners: runners,
+              outs: outs,
+              stealSimulator: _stealSimulator,
+              pitchCount: pitchingState.pitchCount,
               condition: pitchingState.condition,
               batterConditionModifier:
                   batterConditionModifiers[batter.id] ?? 0,
@@ -560,6 +569,7 @@ class GameSimulator {
         runnersBefore: runnersBefore,
         tagUps: advanceResult.tagUps.isNotEmpty ? advanceResult.tagUps : null,
         fieldingError: atBatResult.fieldingError,
+        isBunt: shouldBunt,
         runsByPitcher: runsByPitcher,
         earnedRunsByPitcher: earnedRunsByPitcher,
         scoringRunners: allScorers,
