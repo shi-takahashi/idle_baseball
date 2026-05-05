@@ -16,6 +16,7 @@ class BatterSeasonStats {
   int triples = 0; // 三塁打
   int homeRuns = 0; // 本塁打
   int rbi = 0; // 打点
+  int runs = 0; // 得点（本塁を踏んだ回数）
   int walks = 0; // 四球
   int strikeouts = 0; // 三振
   int stolenBases = 0; // 盗塁成功
@@ -58,6 +59,7 @@ class BatterSeasonStats {
         'triples': triples,
         'homeRuns': homeRuns,
         'rbi': rbi,
+        'runs': runs,
         'walks': walks,
         'strikeouts': strikeouts,
         'stolenBases': stolenBases,
@@ -83,6 +85,7 @@ class BatterSeasonStats {
     s.triples = (json['triples'] as int?) ?? 0;
     s.homeRuns = (json['homeRuns'] as int?) ?? 0;
     s.rbi = (json['rbi'] as int?) ?? 0;
+    s.runs = (json['runs'] as int?) ?? 0;
     s.walks = (json['walks'] as int?) ?? 0;
     s.strikeouts = (json['strikeouts'] as int?) ?? 0;
     s.stolenBases = (json['stolenBases'] as int?) ?? 0;

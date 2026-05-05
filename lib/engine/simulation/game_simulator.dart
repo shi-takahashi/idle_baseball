@@ -445,6 +445,14 @@ class GameSimulator {
         fieldPosition: fieldPosition,
         pitchingTeam: pitchingTeamSnapshot,
       );
+
+      // 犠飛: 外野フライ + 3塁走者がタッチアップ生還 → 結果を sacrificeFly に上書き。
+      // 集計側で「打数に含めない、犠飛として記録」になる。
+      if (resultType == AtBatResultType.flyOut &&
+          advanceResult.wasSacrificeFly) {
+        resultType = AtBatResultType.sacrificeFly;
+      }
+
       final rbiCount = advanceResult.runsScored;
       runs += rbiCount;
       runners = advanceResult.newRunners;
@@ -532,6 +540,13 @@ class GameSimulator {
         errorOuts++;
       }
 
+      // 個人「得点」集計用に、本塁を踏んだ選手をすべて集める。
+      // バッテリーエラー（WP/PB）由来 + 走塁由来（HR で打者自身を含む）。
+      final allScorers = <Player>[
+        for (final s in atBatResult.batteryErrorScorers) s.runner,
+        ...advanceResult.scoringRunners,
+      ];
+
       final completedAtBat = AtBatResult(
         batter: batter,
         pitcher: pitcher,
@@ -547,6 +562,7 @@ class GameSimulator {
         fieldingError: atBatResult.fieldingError,
         runsByPitcher: runsByPitcher,
         earnedRunsByPitcher: earnedRunsByPitcher,
+        scoringRunners: allScorers,
       );
       atBats.add(completedAtBat);
 
@@ -718,31 +734,58 @@ class GameSimulator {
     return runners.first != null && outs < 2;
   }
 
-  /// タッチアップ試行確率を計算（走力に基づく）
-  /// 走力1: 10%, 走力5: 45%, 走力10: 80%
-  double _tagUpAttemptProbability(int speed) {
-    return (speed * 0.078 + 0.02).clamp(0.10, 0.85);
+  /// 外野フライの「深さ」を内部抽選する。
+  /// 浅い 30% / 中くらい 40% / 深い 30%。
+  /// この深さによってタッチアップの試行確率・成功確率が大きく変わる。
+  /// （現実: フライの深さで結果がほぼ決まり、走力・肩は微妙なライン (中) で効く）
+  _FlyDepth _rollFlyDepth() {
+    final r = _random.nextDouble();
+    if (r < 0.30) return _FlyDepth.shallow;
+    if (r < 0.70) return _FlyDepth.medium;
+    return _FlyDepth.deep;
   }
 
-  /// タッチアップ成功確率を計算（走力と外野手の肩に基づく）
-  /// 走力1: 40%, 走力5: 65%, 走力10: 95%
-  /// 外野手の肩が強いほど成功率DOWN
-  double _tagUpSuccessProbability(int speed, int outfielderArm) {
-    final baseProb = speed * 0.06 + 0.34;
-    final armModifier = (outfielderArm - 5) * 0.03; // 肩1あたり3%
-    return (baseProb - armModifier).clamp(0.25, 0.95);
+  /// 深さ × 走力 × 肩 によるタッチアップ試行確率。
+  /// 浅い: ほぼ試行しない (5%)、深い: ほぼ試行する (90%)、
+  /// 中くらいのみ走力・肩で大きく揺れる。
+  double _tagUpAttemptProb(_FlyDepth depth, int speed, int arm) {
+    switch (depth) {
+      case _FlyDepth.shallow:
+        return 0.05;
+      case _FlyDepth.deep:
+        return 0.90;
+      case _FlyDepth.medium:
+        // 走力5・肩5 で 50%、走力10・肩1 で 86%、走力1・肩10 で 14%
+        final p = 0.50 + (speed - 5) * 0.04 - (arm - 5) * 0.04;
+        return p.clamp(0.05, 0.95);
+    }
   }
 
-  /// タッチアップを試行するかどうかを判定
-  bool _shouldAttemptTagUp(Player runner) {
+  /// 深さ × 走力 × 肩 によるタッチアップ成功確率。
+  /// 試行された時点で基本セーフ寄り。深いほど確実、浅いと無理して試行 → アウト寄り。
+  double _tagUpSuccessProb(_FlyDepth depth, int speed, int arm) {
+    switch (depth) {
+      case _FlyDepth.shallow:
+        return 0.50;
+      case _FlyDepth.deep:
+        return 0.95;
+      case _FlyDepth.medium:
+        // 走力5・肩5 で 85%、走力10・肩1 で 98%（clamp で 95）、走力1・肩10 で 71.5%
+        final p = 0.85 + (speed - 5) * 0.015 - (arm - 5) * 0.015;
+        return p.clamp(0.50, 0.95);
+    }
+  }
+
+  /// タッチアップを試行するかどうかを判定（フライの深さを考慮）
+  bool _shouldAttemptTagUp(Player runner, _FlyDepth depth, int arm) {
     final speed = runner.speed ?? 5;
-    return _random.nextDouble() < _tagUpAttemptProbability(speed);
+    return _random.nextDouble() < _tagUpAttemptProb(depth, speed, arm);
   }
 
-  /// タッチアップが成功するかどうかを判定（外野手の肩を考慮）
-  bool _isTagUpSuccessful(Player runner, int outfielderArm) {
+  /// タッチアップが成功するかどうかを判定（フライの深さ・外野手の肩を考慮）
+  bool _isTagUpSuccessful(Player runner, _FlyDepth depth, int arm) {
     final speed = runner.speed ?? 5;
-    return _random.nextDouble() < _tagUpSuccessProbability(speed, outfielderArm);
+    return _random.nextDouble() < _tagUpSuccessProb(depth, speed, arm);
   }
 
   /// 2塁ランナーがタッチアップ可能な方向かチェック
@@ -790,6 +833,10 @@ class GameSimulator {
         return _advanceOnError(runners, batter);
       case AtBatResultType.sacrificeBunt:
         return _advanceOnSacrificeBunt(runners);
+      case AtBatResultType.sacrificeFly:
+        // 通常 _advanceRunners には flyOut が渡り、_processTagUp の結果から
+        // 呼び出し側で sacrificeFly に書き換えられる。ここに到達することはない想定。
+        return _advanceOnNoChange(runners);
       case AtBatResultType.fieldersChoice:
         return _advanceOnFieldersChoice(runners, batter);
     }
@@ -1040,13 +1087,18 @@ class GameSimulator {
     final outfielder = pitchingTeam?.getFielder(fieldPosition);
     final outfielderArm = outfielder?.arm ?? 5;
 
+    // フライの深さを内部抽選（浅い 30% / 中 40% / 深い 30%）。
+    // この打席のタッチアップ判定（3塁・2塁の両方）に共通で適用する。
+    final flyDepth = _rollFlyDepth();
+
     // 3塁ランナーのタッチアップ判定
     bool thirdRunnerTaggedUp = false;
     bool thirdRunnerScored = false;
 
-    if (runners.third != null && _shouldAttemptTagUp(runners.third!)) {
+    if (runners.third != null &&
+        _shouldAttemptTagUp(runners.third!, flyDepth, outfielderArm)) {
       thirdRunnerTaggedUp = true;
-      if (_isTagUpSuccessful(runners.third!, outfielderArm)) {
+      if (_isTagUpSuccessful(runners.third!, flyDepth, outfielderArm)) {
         thirdRunnerScored = true;
         scorers.add(runners.third!);
         newThird = null;
@@ -1074,17 +1126,19 @@ class GameSimulator {
     final inningAlreadyEnded = outs + 1 + tagUpOuts >= 3;
 
     // 2塁ランナーのタッチアップ判定
+    //
+    // 物理的整合性: 外野手は捕球後 1 つしか送球できないため、
+    // 3塁走者がタッチアップ試行している場合は本塁送球になり、
+    // 2塁走者の 3塁進塁を阻止することは時間的に不可能（→ 無条件成功）。
+    // 3塁走者がいない場合のみ、外野手は 3塁送球を選び、走力 vs 肩で判定する。
     if (!inningAlreadyEnded &&
         runners.second != null &&
         _canSecondRunnerTagUp(fieldPosition) &&
         (thirdRunnerTaggedUp || runners.third == null)) {
-      if (_shouldAttemptTagUp(runners.second!)) {
-        // 成功判定
-        final successCheck = runners.third != null
-            ? thirdRunnerScored
-            : _isTagUpSuccessful(runners.second!, outfielderArm);
-
-        if (successCheck) {
+      if (_shouldAttemptTagUp(runners.second!, flyDepth, outfielderArm)) {
+        if (runners.third != null) {
+          // 同時タッチアップ: 外野手は本塁送球。2塁→3塁は無条件成功。
+          // 3塁走者が本塁でセーフでもアウトでも、2塁走者は 3塁を取れる。
           newThird = runners.second;
           newSecond = null;
           tagUpAttempts.add(TagUpAttempt(
@@ -1094,14 +1148,26 @@ class GameSimulator {
             success: true,
           ));
         } else {
-          tagUpOuts++;
-          newSecond = null;
-          tagUpAttempts.add(TagUpAttempt(
-            runner: runners.second!,
-            fromBase: Base.second,
-            toBase: Base.third,
-            success: false,
-          ));
+          // 単独タッチアップ: 外野手は 3塁送球。走力 vs 肩で判定。
+          if (_isTagUpSuccessful(runners.second!, flyDepth, outfielderArm)) {
+            newThird = runners.second;
+            newSecond = null;
+            tagUpAttempts.add(TagUpAttempt(
+              runner: runners.second!,
+              fromBase: Base.second,
+              toBase: Base.third,
+              success: true,
+            ));
+          } else {
+            tagUpOuts++;
+            newSecond = null;
+            tagUpAttempts.add(TagUpAttempt(
+              runner: runners.second!,
+              fromBase: Base.second,
+              toBase: Base.third,
+              success: false,
+            ));
+          }
         }
       }
     }
@@ -1110,11 +1176,16 @@ class GameSimulator {
     final inningEnds = outs + 1 + tagUpOuts >= 3;
     final finalScorers = inningEnds ? <Player>[] : scorers;
 
+    // 犠飛: 3塁走者がタッチアップで生還し、その得点が有効ならば true。
+    // 集計上は「打数に含めない、出塁率の分母には入る、打点として記録」になる。
+    final wasSacrificeFly = thirdRunnerScored && !inningEnds;
+
     return _RunnerAdvanceResult(
       newRunners: BaseRunners(first: newFirst, second: newSecond, third: newThird),
       additionalOuts: tagUpOuts,
       tagUps: tagUpAttempts,
       scoringRunners: finalScorers,
+      wasSacrificeFly: wasSacrificeFly,
     );
   }
 
@@ -1160,12 +1231,21 @@ class _RunnerAdvanceResult {
   /// 打席結果による得点（HR で打者自身が含まれる場合もある）。
   final List<Player> scoringRunners;
 
+  /// 外野フライ + 3塁走者がタッチアップで生還したケース。
+  /// 呼び出し側で打席結果を flyOut → sacrificeFly に書き換えるためのフラグ。
+  final bool wasSacrificeFly;
+
   const _RunnerAdvanceResult({
     required this.newRunners,
     this.additionalOuts = 0,
     this.tagUps = const [],
     this.scoringRunners = const [],
+    this.wasSacrificeFly = false,
   });
 
   int get runsScored => scoringRunners.length;
 }
+
+/// 外野フライの深さ（_processTagUp 内部のみで使用、外には漏らさない）。
+/// 浅い: タッチアップ不可寄り / 中くらい: 走力・肩で揺れる / 深い: 確実に走れる。
+enum _FlyDepth { shallow, medium, deep }

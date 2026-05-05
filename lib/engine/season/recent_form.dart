@@ -32,8 +32,7 @@ class _PA {
   factory _PA.from(AtBatResult ab) {
     final type = ab.result;
     final isWalk = type == AtBatResultType.walk;
-    // 犠飛: 外野フライで打点ありを犠飛扱い（aggregator と同じ簡易判定）
-    final isSacFly = type == AtBatResultType.flyOut && ab.rbiCount > 0;
+    final isSacFly = type == AtBatResultType.sacrificeFly;
     final isAB = !isWalk && !isSacFly;
     final isHit = type.isHit;
     final int tb;

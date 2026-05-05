@@ -36,6 +36,13 @@ class AtBatResult {
   ///   - パスボールで生還した（ワイルドピッチは自責）
   final Map<String, int> earnedRunsByPitcher;
 
+  /// この打席で本塁を踏んだ選手（個人「得点」集計に使用）。
+  /// 含まれるもの:
+  ///   - 走塁による生還（_processTagUp / _advanceOn... の scoringRunners）
+  ///   - 本塁打を打った打者自身
+  ///   - ワイルドピッチ・パスボールで生還した走者（batteryErrorScorers）
+  final List<Player> scoringRunners;
+
   const AtBatResult({
     required this.batter,
     required this.pitcher,
@@ -52,6 +59,7 @@ class AtBatResult {
     this.isIncomplete = false,
     this.runsByPitcher = const {},
     this.earnedRunsByPitcher = const {},
+    this.scoringRunners = const [],
   });
 
   /// 球数
@@ -83,6 +91,8 @@ class AtBatResult {
         if (runsByPitcher.isNotEmpty) 'runsByPitcher': runsByPitcher,
         if (earnedRunsByPitcher.isNotEmpty)
           'earnedRunsByPitcher': earnedRunsByPitcher,
+        if (scoringRunners.isNotEmpty)
+          'scoringRunners': [for (final p in scoringRunners) p.id],
       };
 
   factory AtBatResult.fromJson(
@@ -126,5 +136,11 @@ class AtBatResult {
         earnedRunsByPitcher: json['earnedRunsByPitcher'] == null
             ? const {}
             : Map<String, int>.from(json['earnedRunsByPitcher'] as Map),
+        scoringRunners: json['scoringRunners'] == null
+            ? const []
+            : [
+                for (final id in (json['scoringRunners'] as List))
+                  playerById[id as String]!,
+              ],
       );
 }

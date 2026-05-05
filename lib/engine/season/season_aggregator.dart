@@ -324,8 +324,7 @@ class SeasonAggregator {
         final bStats = batterStats[ab.batter.id];
         if (bStats != null) {
           bStats.plateAppearances++;
-          final isSacFly =
-              ab.result == AtBatResultType.flyOut && ab.rbiCount > 0;
+          final isSacFly = ab.result == AtBatResultType.sacrificeFly;
           final isSacBunt = ab.result == AtBatResultType.sacrificeBunt;
           if (isSacFly) bStats.sacFlies++;
           if (isSacBunt) bStats.sacrificeBunts++;
@@ -350,6 +349,13 @@ class SeasonAggregator {
           if (ab.result == AtBatResultType.strikeout) {
             pStats.strikeoutsRecorded++;
           }
+        }
+
+        // 個人「得点」: 本塁を踏んだ選手それぞれにカウント。
+        // バッテリーエラー由来 + 走塁由来（HR で打者自身を含む）。
+        for (final scorer in ab.scoringRunners) {
+          final scorerStats = batterStats[scorer.id];
+          if (scorerStats != null) scorerStats.runs++;
         }
 
         // 失点（runsByPitcher）: 打席で生還した走者の責任投手に分配済みのマップを使用

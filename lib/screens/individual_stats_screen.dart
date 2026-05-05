@@ -5,8 +5,8 @@ import '../engine/engine.dart';
 /// 個人成績画面
 ///
 /// タブ:
-/// - 打撃: 首位打者(打率) / 本塁打王 / 打点王 / 盗塁王 / OPS
-/// - 投手: 最優秀防御率 / 最多勝 / 最多奪三振 / WHIP
+/// - 打撃: 首位打者(打率) / 本塁打王 / 打点王 / 盗塁王 / 最多得点 / OPS
+/// - 投手: 最優秀防御率 / 最多勝 / 最多奪三振 / 最多セーブ / 最多ホールド / WHIP
 ///
 /// 自チームの選手は青色太字でハイライト。
 class IndividualStatsScreen extends StatefulWidget {
@@ -107,6 +107,13 @@ class _IndividualStatsScreenState extends State<IndividualStatsScreen>
           '盗塁王',
           all,
           (b) => b.stolenBases.toDouble(),
+          (v) => v.toInt().toString(),
+          min: 1,
+        ),
+        _buildBatterRanking(
+          '最多得点',
+          all,
+          (b) => b.runs.toDouble(),
           (v) => v.toInt().toString(),
           min: 1,
         ),

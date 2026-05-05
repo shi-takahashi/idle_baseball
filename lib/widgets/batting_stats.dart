@@ -353,6 +353,8 @@ class BattingStats extends StatelessWidget {
         return 'エラー';
       case AtBatResultType.sacrificeBunt:
         return '送りバント';
+      case AtBatResultType.sacrificeFly:
+        return '犠飛';
       case AtBatResultType.fieldersChoice:
         return '野選';
     }
