@@ -78,23 +78,6 @@ class FieldingErrorResult {
   });
 }
 
-/// 外野エラーの結果（長打時のクッションボール/返球ミス）
-class OutfieldErrorResult {
-  final ErrorType type;
-  final FieldPosition position;
-  final Player fielder;
-  final List<(Player runner, Base from, Base to)> extraAdvances; // 追加進塁
-  final int extraRuns; // 追加得点
-
-  const OutfieldErrorResult({
-    required this.type,
-    required this.position,
-    required this.fielder,
-    required this.extraAdvances,
-    required this.extraRuns,
-  });
-}
-
 /// エラーシミュレーター
 class ErrorSimulator {
   final Random _random;
@@ -119,12 +102,13 @@ class ErrorSimulator {
   static const double _catcherFieldingPassedBallModifier = 0.0002;
 
   // === 内野エラー関連 ===
-  // ゴロエラー基本確率
-  // 現状の失策集計は内野ゴロエラーのみ（外野クッションエラー・送球エラー等は
-  // 未実装）。それらを後から追加した時に NPB 水準（1チーム143試合で60〜80失策）
-  // を超えないよう、内野ゴロ単体では 2 倍に留めて余裕を残してある。
-  // 守備力差・ポジション差の比率は元のまま保持される。
+  // ゴロエラー基本確率（捕球 + 送球の合算）。
+  // 検知時に [pickGroundBallErrorType] で 捕球エラー / 送球エラー に振り分ける。
+  // NPB 水準（1チーム143試合で60〜80失策、リーグ全体で約 0.45 失策/試合）に
+  // 外野フライエラー・クッションエラーを足して合致するよう設定。
   static const double _baseGroundBallErrorRate = 0.04; // 4%
+  // 内野ゴロエラー検知時の「捕球 vs 送球」内訳（NPB の実績に近い 6:4）
+  static const double _groundBallFieldingErrorShare = 0.6;
   // 守備力による補正（1ポイントあたり）
   static const double _fieldingErrorModifier = 0.006; // 守備力1で+2.4%、10で-3.0%
   // ポジション別の難易度補正
@@ -138,10 +122,20 @@ class ErrorSimulator {
   };
 
   // === 外野エラー関連 ===
-  // クッションボール/返球エラー基本確率（長打時）
-  static const double _baseOutfieldErrorRate = 0.015; // 1.5%
-  // 守備力による補正
+  // 外野手のエラーは「ヒット + 追加進塁」の形で発生する。
+  // 単独で「アウトをセーフに」するエラー（外野フライ落球）はプロレベルで
+  // ほぼあり得ないので未実装。
+  //
+  // 二塁打エラー（クッション処理ミス + 中継返球ミス）基本確率
+  static const double _baseDoubleErrorRate = 0.015; // 1.5%
+  // 単打エラー（中継返球ミス）基本確率
+  // クッション処理を伴わず、長距離返球の機会も少ないため低め
+  static const double _baseSingleErrorRate = 0.005; // 0.5%
+  // 守備力による補正（共通）
   static const double _outfieldFieldingErrorModifier = 0.003;
+
+  // 二塁打エラー検知時の内訳: クッション処理ミス vs 中継返球ミス
+  static const double _doubleCushionShare = 0.70;
 
   ErrorSimulator({Random? random}) : _random = random ?? Random();
 
@@ -218,6 +212,18 @@ class ErrorSimulator {
     final probability = (_baseGroundBallErrorRate - fieldingModifier + posModifier).clamp(0.010, 0.12);
     return _random.nextDouble() < probability;
   }
+
+  /// 内野ゴロエラー検知時の内訳を抽選する。
+  /// - [FieldingErrorType.fielding]（捕球失策、ゴロが股を抜けた等）: 60%
+  /// - [FieldingErrorType.throwing]（送球失策、悪送球で打者出塁）: 40%
+  /// 進塁ロジックはどちらも同じ（打者出塁・各走者 1 つずつ進塁）。
+  /// 表示と統計の内訳のみが異なる。
+  FieldingErrorType pickGroundBallErrorType() {
+    return _random.nextDouble() < _groundBallFieldingErrorShare
+        ? FieldingErrorType.fielding
+        : FieldingErrorType.throwing;
+  }
+
 
   /// 内野エラー時のランナー進塁を計算
   /// batterSpeed: 打者の走力（エラー時の進塁に影響）
@@ -309,49 +315,37 @@ class ErrorSimulator {
     );
   }
 
-  /// 外野エラー判定（長打時のクッションボール/返球ミス）
+  /// 二塁打エラー判定（クッション処理ミス + 中継本塁返球ミス）。
+  /// 二塁打が出た外野方向で、外野手のミスにより打者が三塁まで進むケース。
   /// fielding: 外野手の守備力
-  /// position: 守備位置
-  bool checkOutfieldError(int fielding, FieldPosition position) {
+  bool checkDoubleError(int fielding, FieldPosition position) {
+    if (!position.isOutfield) return false;
     final fieldingDiff = fielding - 5;
     final fieldingModifier = fieldingDiff * _outfieldFieldingErrorModifier;
-
-    final probability = (_baseOutfieldErrorRate - fieldingModifier).clamp(0.003, 0.04);
+    final probability =
+        (_baseDoubleErrorRate - fieldingModifier).clamp(0.003, 0.04);
     return _random.nextDouble() < probability;
   }
 
-  /// 外野エラー時の追加進塁を計算
-  /// hitType: 打球の種類（double_/triple）
-  /// runners: 現在のランナー状況（進塁適用後）
-  /// batter: 打者
-  OutfieldErrorResult applyOutfieldError(
-    FieldPosition position,
-    Player fielder,
-    AtBatResultType hitType,
-    BaseRunners runnersAfterHit,
-    Player batter,
-  ) {
-    final extraAdvances = <(Player, Base, Base)>[];
-    var extraRuns = 0;
+  /// 単打エラー判定（中継・返球ミス）。
+  /// 単打が出た外野方向で、外野手の返球ミスにより打者が二塁まで進むケース。
+  /// 二塁打エラーより低確率（クッション処理がなく長距離返球の機会も少ない）。
+  bool checkSingleError(int fielding, FieldPosition position) {
+    if (!position.isOutfield) return false;
+    final fieldingDiff = fielding - 5;
+    final fieldingModifier = fieldingDiff * _outfieldFieldingErrorModifier;
+    final probability =
+        (_baseSingleErrorRate - fieldingModifier).clamp(0.001, 0.02);
+    return _random.nextDouble() < probability;
+  }
 
-    // 二塁打→三塁打相当になる（打者が3塁へ）
-    if (hitType == AtBatResultType.double_) {
-      // 打者は2塁にいるはずなので3塁へ
-      extraAdvances.add((batter, Base.second, Base.third));
-
-      // 3塁にいたランナーがいればホームへ
-      if (runnersAfterHit.third != null) {
-        extraAdvances.add((runnersAfterHit.third!, Base.third, Base.home));
-        extraRuns++;
-      }
-    }
-
-    return OutfieldErrorResult(
-      type: ErrorType.cushionError,
-      position: position,
-      fielder: fielder,
-      extraAdvances: extraAdvances,
-      extraRuns: extraRuns,
-    );
+  /// 二塁打エラー検知時の内訳を抽選。
+  /// - [FieldingErrorType.cushion]（クッション処理ミス）: 70%
+  /// - [FieldingErrorType.throwing]（中継・本塁返球ミス）: 30%
+  /// 進塁ロジックはどちらも同じ（打者が三塁まで進む）。
+  FieldingErrorType pickDoubleErrorType() {
+    return _random.nextDouble() < _doubleCushionShare
+        ? FieldingErrorType.cushion
+        : FieldingErrorType.throwing;
   }
 }

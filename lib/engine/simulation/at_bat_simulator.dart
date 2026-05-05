@@ -747,11 +747,11 @@ class AtBatSimulator {
     // ゴロの場合、まずエラーチェック（内野のみ）
     if (fieldPosition != null && !fieldPosition.isOutfield) {
       if (_errorSimulator.checkGroundBallError(fielding, fieldPosition)) {
-        // エラー発生 → 打者出塁
+        // エラー発生 → 打者出塁。捕球 / 送球の内訳を抽選（進塁ロジックは共通）。
         return InPlayResult(
           result: AtBatResultType.reachedOnError,
           fieldingError: FieldingError(
-            type: FieldingErrorType.fielding,
+            type: _errorSimulator.pickGroundBallErrorType(),
             position: fieldPosition,
             runsScored: 0, // 得点はGameSimulatorで計算
           ),
@@ -773,6 +773,52 @@ class AtBatSimulator {
       }
     }
     return const InPlayResult(result: AtBatResultType.groundOut);
+  }
+
+  /// 二塁打の外野手エラーチェック（クッション処理ミス + 中継返球ミス）。
+  /// 外野方向の二塁打で、外野手のミスにより打者が三塁まで進むケース。
+  /// 結果を triple に書き換える（走塁は _advanceOnTriple で処理される）。
+  /// 失策として cushion / throwing を記録するので、追加得点は不自責になる。
+  InPlayResult _determineDoubleResult({
+    required FieldPosition? fieldPosition,
+    required int fielding,
+  }) {
+    if (fieldPosition != null && fieldPosition.isOutfield) {
+      if (_errorSimulator.checkDoubleError(fielding, fieldPosition)) {
+        return InPlayResult(
+          result: AtBatResultType.triple,
+          fieldingError: FieldingError(
+            type: _errorSimulator.pickDoubleErrorType(),
+            position: fieldPosition,
+            runsScored: 0,
+          ),
+        );
+      }
+    }
+    return const InPlayResult(result: AtBatResultType.double_);
+  }
+
+  /// 単打の外野手エラーチェック（中継・返球ミス）。
+  /// 外野方向の単打で、外野手の返球ミスにより打者が二塁まで進むケース。
+  /// 結果を double_ に書き換え（走塁は _advanceOnDouble で処理される）。
+  /// 内野安打 / 外野手以外の単打にはクッション処理がないので適用しない。
+  InPlayResult _determineSingleResult({
+    required FieldPosition? fieldPosition,
+    required int fielding,
+  }) {
+    if (fieldPosition != null && fieldPosition.isOutfield) {
+      if (_errorSimulator.checkSingleError(fielding, fieldPosition)) {
+        return InPlayResult(
+          result: AtBatResultType.double_,
+          fieldingError: FieldingError(
+            type: FieldingErrorType.throwing,
+            position: fieldPosition,
+            runsScored: 0,
+          ),
+        );
+      }
+    }
+    return const InPlayResult(result: AtBatResultType.single);
   }
 
   /// インプレー時の打席結果を決定（球速・制球力・ミート・長打力・守備力・走力・球種・疲労考慮）
@@ -854,13 +900,19 @@ class AtBatSimulator {
     // 単打
     cumulative += probs.probSingle;
     if (roll < cumulative) {
-      return const InPlayResult(result: AtBatResultType.single);
+      return _determineSingleResult(
+        fieldPosition: fieldPosition,
+        fielding: fieldingValue,
+      );
     }
 
     // 二塁打
     cumulative += probs.probDouble;
     if (roll < cumulative) {
-      return const InPlayResult(result: AtBatResultType.double_);
+      return _determineDoubleResult(
+        fieldPosition: fieldPosition,
+        fielding: fieldingValue,
+      );
     }
 
     // 三塁打
