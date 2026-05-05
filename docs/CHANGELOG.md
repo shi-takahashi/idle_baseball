@@ -5,6 +5,210 @@
 
 ---
 
+## 2026-05-05 設定画面追加 + ゲームエンジン仮実装の本実装化
+
+UI に設定画面を追加した上で、試合シミュレーションの「仮実装」だった部分を
+3 つに分けて本実装化。リアリティ調整は最低限に留め、機能の構造化を優先。
+
+### 1. 設定画面（SettingsScreen）+ オフシーズン進行 ON/OFF
+
+**動機:**
+リアリティ調整に入る前に、ユーザー設定の入口を整備する。第一弾として
+「オフシーズン進行（加齢・引退・新人加入）の ON/OFF」を実装。OFF にすると
+「時を止める」モードとして、選手・能力をそのまま次シーズンへ持ち越せる。
+手動編集（チーム・選手）は ON/OFF どちらでも可能。
+
+**`SeasonController` 拡張:**
+- `_offseasonProgressionEnabled` フィールド（デフォルト true）
+- コンストラクタ・`newSeason` factory・getter/setter（setter は notify 発火）
+- `commitOffseason` で OFF なら 加齢・CPU rebuilder・自チーム selection を
+  全てスキップ。年次 +1 / Schedule 再生成 / 統計リセット は実行
+- `prepareOffseason` は OFF 時に StateError（防御的）
+- JSON 往復で flag を保存・復元（旧セーブは欠損 → true 扱い、後方互換）
+
+**UI:**
+- `SettingsScreen` 新規（`SwitchListTile` 1 個 + 説明文）
+- `MainSeasonScreen` の NavigationBar に 5 番目「設定」タブを追加
+  （順序: 作戦 / 順位表 / 個人成績 / チーム / 設定）
+- 「次シーズンへ」ボタンを ON/OFF で分岐:
+  - ON: 従来通り `OffseasonScreen` を push
+  - OFF: 試合数選択 + 確認だけのダイアログ（`_SkipOffseasonDialog`）→ 即 commit
+- HomeScreen からの設定アクセスは未実装（per-save 設定なので、セーブを
+  読み込んだ後の MainSeasonScreen からのみアクセス可能）
+
+**検証 (`bin/test_offseason_skip.dart`):**
+- OFF で 2 シーズン回しても 180 名全員 toJson 完全一致 ✓
+- JSON 往復で flag 保持 ✓
+- ON 復帰で加齢が再開 ✓
+
+### 2. 犠飛 + 個人「得点」+ タッチアップ物理整合性（B スコープ）
+
+**動機:**
+PROGRESS.md 残課題の「犠飛判定の厳密化」「個人得点の集計」と、
+ユーザー指摘の「タッチアップでダブルプレーが起きうる」問題を一括解決。
+
+**enum / モデル:**
+- `AtBatResultType.sacrificeFly` 追加（`isOut` / `displayName` / `isSacrificeFly` 反映）
+- `AtBatResult.scoringRunners` 追加（個人得点集計用、JSON 往復対応）
+- `BatterSeasonStats.runs` 追加（JSON 往復対応）
+
+**シミュレーション (`game_simulator.dart`):**
+- **`_processTagUp` の物理的整合性修正**: 3 塁走者と 2 塁走者の同時タッチアップ時、
+  外野手は本塁送球に固定 → 2 塁走者は無条件で 3 塁到達（ダブルプレー不成立）。
+  3 塁走者がいない単独タッチアップのみ `_isTagUpSuccessful` で 3 塁送球判定
+- `_RunnerAdvanceResult.wasSacrificeFly` フラグ追加
+- 「外野フライ + 3 塁走者がタッチアップ生還」のとき result を
+  `flyOut → sacrificeFly` に書き換え
+- `AtBatResult` 構築時にバッテリーエラー + 走塁の生還者を `scoringRunners` に集約
+
+**集計:**
+- `season_aggregator`: `isSacFly = (result == sacrificeFly)` に厳密化、
+  `scoringRunners` を集計して `bStats.runs++`
+- `recent_form`: 同じく厳密化
+
+**UI:**
+- `individual_stats_screen`: 「最多得点」ランキング追加
+- `team_stats_screen`: 打撃成績テーブルに「得」列追加
+
+**検証 (`bin/test_sacfly.dart`、150 試合 × 6 チームでサンプル):**
+- タッチアップ二重失敗 0 件 ✓
+- 犠飛 76 件、全件打点付き ✓
+- 打席 - 四球 - 犠飛 - 犠打 = 打数 完全一致 ✓
+- 個人得点合計 == 投手失点合計 ✓
+
+### 3. エラー処理の拡充（A スコープ）
+
+**動機:**
+`error_simulator.dart` にデッドコードのまま残っていた `checkOutfieldError` /
+`applyOutfieldError` を実体化。失策の内訳を NPB に近づける。
+
+**外野フライ落球エラーは実装しない方針:**
+ユーザー指摘で「プロレベルでは現実的でない」ため、外野手のエラーは
+「ヒット + 追加進塁」の形（クッション処理ミス + 中継返球ミス）に絞る。
+
+**`error_simulator.dart`:**
+- `pickGroundBallErrorType()` 追加: 内野ゴロエラー検知時に
+  捕球失策 60% / 送球失策 40% に振り分け（FieldingErrorType.fielding / .throwing）
+- `checkDoubleError(int fielding, FieldPosition position)`: 外野二塁打時の
+  クッション処理 + 中継返球エラー判定（基本確率 1.5%）
+- `pickDoubleErrorType()`: 二塁打エラー検知時に
+  クッション 70% / 送球 30% に振り分け
+- `checkSingleError(int fielding, FieldPosition position)`: 外野単打時の
+  中継返球エラー判定（基本確率 0.5%、低め）
+- 旧 `checkOutfieldError` / `applyOutfieldError` / `OutfieldErrorResult` /
+  `_baseOutfieldFlyErrorRate` を削除（デッドコード整理）
+
+**`at_bat_simulator.dart`:**
+- 内野ゴロエラー検知時の `FieldingErrorType` を `pickGroundBallErrorType()`
+  の結果に変更（既存挙動の細分化）
+- `_determineDoubleResult` 新設: 二塁打判定時にエラー → `double_ → triple`
+  書き換え + cushion / throwing を内訳記録
+- `_determineSingleResult` 新設: 単打判定時にエラー → `single → double_`
+  書き換え + throwing 記録
+
+**計測 (`measure_errors.dart` 拡張):**
+- 内訳カウンタを 5 種類に増やして表示
+- 5 シーズン × 30 試合の結果:
+  - 内野・捕球失策: 131 / 内野・送球失策: 111
+  - 外野・クッション処理: 5 / 外野・中継返球: 5
+  - 外野・捕球失策: 0（未実装で 0 想定）
+- 内訳合計 252 == 全失策 252（漏れなし）
+- 143 試合換算 40 失策／チーム（NPB 60〜80 にはまだ届かないが、リアリティ
+  調整セッション送り）
+
+### 4. バント処理の構造化 + 戦略補正の拡張（C スコープ）
+
+**動機:**
+`_rollBuntOutcome` が 6 種を確率テーブルで直接決定していたのを構造化し、
+打球方向 → 守備能力 vs 走力 の本物の解決ロジックにする。
+さらにスリーバント失敗・カウント遷移・ヒッティング切替の実装まで踏み込む。
+
+**`AtBatResult.isBunt` 追加:**
+バント由来の打席を確実に識別。JSON 往復対応。
+
+**`bunt_decision_strategy.dart` 拡張:**
+- `BuntContext.nextBatter` 追加
+- イニング補正の汎化: 6 回 ×1.15 / 7 回 ×1.30 / 8 回 ×1.45 / 9 回以降 ×1.60
+- 得点差補正の汎化: 同点 ×1.30 / 1 点差 ×1.20 / 2 点差 ×1.10 / 4 点以上 ×0.6
+- 次打者補正: 次打者 power 8+ で ×1.30、3 以下で ×0.5
+
+**`simulateAtBat` 拡張:**
+- `initialBalls` / `initialStrikes` / `previousPitches` パラメータを追加
+- バントから途中切替時に、現在カウントと既出投球を引き継いで継続実行可能
+
+**`simulateBuntAtBat` 全面刷新（球ごとループ化）:**
+- `_BuntPitchOutcome` enum: ball / calledStrike / foul / popOut / inPlay
+- 球ごとにカウント遷移（4 ボール → 四球、3 ストライク → 三振）
+- **2 ストライクからのバントファール = スリーバント失敗（三振）**
+- **2 ストライク到達時に「バント続行 vs ヒッティング切替」判断**（power 依存）
+  - 投手 (power ≤ 2): 80% 続行
+  - 弱打者 (power 3-4): 45% 続行
+  - 中堅 (power 5-6): 25% 続行
+  - 主軸 (power 7+): 10% 続行
+- ヒッティング切替時は `simulateAtBat` にカウントを引き継いで委譲
+- インプレー時は方向抽選 → 守備能力 vs 走力で結果を決定（既存 `_resolveBuntInPlay`）
+
+**`_rollBuntPitch` 確率設計:**
+- ball: 投手の制球力に依存（base 0.30、制球で ±0.10）
+- calledStrike: 0.05（2 ストライクでは 0.03）
+- popOut: meet が低いほど高い（最終 base 0.04、meet で ±0.005）
+- foul: meet が低いほど高い（base 0.20、meet で ±0.005）
+- inPlay: 残り
+
+**バント解決確率の最終 base 値（送りバント成功率 60% 超え目標で調整）:**
+- `_firstBaseOutProb` base **0.90** （旧 0.65 → 0.78 → 0.83 → 0.88 → 0.90）
+- `_shouldThrowToLead` base **0.10** （旧 0.30 → 0.20 → 0.15 → 0.10）
+- `_leadRunnerOutProb` base 0.65 （旧 0.55 → 0.65）
+
+**計測 (`test_bunt.dart` を全面リライト、5 seed × 30 試合 = 1524 試行):**
+
+| 項目 | 旧 | 最終 |
+|---|---|---|
+| **送りバント成功** | 38.6% | **61.6%** |
+| バント安打 | 24.6% | 7.3% |
+| 野選 (FC) | 15.8% | 8.7% |
+| バント併殺 | 1.7% | 1.4% |
+| ポップアウト | 8.7% | 11.4% |
+| 三振 | 6.8% | 5.8% |
+| 四球 | 3.8% | 2.7% |
+| **進塁成功率**（成功 + バント安打） | 63.2% | **68.9%** |
+
+新機能の動作:
+- スリーバント失敗（2S からのファール三振）: 29 件
+- ヒッティング切替で打席結果が出たケース: 7 件
+- 球数分布（平均 2 球で結着）: 1 球 47% / 2 球 22% / 3 球 16% / 4-8 球 15%
+
+守備位置別の差が明確に出ている:
+- 1 塁送球成功率: 投前 83% / 三前 73% / 一前 83% / 捕前 75%
+- 先頭走者狙い率: 三前 27% / 投前 11% / 一前 8%
+
+統計整合性: AtBat.isBunt + sacrificeBunt 161 == BatterSeasonStats.sacrificeBunts 161 ✓
+
+### 5. 全体回帰テスト
+
+新規追加:
+- `bin/test_offseason_skip.dart`: オフシーズン OFF の動作検証
+- `bin/test_sacfly.dart`: 犠飛 + 個人得点の整合性検証
+
+更新:
+- `bin/test_bunt.dart`: 「進塁成功 = sacrificeBunt + infieldHit」の集計に変更、
+  スリーバント失敗・球数分布・守備位置別の挙動を出力
+- `bin/measure_errors.dart`: 失策の内訳を 5 種類で表示
+
+回帰テスト全 PASS:
+- test_persist / test_next_season / test_offseason_skip / test_sacfly
+
+### 6. 残課題（次回以降のリアリティ調整セッション送り）
+
+- 犠飛発生数: 0.17/試合（NPB 0.5/試合）— 0 or 1 アウトで 3 塁走者が居る場面の
+  シミュレーション頻度の問題、状況依存のため別途
+- 失策数: 143 試合換算 40/チーム（NPB 60〜80）— エラー基本確率の底上げ
+- バント進塁成功率: 68.9%（NPB 75-80%）— ポップアウトをさらに減らすか、
+  1 塁送球成功率をさらに上げる方向
+- バント発動判定の追加要素: 打者の meet 反映、投手・守備の能力反映
+
+---
+
 ## 2026-05-04 リアリティ調整セッション
 
 選手生成・成長・確率まわりの磨き込み。新機能ではなくバランス調整中心。
