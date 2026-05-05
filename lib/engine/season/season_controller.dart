@@ -48,6 +48,13 @@ class SeasonController {
   /// 引き渡される（未指定の場合は前シーズンの値を継承）。
   int _gamesPerTeam;
 
+  /// オフシーズンの「時の流れ」を有効にするか（デフォルト true）。
+  ///
+  /// true: 次シーズン移行時に加齢・能力変動・引退・新人加入を実行（現状の挙動）
+  /// false: 加齢も入替もスキップし、前シーズンと同じ選手・同じパラメータで開始
+  ///        （手動編集による変更は従来通り反映される）
+  bool _offseasonProgressionEnabled;
+
   /// gameNumber → GameResult のマップ（未実行の試合はキーなし）
   final Map<int, GameResult> _results = {};
 
@@ -132,10 +139,12 @@ class SeasonController {
     required Schedule schedule,
     required this.myTeamId,
     int gamesPerTeam = ScheduleGenerator.defaultGamesPerTeam,
+    bool offseasonProgressionEnabled = true,
     GameSimulator? gameSimulator,
     Random? random,
   })  : _schedule = schedule,
         _gamesPerTeam = gamesPerTeam,
+        _offseasonProgressionEnabled = offseasonProgressionEnabled,
         _aggregator = SeasonAggregator(teams),
         _gameSimulator = gameSimulator ?? GameSimulator(random: random),
         _rotationRandom = random ?? Random() {
@@ -182,6 +191,7 @@ class SeasonController {
     Random? random,
     String myTeamId = 'team_phoenix',
     int gamesPerTeam = ScheduleGenerator.defaultGamesPerTeam,
+    bool offseasonProgressionEnabled = true,
   }) {
     final teams = TeamGenerator(random: random).generateLeague();
     final schedule = const ScheduleGenerator()
@@ -191,6 +201,7 @@ class SeasonController {
       schedule: schedule,
       myTeamId: myTeamId,
       gamesPerTeam: gamesPerTeam,
+      offseasonProgressionEnabled: offseasonProgressionEnabled,
       random: random,
     );
   }
@@ -204,6 +215,19 @@ class SeasonController {
   /// 1チームあたりの今シーズン試合数（30 / 90 / 150）。
   /// 翌シーズンの選択肢のデフォルト値や、UI 表示に使う。
   int get gamesPerTeam => _gamesPerTeam;
+
+  /// オフシーズン進行（加齢・引退・新人加入）の ON/OFF。
+  /// false の間に [commitOffseason] を呼ぶと、選手はそのままで翌シーズンへ進む。
+  bool get offseasonProgressionEnabled => _offseasonProgressionEnabled;
+
+  /// オフシーズン進行 ON/OFF を切り替える。
+  /// 設定画面のトグルから呼び出す。AutoSaver が拾えるよう [_notify] を発火する。
+  set offseasonProgressionEnabled(bool value) {
+    if (_offseasonProgressionEnabled == value) return;
+    _offseasonProgressionEnabled = value;
+    _notify();
+  }
+
   Team get myTeam => teams.firstWhere((t) => t.id == myTeamId);
   Standings get standings => _aggregator.standings;
   Map<String, BatterSeasonStats> get batterStats => _aggregator.batterStats;
@@ -595,6 +619,10 @@ class SeasonController {
     if (!isSeasonOver) {
       throw StateError('シーズン進行中は prepareOffseason を呼べません');
     }
+    if (!_offseasonProgressionEnabled) {
+      throw StateError(
+          'オフシーズン進行が OFF のとき prepareOffseason は呼べません');
+    }
     return TeamRebuilder(
       playerGen: _playerGen,
       previousBatterStats: _aggregator.batterStats,
@@ -629,55 +657,62 @@ class SeasonController {
     if ((plan == null) != (selection == null)) {
       throw ArgumentError('plan と selection は両方指定するか、両方省略してください');
     }
-
-    // 自チーム再編で参照する「前年スタメン」を加齢前にスナップショット。
-    // 加齢で player object 自体は差し替わるが id は不変なので、id を保存しておけば
-    // 加齢後も継続性ボーナスを正しく付与できる。
-    final myTeamPreviousStarterIds = <String>{};
-    if (selection != null) {
-      myTeamPreviousStarterIds
-          .addAll(myTeam.players.take(8).map((p) => p.id));
+    if (!_offseasonProgressionEnabled && plan != null) {
+      throw ArgumentError(
+          'オフシーズン進行が OFF のとき plan/selection は渡せません');
     }
 
-    // 1. 加齢 + 能力変動。各 Team 内の players/rotation/bullpen/bench/alignment を
-    //    in-place で書き換え（_replacePlayerInTeamInPlace 経由でスケジュール参照も追従）。
-    //    ※ updatePlayer は notify を発火させるのでループ向きでない。直接 in-place 置換。
-    final aging = PlayerAging(random: _rotationRandom);
-    final seenIds = <String>{};
-    for (final team in teams) {
-      for (final p in [
-        ...team.players,
-        ...team.startingRotation,
-        ...team.bullpen,
-        ...team.bench,
-      ]) {
-        if (!seenIds.add(p.id)) continue;
-        final updated = aging.ageOneYear(p);
-        // 全 Team 横断で in-place 置換（同じ Player 参照を持つ場所すべてを更新）
-        for (final t in teams) {
-          _replacePlayerInTeamInPlace(t, updated);
+    if (_offseasonProgressionEnabled) {
+      // 自チーム再編で参照する「前年スタメン」を加齢前にスナップショット。
+      // 加齢で player object 自体は差し替わるが id は不変なので、id を保存しておけば
+      // 加齢後も継続性ボーナスを正しく付与できる。
+      final myTeamPreviousStarterIds = <String>{};
+      if (selection != null) {
+        myTeamPreviousStarterIds
+            .addAll(myTeam.players.take(8).map((p) => p.id));
+      }
+
+      // 1. 加齢 + 能力変動。各 Team 内の players/rotation/bullpen/bench/alignment を
+      //    in-place で書き換え（_replacePlayerInTeamInPlace 経由でスケジュール参照も追従）。
+      //    ※ updatePlayer は notify を発火させるのでループ向きでない。直接 in-place 置換。
+      final aging = PlayerAging(random: _rotationRandom);
+      final seenIds = <String>{};
+      for (final team in teams) {
+        for (final p in [
+          ...team.players,
+          ...team.startingRotation,
+          ...team.bullpen,
+          ...team.bench,
+        ]) {
+          if (!seenIds.add(p.id)) continue;
+          final updated = aging.ageOneYear(p);
+          // 全 Team 横断で in-place 置換（同じ Player 参照を持つ場所すべてを更新）
+          for (final t in teams) {
+            _replacePlayerInTeamInPlace(t, updated);
+          }
         }
       }
-    }
 
-    // 2. CPU チームの引退・新人加入・スタメン再編成・投手ロール再編。
-    //    再編成時に前シーズンの成績（OPS）をスコア要素として参照する。
-    final rebuilder = TeamRebuilder(
-      playerGen: _playerGen,
-      previousBatterStats: _aggregator.batterStats,
-      random: _rotationRandom,
-    );
-    rebuilder.rebuildCpuTeams(teams, myTeamId);
-
-    // 3. 自チーム: ユーザー選択を反映（プランが渡されたときのみ）
-    if (plan != null && selection != null) {
-      rebuilder.applyUserSelection(
-        myTeam,
-        plan,
-        selection,
-        myTeamPreviousStarterIds,
+      // 2. CPU チームの引退・新人加入・スタメン再編成・投手ロール再編。
+      //    再編成時に前シーズンの成績（OPS）をスコア要素として参照する。
+      final rebuilder = TeamRebuilder(
+        playerGen: _playerGen,
+        previousBatterStats: _aggregator.batterStats,
+        random: _rotationRandom,
       );
+      rebuilder.rebuildCpuTeams(teams, myTeamId);
+
+      // 3. 自チーム: ユーザー選択を反映（プランが渡されたときのみ）
+      if (plan != null && selection != null) {
+        rebuilder.applyUserSelection(
+          myTeam,
+          plan,
+          selection,
+          myTeamPreviousStarterIds,
+        );
+      }
     }
+    // OFF 時は加齢・rebuild をスキップし、選手・能力をそのまま次シーズンへ持ち越す。
 
     // 4〜6.
     _seasonYear++;
@@ -1023,6 +1058,7 @@ class SeasonController {
       'myTeamId': myTeamId,
       'seasonYear': _seasonYear,
       'gamesPerTeam': _gamesPerTeam,
+      'offseasonProgressionEnabled': _offseasonProgressionEnabled,
       'currentDay': _currentDay,
       'players': {
         for (final entry in allPlayers.entries)
@@ -1088,11 +1124,15 @@ class SeasonController {
     // 旧フォーマット (v1 with gamesPerTeam 未保存) では 30 試合扱いで復元する。
     final gamesPerTeam = json['gamesPerTeam'] as int? ??
         ScheduleGenerator.defaultGamesPerTeam;
+    // オフシーズン進行フラグ。旧セーブには存在しないので true（現状の挙動）扱い。
+    final offseasonProgressionEnabled =
+        json['offseasonProgressionEnabled'] as bool? ?? true;
     final controller = SeasonController(
       teams: teams,
       schedule: schedule,
       myTeamId: json['myTeamId'] as String,
       gamesPerTeam: gamesPerTeam,
+      offseasonProgressionEnabled: offseasonProgressionEnabled,
       random: random,
     );
 

@@ -4,9 +4,11 @@ import '../engine/engine.dart';
 import '../persistence/auto_saver.dart';
 import '../persistence/save_service.dart';
 import 'daily_screen.dart';
+import 'home_screen.dart' show SeasonLengthSelector;
 import 'individual_stats_screen.dart';
 import 'offseason_screen.dart';
 import 'season_listenable.dart';
+import 'settings_screen.dart';
 import 'standings_screen.dart';
 import 'strategy_screen.dart';
 import 'team_list_screen.dart';
@@ -35,8 +37,9 @@ class _MainSeasonScreenState extends State<MainSeasonScreen> {
   int _selectedIndex = 0;
 
   /// 各タブの Navigator キー
-  /// 順序: 作戦 / 順位表 / 個人成績 / チーム
+  /// 順序: 作戦 / 順位表 / 個人成績 / チーム / 設定
   final List<GlobalKey<NavigatorState>> _navigatorKeys = [
+    GlobalKey<NavigatorState>(),
     GlobalKey<NavigatorState>(),
     GlobalKey<NavigatorState>(),
     GlobalKey<NavigatorState>(),
@@ -178,6 +181,13 @@ class _MainSeasonScreenState extends State<MainSeasonScreen> {
                 listenable: _listenable,
               ),
             ),
+            _buildTabNavigator(
+              4,
+              SettingsScreen(
+                controller: widget.controller,
+                listenable: _listenable,
+              ),
+            ),
           ],
         ),
         bottomNavigationBar: Column(
@@ -207,6 +217,10 @@ class _MainSeasonScreenState extends State<MainSeasonScreen> {
                   icon: Icon(Icons.groups_2),
                   label: 'チーム',
                 ),
+                NavigationDestination(
+                  icon: Icon(Icons.settings),
+                  label: '設定',
+                ),
               ],
             ),
           ],
@@ -224,17 +238,23 @@ class _MainSeasonScreenState extends State<MainSeasonScreen> {
   }
 
   /// シーズン終了状態から次シーズンへ進む。
-  /// [OffseasonScreen] を push して、ユーザーに引退者・新人の選択をさせる。
-  /// 確定で commit が走った後にここに戻り、作戦タブをルートに戻して
-  /// 新シーズン Day 0 の作戦画面を表示する。
+  ///
+  /// オフシーズン進行 ON: [OffseasonScreen] を push して、引退者・新人を選ばせる。
+  /// オフシーズン進行 OFF: 試合数選択 + 確認だけのダイアログを出して即 commit
+  /// （加齢・引退・新人加入はスキップ、選手はそのまま）。
+  /// 確定後は作戦タブをルートに戻して新シーズン Day 0 の作戦画面を表示する。
   Future<void> _advanceToNextSeason() async {
     final c = widget.controller;
     if (!c.isSeasonOver) return;
-    await Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => OffseasonScreen(controller: c),
-      ),
-    );
+    if (c.offseasonProgressionEnabled) {
+      await Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => OffseasonScreen(controller: c),
+        ),
+      );
+    } else {
+      await _runSkipOffseasonDialog(c);
+    }
     if (!mounted) return;
     if (_selectedIndex != 0) {
       setState(() => _selectedIndex = 0);
@@ -242,6 +262,20 @@ class _MainSeasonScreenState extends State<MainSeasonScreen> {
     _navigatorKeys[_selectedIndex]
         .currentState
         ?.popUntil((route) => route.isFirst);
+  }
+
+  /// オフシーズン進行 OFF 時の「次シーズンへ」ダイアログ。
+  /// 試合数の確認・変更だけ行い、確定で `commitOffseason(gamesPerTeam: ...)`。
+  Future<void> _runSkipOffseasonDialog(SeasonController c) async {
+    final result = await showDialog<int>(
+      context: context,
+      builder: (ctx) => _SkipOffseasonDialog(
+        currentYear: c.seasonYear,
+        initialGamesPerTeam: c.gamesPerTeam,
+      ),
+    );
+    if (result == null) return;
+    c.commitOffseason(gamesPerTeam: result);
   }
 
   Widget _buildAdvanceBar() {
@@ -297,6 +331,72 @@ class _MainSeasonScreenState extends State<MainSeasonScreen> {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// オフシーズン進行 OFF 時の「次シーズンへ」ダイアログ。
+/// 試合数の選択 + 開始確認のみ。引退・新人加入は発生しない旨を明示する。
+/// 戻り値: 確定なら次シーズンの試合数、キャンセルなら null。
+class _SkipOffseasonDialog extends StatefulWidget {
+  final int currentYear;
+  final int initialGamesPerTeam;
+
+  const _SkipOffseasonDialog({
+    required this.currentYear,
+    required this.initialGamesPerTeam,
+  });
+
+  @override
+  State<_SkipOffseasonDialog> createState() => _SkipOffseasonDialogState();
+}
+
+class _SkipOffseasonDialogState extends State<_SkipOffseasonDialog> {
+  late int _selected;
+
+  @override
+  void initState() {
+    super.initState();
+    _selected = widget.initialGamesPerTeam;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('次シーズンへ'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            '${widget.currentYear}シーズン目を終了して、'
+            '${widget.currentYear + 1}シーズン目を開始します。',
+          ),
+          const SizedBox(height: 12),
+          const Text(
+            'オフシーズン進行が OFF のため、加齢・引退・新人加入は発生せず、'
+            '前シーズンと同じ選手・パラメータで開始します。',
+            style: TextStyle(fontSize: 12),
+          ),
+          const SizedBox(height: 12),
+          const Text('次シーズンの試合数:'),
+          const SizedBox(height: 8),
+          SeasonLengthSelector(
+            value: _selected,
+            onChanged: (v) => setState(() => _selected = v),
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(null),
+          child: const Text('キャンセル'),
+        ),
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(_selected),
+          child: const Text('開始'),
+        ),
+      ],
     );
   }
 }
