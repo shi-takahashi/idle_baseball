@@ -2,34 +2,67 @@ import 'dart:math';
 import '../models/models.dart';
 
 /// 盗塁シミュレーター
+///
+/// 走力 vs 試行確率は非線形。平均（走力5）はほぼ盗塁せず、走力7〜8 から急増する。
+/// 「盗塁は走力の高い選手の特権」というデザイン。試みた場合の成功率は基本的に
+/// 高めで、走力と捕手の肩の差で上下する。
 class StealSimulator {
   final Random _random;
 
-  // 盗塁を試みる基本確率（盗塁可能な状況で、1球あたり）
-  // NPB の 1チーム年間 ~50 盗塁 (143試合) 水準を狙ってチューニング:
-  // 30試合シーズンなら 1チーム ~10 盗塁前後を想定
-  static const double _baseStealAttemptRate = 0.015; // 1.5%
+  /// 走力ごとの 1 球あたり盗塁試行確率
+  ///
+  /// 線形ではなく、俊足層（走力 7〜）に発動が偏る非線形カーブ。盗塁数の大部分は
+  /// 走力 7 以上の選手が稼ぐ形にする。
+  ///
+  /// - 走力 1: 仕掛けない（走力差を明確化するため）
+  /// - 走力 2〜4: ごく稀に仕掛ける（投手のクセを読む等のレアケース）
+  /// - 走力 5: 平均はめったに走らないが、ゼロではない
+  /// - 走力 6 以下: 控えめ
+  /// - 走力 7 以上: ここで急増。盗塁の主役
+  static const Map<int, double> _attemptRateBySpeed = {
+    1: 0.0,
+    2: 0.0005,
+    3: 0.0012,
+    4: 0.0025,
+    5: 0.0040,
+    6: 0.009,
+    7: 0.022,
+    8: 0.042,
+    9: 0.065,
+    10: 0.085,
+  };
 
-  // 基準走力
+  // 盗塁成功の基本確率（試行した時点でそれなりに高い）
+  static const double _baseStealSuccessRate = 0.75; // 75%
+
+  // 基準走力 / 基準捕手肩
   static const int _baseSpeed = 5;
-
-  // 走力による盗塁試行確率補正（1あたり）
-  // 走力1: 約0.5%、走力5: 1.5%、走力10: 約4%
-  static const double _speedAttemptModifier = 0.005;
-
-  // 盗塁成功の基本確率
-  static const double _baseStealSuccessRate = 0.70; // 70%
+  static const int _baseArm = 5;
 
   // 走力による盗塁成功率補正（1あたり）
-  static const double _speedSuccessModifier = 0.05;
-
-  // 基準捕手の肩
-  static const int _baseArm = 5;
+  static const double _speedSuccessModifier = 0.03;
 
   // 捕手の肩による盗塁成功率補正（1あたり、肩が強いほど成功率DOWN）
   static const double _catcherArmModifier = 0.025;
 
   StealSimulator({Random? random}) : _random = random ?? Random();
+
+  /// 走力ごとの試行確率を返す
+  static double _attemptRateFor(int speed) {
+    if (speed <= 0) return 0.0;
+    if (speed >= 10) return _attemptRateBySpeed[10]!;
+    return _attemptRateBySpeed[speed] ?? 0.0;
+  }
+
+  /// 走力 vs 捕手肩から盗塁成功率を算出する
+  static double _successRateFor(int speed, int catcherArm) {
+    final speedDiff = speed - _baseSpeed;
+    final armDiff = catcherArm - _baseArm;
+    final rate = _baseStealSuccessRate +
+        speedDiff * _speedSuccessModifier -
+        armDiff * _catcherArmModifier;
+    return rate.clamp(0.50, 0.95);
+  }
 
   /// 盗塁を試みるか判定し、試みる場合は成功/失敗を判定
   /// catcherArm: 捕手の肩の強さ（1-10、デフォルト5）
@@ -44,18 +77,15 @@ class StealSimulator {
 
     // 盗塁を試みるかどうか判定
     // ダブルスチールの場合は2塁ランナー（3塁への盗塁）の走力で判定
+    //   → 3塁送球が短いので、3塁を取りにいく走者の脚が決め手
     // 単独盗塁の場合はそのランナーの走力で判定
     final keyRunner = isDoubleSteal
         ? candidates.firstWhere((c) => c.$2 == Base.second, orElse: () => candidates.first)
         : candidates.first;
     final runnerSpeed = keyRunner.$1.speed ?? _baseSpeed;
 
-    final speedDiff = runnerSpeed - _baseSpeed;
-    final attemptRate =
-        (_baseStealAttemptRate + speedDiff * _speedAttemptModifier)
-            .clamp(0.002, 0.05);
-
-    if (_random.nextDouble() >= attemptRate) {
+    final attemptRate = _attemptRateFor(runnerSpeed);
+    if (attemptRate <= 0.0 || _random.nextDouble() >= attemptRate) {
       return []; // 盗塁を試みない
     }
 
@@ -67,9 +97,7 @@ class StealSimulator {
       final firstRunner = candidates.firstWhere((c) => c.$2 == Base.first);
 
       final speed = secondRunner.$1.speed ?? _baseSpeed;
-      final speedDiff = speed - _baseSpeed;
-      final armDiff = catcherArm - _baseArm;
-      final successRate = (_baseStealSuccessRate + speedDiff * _speedSuccessModifier - armDiff * _catcherArmModifier).clamp(0.40, 0.95);
+      final successRate = _successRateFor(speed, catcherArm);
       final success = _random.nextDouble() < successRate;
 
       if (success) {
@@ -112,9 +140,7 @@ class StealSimulator {
       // 単独盗塁の場合
       final (runner, fromBase, toBase) = candidates.first;
       final speed = runner.speed ?? _baseSpeed;
-      final speedDiff = speed - _baseSpeed;
-      final armDiff = catcherArm - _baseArm;
-      final successRate = (_baseStealSuccessRate + speedDiff * _speedSuccessModifier - armDiff * _catcherArmModifier).clamp(0.40, 0.95);
+      final successRate = _successRateFor(speed, catcherArm);
       final success = _random.nextDouble() < successRate;
 
       return [
