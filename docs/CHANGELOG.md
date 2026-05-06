@@ -5,6 +5,70 @@
 
 ---
 
+## 2026-05-06 外野ライナーのアウト率修正
+
+### 動機
+
+ユーザー指摘: NPB 実測では外野ライナーのアウト率は約 27〜30%（残り約 7 割が安打、
+非常に危険な打球）、外野フライは 67〜72%。「ライナーアウト > フライアウト」に
+なっていたら NG という基準で確認したところ、現実と逆転していた。
+
+### 原因
+
+`_calculateInPlayProbabilities` が `battedBallType` を引数に取らず、すべての
+打球タイプで同じ probOut（基本 0.70）が使われていた。`simulateInPlayResult`
+内で out 結果のラベル（groundOut / flyOut / lineOut）を battedBallType で
+分岐するだけで、out にするか hit にするかの判定は同じ確率で行われていた。
+
+実測（5 シーズン × 6 チーム × 30 試合）:
+
+| 打球タイプ   | 修正前アウト率 | NPB 実測値 | 判定 |
+|--------------|----------------|------------|------|
+| 外野ライナー | 71.0%          | 27〜30%    | NG   |
+| 外野フライ   | 69.7%          | 67〜72%    | OK   |
+
+### 変更
+
+`_calculateInPlayProbabilities` に `battedBallType` と `fieldPosition` を渡し、
+打球タイプ × 外野/内野方向で probOut に補正を加える形に変更:
+
+```dart
+static double _battedBallOutAdjustment(
+    BattedBallType type, bool isOutfieldDir) {
+  switch (type) {
+    case BattedBallType.lineDrive:
+      // 外野: 0.70 → 約 0.12 (hit prob ~0.29 と合算で out 比率 ≈ 29%)
+      // 内野: 反応速度で多くがアウト → 補正なし
+      return isOutfieldDir ? -0.58 : 0.0;
+    case BattedBallType.flyBall:
+      // 外野: 既存値で 67〜70% アウト → 補正なし
+      // 内野: ポップフライはほぼ確実にアウト → わずかに引き上げ
+      return isOutfieldDir ? 0.0 : 0.10;
+    case BattedBallType.groundBall:
+      return 0.0;
+  }
+}
+```
+
+### 検証 (`bin/measure_outfield_balls.dart`、5 シーズン × 6 チーム × 30 試合)
+
+| 打球タイプ        | 修正前    | 修正後    | 現実値      |
+|-------------------|-----------|-----------|-------------|
+| 外野ライナー      | 71.0%     | 28.9%     | 27〜30%     |
+| 外野フライ        | 69.7%     | 68.5%     | 67〜72%     |
+| ゴロ（参考）      | 65.3%     | 65.2%     | -           |
+
+「ライナー > フライ」の逆転を解消し、NPB 実測のど真ん中に着地。
+リーグ打率は 0.235 程度（修正前から微増）で、NPB の 0.250 にはまだやや
+届かないが、これは別タスク（K 率・全体打率の NPB 水準化）で扱う。
+
+### ファイル
+
+- `lib/engine/simulation/at_bat_simulator.dart` — `_calculateInPlayProbabilities` に battedBallType/fieldPosition を伝播、`_battedBallOutAdjustment` を追加
+- `bin/measure_outfield_balls.dart` — 計測スクリプト新規追加
+
+---
+
 ## 2026-05-06 盗塁発動カーブの非線形化
 
 ### 動機

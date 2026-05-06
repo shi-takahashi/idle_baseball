@@ -647,6 +647,8 @@ class AtBatSimulator {
     required int pitchParam,
     required double fatigue,
     bool isPlatoonDisadvantage = false,
+    BattedBallType? battedBallType,
+    FieldPosition? fieldPosition,
   }) {
     // 球種に応じた実効疲労度を計算
     final effectiveFatigue = _getEffectiveFatigue(fatigue, pitchType);
@@ -710,7 +712,21 @@ class AtBatSimulator {
         fatigueOutDecrease +
         meetOutAdjustment +
         platoonOut;
-    final probOut = (_baseProbOut + outModifier).clamp(0.45, 0.85);
+    var probOut = (_baseProbOut + outModifier).clamp(0.45, 0.85);
+
+    // 打球タイプ × 方向によるアウト率の上書き補正
+    // - 外野ライナー: 約7割が安打（NPB 実測 アウト率 27〜30%）→ 大幅に下げる
+    // - 内野ライナー: 反応速度で多くがアウト（lineOut to 3B/SS/etc）→ そのまま
+    // - 外野フライ: 約7割アウト（基本値そのままで合致）→ そのまま
+    // - 内野フライ: ポップフライでほぼ確実にアウト → わずかに上げる
+    // - ゴロ: 既存の `_determineGroundOutResult` で内野安打 / エラー処理済み → そのまま
+    if (battedBallType != null) {
+      final isOutfieldDir = fieldPosition == FieldPosition.left ||
+          fieldPosition == FieldPosition.center ||
+          fieldPosition == FieldPosition.right;
+      final adjust = _battedBallOutAdjustment(battedBallType, isOutfieldDir);
+      probOut = (probOut + adjust).clamp(0.05, 0.95);
+    }
 
     // 長打確率（長打力 + 球種効果 + 疲労で変動）
     // floor を 0.002 に下げて、低長打力打者（投手など）の HR をより抑える
@@ -734,6 +750,29 @@ class AtBatSimulator {
       probTriple: probTriple,
       probHomeRun: probHomeRun,
     );
+  }
+
+  /// 打球タイプ × 外野/内野方向で probOut に加える補正
+  ///
+  /// NPB 実測値:
+  /// - 外野ライナー: アウト率 27〜30%（強い打球が外野手の前後左右に飛ぶため落ちやすい）
+  /// - 外野フライ: アウト率 67〜72%
+  /// 基本値 0.70 をベースに、外野ライナーだけ大きく引き下げる。
+  /// 内野フライ・ポップフライはほぼ確実にアウトなので軽く引き上げる。
+  static double _battedBallOutAdjustment(
+      BattedBallType type, bool isOutfieldDir) {
+    switch (type) {
+      case BattedBallType.lineDrive:
+        // 外野: 0.70 → 約 0.12（hit prob ~0.29 と合算で out 比率 ≈ 29%）
+        // 内野: 反応で多くがアウトのため補正なし
+        return isOutfieldDir ? -0.58 : 0.0;
+      case BattedBallType.flyBall:
+        // 外野: 既存値で 67〜70% アウト → 補正なし
+        // 内野: ポップフライはほぼ確実にアウト → わずかに引き上げ
+        return isOutfieldDir ? 0.0 : 0.10;
+      case BattedBallType.groundBall:
+        return 0.0;
+    }
   }
 
   /// ゴロアウト判定（エラーチェック・内野安打チェック含む）
@@ -864,6 +903,8 @@ class AtBatSimulator {
       pitchParam: paramValue,
       fatigue: fatigue,
       isPlatoonDisadvantage: isPlatoonDisadvantage,
+      battedBallType: battedBallType,
+      fieldPosition: fieldPosition,
     );
 
     // 5つの確率を合算して正規化したうえでロール判定する。
