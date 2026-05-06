@@ -93,14 +93,17 @@ abstract class PitcherChangeStrategy {
 ///
 /// 先発投手の場合（`usedPitchers.first` がマウンドにいる場合）:
 /// - 投球数が `pitchCountThreshold`（100球）以上
-/// - `runsAllowedThreshold`（5）失点以上
-/// - 3連打、3連続四球
-/// - 7回以降、同点以下、得点圏ありかつ50球以上
+/// - イニング相応の失点超過（1〜3回: 6失点, 4〜5回: 5失点, 6回以降: 4失点）
+///   → クオリティスタート（6回3失点）の目安。序盤の小さい炎上では降ろさない
+/// - 4連打 / 4連続四球（深刻な制球乱れ）
+/// - 3連打 / 3連続四球 + (60球以上 / 4失点以上 / 5回以降のいずれか)
+///   → 単独では降ろさない。球数・失点・終盤のいずれかと組み合わせて判断
+/// - 7回以降、同点以下、得点圏ありかつ50球以上（終盤のピンチ）
 ///
 /// リリーフ投手の場合:
 /// - イニング境界（outs == 0）かつ既に `relieverPitchCountThreshold`（25球）以上
 ///   → 1イニング前後で次の投手にスイッチ。NPB の中継ぎ・抑えの一般的な使い方
-/// - 上記スターターと同じ「失点しすぎ・連打・連続四球」も適用
+/// - `runsAllowedThreshold`（5）失点以上、3連打、3連続四球
 class SimplePitcherChangeStrategy implements PitcherChangeStrategy {
   /// 先発の球数による交代の閾値
   final int pitchCountThreshold;
@@ -239,41 +242,86 @@ class SimplePitcherChangeStrategy implements PitcherChangeStrategy {
         reason = '${state.walksStreak}連続四球';
       }
     }
-    // リリーフ投手はイニング境界で短い登板で降ろす
-    else if (!isStarter &&
-        context.outs == 0 &&
-        state.pitchCount >= relieverPitchCountThreshold) {
-      reason = 'イニング終了';
+    // 先発投手: 球数 / 失点 / イニング / 投球破綻を総合判断
+    else if (isStarter) {
+      reason = _decideStarterPull(context);
     }
-    // 先発の球数超過
-    else if (isStarter && state.pitchCount >= pitchCountThreshold) {
-      reason = '${state.pitchCount}球';
-    }
-    // 大量失点（先発・リリーフ共通）
-    else if (state.runsAllowed >= runsAllowedThreshold) {
-      reason = '${state.runsAllowed}失点';
-    }
-    // 連打
-    else if (state.hitsAllowedStreak >= hitsStreakThreshold) {
-      reason = '${state.hitsAllowedStreak}連打';
-    }
-    // 連続四球
-    else if (state.walksStreak >= walksStreakThreshold) {
-      reason = '${state.walksStreak}連続四球';
-    }
-    // 終盤のピンチ（先発のみ）
-    else if (isStarter &&
-        context.inning >= 7 &&
-        context.scoreDiff <= 0 &&
-        (context.runners.second != null || context.runners.third != null) &&
-        state.pitchCount >= 50) {
-      reason = '終盤のピンチ';
+    // リリーフ投手: イニング境界 + 失点 / 連打 / 連続四球
+    else {
+      if (context.outs == 0 &&
+          state.pitchCount >= relieverPitchCountThreshold) {
+        reason = 'イニング終了';
+      } else if (state.runsAllowed >= runsAllowedThreshold) {
+        reason = '${state.runsAllowed}失点';
+      } else if (state.hitsAllowedStreak >= hitsStreakThreshold) {
+        reason = '${state.hitsAllowedStreak}連打';
+      } else if (state.walksStreak >= walksStreakThreshold) {
+        reason = '${state.walksStreak}連続四球';
+      }
     }
 
     if (reason == null) return null;
 
     final newPitcher = _selectReliever(context);
     return PitcherChangeDecision(newPitcher: newPitcher, reason: reason);
+  }
+
+  /// 先発投手の交代判断
+  ///
+  /// 「球数」「失点」「イニング」「投球破綻（連打・四球）」を組み合わせて判断する。
+  /// 単一指標で機械的に降ろさず、QS（6回3失点）を基準に序盤と終盤で許容度を変える。
+  String? _decideStarterPull(PitcherChangeContext context) {
+    final state = context.pitchingState;
+    final inning = context.inning;
+
+    // 1. 球数到達（単独でも降ろす）
+    if (state.pitchCount >= pitchCountThreshold) {
+      return '${state.pitchCount}球';
+    }
+
+    // 2. イニング相応の失点超過
+    //   1〜3回: 6 失点（序盤の小炎上は許す。本当の大炎上のみ）
+    //   4〜5回: 5 失点
+    //   6回以降: 4 失点（QS 崩壊。次の回に持ち越さず降ろす）
+    final runCutoff =
+        inning <= 3 ? 6 : (inning <= 5 ? 5 : 4);
+    if (state.runsAllowed >= runCutoff) {
+      return '${state.runsAllowed}失点';
+    }
+
+    // 3. 4連打 / 4連続四球（単独でも降ろす水準）
+    if (state.hitsAllowedStreak >= 4) {
+      return '${state.hitsAllowedStreak}連打';
+    }
+    if (state.walksStreak >= 4) {
+      return '${state.walksStreak}連続四球';
+    }
+
+    // 4. 3連打 / 3連続四球は他の悪条件と組み合わせて判定
+    //    序盤でいきなり3連打されただけでは降ろさない（よくあるパターン）
+    final hitStreak = state.hitsAllowedStreak >= hitsStreakThreshold;
+    final walkStreak = state.walksStreak >= walksStreakThreshold;
+    if (hitStreak || walkStreak) {
+      final tired = state.pitchCount >= 60;
+      final bleeding = state.runsAllowed >= 4;
+      final lateGame = inning >= 5;
+      if (tired || bleeding || lateGame) {
+        return hitStreak
+            ? '${state.hitsAllowedStreak}連打'
+            : '${state.walksStreak}連続四球';
+      }
+    }
+
+    // 5. 終盤のピンチ
+    if (inning >= 7 &&
+        context.scoreDiff <= 0 &&
+        (context.runners.second != null ||
+            context.runners.third != null) &&
+        state.pitchCount >= 50) {
+      return '終盤のピンチ';
+    }
+
+    return null;
   }
 
   /// セーブ機会かどうか
