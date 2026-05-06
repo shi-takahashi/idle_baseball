@@ -5,6 +5,31 @@
 
 ---
 
+## 2026-05-06 タブ名「作戦 → 試合」リネーム
+
+### 動機
+
+ユーザー指摘: NavigationBar の 1 番目のタブが「作戦」となっていたが、このタブは
+作戦画面（StrategyScreen）のほかに当日の試合結果（DailyScreen）や試合詳細
+（GameResultScreen）も表示する。「作戦」という名前は実態と合わない。
+
+### 変更
+
+NavigationBar の 1 番目を「作戦」→「**試合**」にリネーム。アイコンも
+`Icons.assignment`（クリップボード）→ `Icons.sports_baseball`（野球ボール）に
+変更。試合まわりの一連の流れ（作戦 → 試合進行 → 試合結果）を扱うタブとして
+適切なラベルになった。
+
+なお `StrategyScreen` 自体の AppBar タイトルは「作戦」のまま維持（画面の機能は
+あくまで作戦組み）。
+
+### ファイル
+
+- `lib/screens/main_season_screen.dart` — NavigationDestination の label / icon 更新、内部コメントの「作戦タブ」を「試合タブ」に統一
+- `lib/screens/daily_screen.dart` — 同上
+
+---
+
 ## 2026-05-06 外野ライナーのアウト率修正
 
 ### 動機

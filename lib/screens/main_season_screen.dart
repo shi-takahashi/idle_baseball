@@ -37,7 +37,7 @@ class _MainSeasonScreenState extends State<MainSeasonScreen> {
   int _selectedIndex = 0;
 
   /// 各タブの Navigator キー
-  /// 順序: 作戦 / 順位表 / 個人成績 / チーム / 設定
+  /// 順序: 試合 / 順位表 / 個人成績 / チーム / 設定
   final List<GlobalKey<NavigatorState>> _navigatorKeys = [
     GlobalKey<NavigatorState>(),
     GlobalKey<NavigatorState>(),
@@ -85,7 +85,7 @@ class _MainSeasonScreenState extends State<MainSeasonScreen> {
     setState(() => _selectedIndex = index);
   }
 
-  /// 「次の試合へ」: 試合は進めず、作戦タブに戻るだけ。
+  /// 「次の試合へ」: 試合は進めず、試合タブに戻るだけ。
   ///
   /// 試合の実進行は作戦画面内の「試合開始」ボタンが担う。
   /// 将来 real-time 化したら「試合時間を過ぎてたら結果へ、まだなら作戦へ」の
@@ -98,7 +98,7 @@ class _MainSeasonScreenState extends State<MainSeasonScreen> {
   }
 
   /// 作戦画面の「試合開始」ボタンから呼ぶ:
-  /// 1日進めて、当日の結果画面 [DailyScreen] を作戦タブの上に push する。
+  /// 1日進めて、当日の結果画面 [DailyScreen] を試合タブの上に push する。
   /// 戻るで作戦画面に復帰 → 翌日の作戦が表示される。
   void _runNextGame() {
     if (widget.controller.isSeasonOver) return;
@@ -202,8 +202,8 @@ class _MainSeasonScreenState extends State<MainSeasonScreen> {
               onDestinationSelected: _onSelect,
               destinations: const [
                 NavigationDestination(
-                  icon: Icon(Icons.assignment),
-                  label: '作戦',
+                  icon: Icon(Icons.sports_baseball),
+                  label: '試合',
                 ),
                 NavigationDestination(
                   icon: Icon(Icons.leaderboard),
@@ -242,7 +242,7 @@ class _MainSeasonScreenState extends State<MainSeasonScreen> {
   /// オフシーズン進行 ON: [OffseasonScreen] を push して、引退者・新人を選ばせる。
   /// オフシーズン進行 OFF: 試合数選択 + 確認だけのダイアログを出して即 commit
   /// （加齢・引退・新人加入はスキップ、選手はそのまま）。
-  /// 確定後は作戦タブをルートに戻して新シーズン Day 0 の作戦画面を表示する。
+  /// 確定後は試合タブをルートに戻して新シーズン Day 0 の作戦画面を表示する。
   Future<void> _advanceToNextSeason() async {
     final c = widget.controller;
     if (!c.isSeasonOver) return;

@@ -85,7 +85,7 @@ class _DailyScreenState extends State<DailyScreen>
             title: Text('Day ${c.currentDay} / ${c.totalDays} 結果'),
             backgroundColor: Theme.of(context).colorScheme.inversePrimary,
             // この画面は MainSeasonScreen から「次の試合へ」を押した直後に
-            // 作戦タブの上に push される。push されている場合は戻るボタンが
+            // 試合タブの上に push される。push されている場合は戻るボタンが
             // 自動表示される（canPop=true）。タブのルートとして表示する経路は
             // 現状ないので、IndexedStack ルート時の挙動は意識しない。
             bottom: myGame == null
