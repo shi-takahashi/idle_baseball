@@ -50,6 +50,9 @@ abstract class BuntDecisionStrategy {
 /// 試行条件（ハード制約）:
 ///   - 2アウトではない
 ///   - ランナーが1塁または2塁に居る（3塁単独や満塁、走者なしは対象外）
+///   - **3塁にランナーが居ない**（1,3塁 / 2,3塁 / 満塁では送りバントしない。
+///     ヒット 1 本で得点できる場面でアウトをプレゼントするのは基本ナシ。
+///     スクイズ・奇襲セーフティは別作戦扱いで未実装）
 ///   - 攻撃側が大量リードしているときは行わない
 ///
 /// 確率（ソフト基準）:
@@ -68,6 +71,9 @@ class SimpleBuntDecisionStrategy implements BuntDecisionStrategy {
     // ハード制約
     if (ctx.outs >= 2) return false;
     if (!_hasBuntableRunner(ctx.runners)) return false;
+    // 3塁ランナーがいる状況での送りバントは基本ナシ
+    // （ヒットで得点できるのにアウトを増やすメリットが薄い）
+    if (ctx.runners.third != null) return false;
     if (ctx.scoreDiff > maxLeadForBunt) return false;
 
     final probability = _computeBuntProbability(ctx);

@@ -67,7 +67,9 @@ class _InningDetailDialogState extends State<_InningDetailDialog> {
       title: Row(
         children: [
           Expanded(
-            child: Text('${halfInning.inning}回$topBottom (${halfInning.runs}点)'),
+            child: Text(
+              '${halfInning.inning}回$topBottom (${halfInning.runs}点)',
+            ),
           ),
           Text(
             '${_currentIndex + 1}/${widget.gameResult.halfInnings.length}',
@@ -100,12 +102,8 @@ class _InningDetailDialogState extends State<_InningDetailDialog> {
             final fielderChangesBefore = halfInning.fielderChanges
                 .where((c) => c.atBatIndex == atBatIndex)
                 .toList();
-            // 通常打席の表示番号（未完了打席は除外した番号付け）
-            final displayNumber = halfInning.atBats
-                    .take(atBatIndex)
-                    .where((a) => !a.isIncomplete)
-                    .length +
-                1;
+            // 打順番号（1〜9）。AtBatResult.battingOrder は 0-8 で保持されているので +1 する
+            final displayNumber = (atBat.battingOrder % 9) + 1;
             return Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
@@ -164,14 +162,19 @@ class _FielderChangeBanner extends StatelessWidget {
       ),
       child: Row(
         children: [
-          Icon(Icons.person_add_alt_1,
-              size: 16, color: Colors.lightBlue.shade900),
+          Icon(
+            Icons.person_add_alt_1,
+            size: 16,
+            color: Colors.lightBlue.shade900,
+          ),
           const SizedBox(width: 6),
           Expanded(
             child: Text.rich(
               TextSpan(
-                style:
-                    TextStyle(fontSize: 12, color: Colors.lightBlue.shade900),
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Colors.lightBlue.shade900,
+                ),
                 children: [
                   TextSpan(
                     text: '${event.type.displayName}: ',
@@ -242,8 +245,7 @@ class _DefensiveChangesBanner extends StatelessWidget {
                   padding: const EdgeInsets.symmetric(vertical: 1),
                   child: Text(
                     label,
-                    style:
-                        TextStyle(fontSize: 11, color: Colors.teal.shade900),
+                    style: TextStyle(fontSize: 11, color: Colors.teal.shade900),
                   ),
                 );
               }).toList(),
@@ -325,7 +327,8 @@ class ScoreBoard extends StatelessWidget {
           builder: (context, constraints) {
             // 親から有限の幅が渡らない場合は単一テーブルで描画
             // （延長戦の幅超過は LayoutBuilder で初めて判定できる）。
-            final fits = !constraints.hasBoundedWidth ||
+            final fits =
+                !constraints.hasBoundedWidth ||
                 fullWidth <= constraints.maxWidth;
             if (fits) {
               return _buildFullTable(context, inningCount);
@@ -407,12 +410,8 @@ class ScoreBoard extends StatelessWidget {
       columnWidths: const {0: FixedColumnWidth(_teamColWidth)},
       children: [
         TableRow(decoration: headerBg, children: [_cell(context, '', null)]),
-        TableRow(children: [
-          _cell(context, awayShort, null, isTeamName: true),
-        ]),
-        TableRow(children: [
-          _cell(context, homeShort, null, isTeamName: true),
-        ]),
+        TableRow(children: [_cell(context, awayShort, null, isTeamName: true)]),
+        TableRow(children: [_cell(context, homeShort, null, isTeamName: true)]),
       ],
     );
 
@@ -546,21 +545,6 @@ class ScoreBoard extends StatelessWidget {
 
   /// 未完了打席の行（盗塁死でイニング終了した打席）
   Widget _buildIncompleteAtBatRow(AtBatResult atBat) {
-    final pitchWidgets = <Widget>[];
-    for (int i = 0; i < atBat.pitches.length; i++) {
-      final p = atBat.pitches[i];
-      if (i > 0) {
-        pitchWidgets.add(
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 2),
-            child: Text('→',
-                style: TextStyle(fontSize: 10, color: Colors.grey.shade500)),
-          ),
-        );
-      }
-      pitchWidgets.add(_buildPitchChip(p));
-    }
-
     return Card(
       margin: const EdgeInsets.symmetric(vertical: 4),
       color: Colors.grey.shade100,
@@ -584,10 +568,7 @@ class ScoreBoard extends StatelessWidget {
                 const Spacer(),
                 Text(
                   'P: ${atBat.pitcher.name}',
-                  style: TextStyle(
-                    fontSize: 11,
-                    color: Colors.grey.shade700,
-                  ),
+                  style: TextStyle(fontSize: 11, color: Colors.grey.shade700),
                 ),
               ],
             ),
@@ -600,14 +581,10 @@ class ScoreBoard extends StatelessWidget {
                 fontStyle: FontStyle.italic,
               ),
             ),
-            if (pitchWidgets.isNotEmpty) ...[
+            if (atBat.pitches.isNotEmpty) ...[
               const SizedBox(height: 4),
-              Wrap(
-                spacing: 2,
-                runSpacing: 4,
-                crossAxisAlignment: WrapCrossAlignment.center,
-                children: pitchWidgets,
-              ),
+              for (int i = 0; i < atBat.pitches.length; i++)
+                _buildPitchRow(i, atBat.pitches[i]),
             ],
           ],
         ),
@@ -616,21 +593,6 @@ class ScoreBoard extends StatelessWidget {
   }
 
   Widget _buildAtBatRow(int displayNumber, AtBatResult atBat) {
-    // 投球経過をウィジェットリストに
-    final pitchWidgets = <Widget>[];
-    for (int i = 0; i < atBat.pitches.length; i++) {
-      final p = atBat.pitches[i];
-      if (i > 0) {
-        pitchWidgets.add(
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 2),
-            child: Text('→', style: TextStyle(fontSize: 10, color: Colors.grey.shade500)),
-          ),
-        );
-      }
-      pitchWidgets.add(_buildPitchChip(p));
-    }
-
     // ランナー状況を文字列に
     final runners = atBat.runnersBefore;
     String runnerStatus;
@@ -659,15 +621,18 @@ class ScoreBoard extends StatelessWidget {
                 ),
                 const Spacer(),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 2,
+                  ),
                   decoration: BoxDecoration(
                     color: atBat.result.isHit
                         ? Colors.green.shade100
                         : atBat.result == AtBatResultType.walk
-                            ? Colors.blue.shade100
-                            : atBat.result == AtBatResultType.reachedOnError
-                                ? Colors.red.shade100
-                                : Colors.grey.shade200,
+                        ? Colors.blue.shade100
+                        : atBat.result == AtBatResultType.reachedOnError
+                        ? Colors.red.shade100
+                        : Colors.grey.shade200,
                     borderRadius: BorderRadius.circular(4),
                   ),
                   child: Text(
@@ -677,10 +642,10 @@ class ScoreBoard extends StatelessWidget {
                       color: atBat.result.isHit
                           ? Colors.green.shade800
                           : atBat.result == AtBatResultType.walk
-                              ? Colors.blue.shade800
-                              : atBat.result == AtBatResultType.reachedOnError
-                                  ? Colors.red.shade800
-                                  : Colors.grey.shade800,
+                          ? Colors.blue.shade800
+                          : atBat.result == AtBatResultType.reachedOnError
+                          ? Colors.red.shade800
+                          : Colors.grey.shade800,
                     ),
                   ),
                 ),
@@ -702,21 +667,19 @@ class ScoreBoard extends StatelessWidget {
                 ),
                 Text(
                   'P: ${atBat.pitcher.name}',
-                  style: TextStyle(
-                    fontSize: 11,
-                    color: Colors.grey.shade700,
-                  ),
+                  style: TextStyle(fontSize: 11, color: Colors.grey.shade700),
                 ),
               ],
             ),
             const SizedBox(height: 4),
-            // 投球経過（複数行対応）
-            Wrap(
-              spacing: 2,
-              runSpacing: 4,
-              crossAxisAlignment: WrapCrossAlignment.center,
-              children: pitchWidgets,
-            ),
+            // 投球経過（1球1行のリスト形式）
+            // インプレー球には打席結果ラベル（「中堅安」「三ゴロ」等）を渡す
+            for (int i = 0; i < atBat.pitches.length; i++)
+              _buildPitchRow(
+                i,
+                atBat.pitches[i],
+                inPlayLabel: _getResultDisplayName(atBat),
+              ),
             if (atBat.rbiCount > 0)
               Padding(
                 padding: const EdgeInsets.only(top: 4),
@@ -828,85 +791,116 @@ class ScoreBoard extends StatelessWidget {
     return atBat.result.displayName;
   }
 
-  /// 1球の表示チップ（盗塁情報・バッテリーエラー情報を含む）
-  Widget _buildPitchChip(PitchResult pitch) {
-    Color bgColor;
-    Color textColor;
-
+  /// 1球の表示行（球種フル表記 + 球速 + 結果）
+  ///
+  /// 例: ① ストレート       145 km/h  ボール
+  /// 結果ごとに色分けし、付加情報（盗塁・バッテリーエラー）はその下に追記。
+  /// インプレー球の結果は [inPlayLabel] に「中堅安」「三ゴロ」のような具体的な
+  /// 打席結果を渡すと、ラベル「インプレー」の代わりに表示する。
+  Widget _buildPitchRow(int index, PitchResult pitch, {String? inPlayLabel}) {
+    Color resultColor;
     switch (pitch.type) {
       case PitchResultType.ball:
-        bgColor = Colors.green.shade100;
-        textColor = Colors.green.shade800;
+        resultColor = Colors.green.shade700;
         break;
       case PitchResultType.strikeLooking:
       case PitchResultType.strikeSwinging:
-        bgColor = Colors.red.shade100;
-        textColor = Colors.red.shade800;
+        resultColor = Colors.red.shade700;
         break;
       case PitchResultType.foul:
-        bgColor = Colors.orange.shade100;
-        textColor = Colors.orange.shade800;
+        resultColor = Colors.orange.shade800;
         break;
       case PitchResultType.inPlay:
-        bgColor = Colors.blue.shade100;
-        textColor = Colors.blue.shade800;
+        resultColor = Colors.blue.shade700;
         break;
     }
 
-    // 付加情報（盗塁、バッテリーエラー）
-    final additionalWidgets = <Widget>[];
+    final resultLabel = pitch.type == PitchResultType.inPlay
+        ? (inPlayLabel ?? _pitchResultFullName(pitch.type))
+        : _pitchResultFullName(pitch.type);
 
-    // 盗塁情報がある場合
-    if (pitch.steals != null && pitch.steals!.isNotEmpty) {
-      additionalWidgets.add(const SizedBox(width: 2));
-      additionalWidgets.add(_buildStealChip(pitch.steals!));
-    }
-
-    // バッテリーエラー情報がある場合
-    if (pitch.batteryError != null) {
-      additionalWidgets.add(const SizedBox(width: 2));
-      additionalWidgets.add(_buildBatteryErrorChip(pitch.batteryError!));
-    }
-
-    if (additionalWidgets.isNotEmpty) {
-      return Row(
-        mainAxisSize: MainAxisSize.min,
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 1),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-            decoration: BoxDecoration(
-              color: bgColor,
-              borderRadius: BorderRadius.circular(4),
-            ),
-            child: Text(
-              '${pitch.pitchType.shortName}${pitch.speed} ${pitch.type.shortName}',
-              style: TextStyle(
-                fontSize: 11,
-                color: textColor,
-                fontWeight: FontWeight.w500,
+          Row(
+            children: [
+              SizedBox(
+                width: 22,
+                child: Text(
+                  _circledNumber(index + 1),
+                  style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                ),
               ),
-            ),
+              SizedBox(
+                width: 96,
+                child: Text(
+                  pitch.pitchType.displayName,
+                  style: const TextStyle(fontSize: 12),
+                ),
+              ),
+              SizedBox(
+                width: 70,
+                child: Text(
+                  '${pitch.speed} km/h',
+                  style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+                  textAlign: TextAlign.right,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  resultLabel,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: resultColor,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ],
           ),
-          ...additionalWidgets,
+          // 付加情報は次の行にインデントして表示
+          if (pitch.steals != null && pitch.steals!.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(left: 22, top: 2),
+              child: _buildStealChip(pitch.steals!),
+            ),
+          if (pitch.batteryError != null)
+            Padding(
+              padding: const EdgeInsets.only(left: 22, top: 2),
+              child: _buildBatteryErrorChip(pitch.batteryError!),
+            ),
         ],
-      );
-    }
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-      decoration: BoxDecoration(
-        color: bgColor,
-        borderRadius: BorderRadius.circular(4),
-      ),
-      child: Text(
-        '${pitch.pitchType.shortName}${pitch.speed} ${pitch.type.shortName}',
-        style: TextStyle(
-          fontSize: 11,
-          color: textColor,
-          fontWeight: FontWeight.w500,
-        ),
       ),
     );
+  }
+
+  /// 投球結果のフル表記。
+  /// 「見逃し」「空振り」は色（赤）でストライクと識別できるので「ストライク」を省略。
+  /// インプレーは打席結果ラベル（「中堅安」「三ゴロ」等）で上書きされる前提のフォールバック。
+  static String _pitchResultFullName(PitchResultType type) {
+    switch (type) {
+      case PitchResultType.ball:
+        return 'ボール';
+      case PitchResultType.strikeLooking:
+        return '見逃し';
+      case PitchResultType.strikeSwinging:
+        return '空振り';
+      case PitchResultType.foul:
+        return 'ファウル';
+      case PitchResultType.inPlay:
+        return 'インプレー';
+    }
+  }
+
+  /// 連番表示。1〜20 は丸数字（①〜⑳）、それ以降は通常数字+ドット。
+  static String _circledNumber(int n) {
+    if (n >= 1 && n <= 20) {
+      return String.fromCharCode(0x245F + n);
+    }
+    return '$n.';
   }
 
   /// バッテリーエラー情報チップ
@@ -920,10 +914,7 @@ class ScoreBoard extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.red.shade200,
         borderRadius: BorderRadius.circular(4),
-        border: Border.all(
-          color: Colors.red.shade600,
-          width: 1,
-        ),
+        border: Border.all(color: Colors.red.shade600, width: 1),
       ),
       child: Text(
         label,
@@ -962,8 +953,8 @@ class ScoreBoard extends StatelessWidget {
         color: isSuccess
             ? Colors.purple.shade100
             : isFailed
-                ? Colors.grey.shade300
-                : Colors.purple.shade50,
+            ? Colors.grey.shade300
+            : Colors.purple.shade50,
         borderRadius: BorderRadius.circular(4),
         border: Border.all(
           color: isSuccess ? Colors.purple.shade400 : Colors.grey.shade500,

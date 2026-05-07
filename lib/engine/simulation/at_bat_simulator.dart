@@ -294,7 +294,18 @@ class AtBatSimulator {
   /// 速球派: ストレート60%程度、変化球各20%程度
   /// 技巧派: ストレート40%程度、変化球各20%程度
   /// 球種選択の確率は調子に影響されない（習慣的なもの）
-  PitchType _selectPitchType(Player pitcher, PitcherCondition condition) {
+  ///
+  /// 同球種連続ペナルティ:
+  /// 打席内で同じ球種を続けると打者が慣れてくるので、配球を散らす。
+  /// [prevPitchType] と [prevSameStreak] (= 直前まで何球同球種が続いたか) を
+  /// 渡すと、その球種の重みに連続ペナルティを掛ける（連続 1 球後 ×0.5、
+  /// 2 球後 ×0.25、3 球以上 ×0.1）。
+  PitchType _selectPitchType(
+    Player pitcher,
+    PitcherCondition condition, {
+    PitchType? prevPitchType,
+    int prevSameStreak = 0,
+  }) {
     // 調子は選択確率には影響しない（効果のみに影響）
     // ignore: unused_local_variable
     final _ = condition;
@@ -324,6 +335,14 @@ class AtBatSimulator {
       weights[PitchType.changeup] = (pitcher.changeup! / 10.0 + 0.2).clamp(0.5, 1.2);
     }
 
+    // 同球種連続ペナルティ: 直前の球種だけ重みを縮小
+    if (prevPitchType != null &&
+        prevSameStreak > 0 &&
+        weights.containsKey(prevPitchType)) {
+      weights[prevPitchType] =
+          weights[prevPitchType]! * _sameTypeStreakPenalty(prevSameStreak);
+    }
+
     // 全球種が投げられない場合はストレートのみ
     if (weights.isEmpty) {
       return PitchType.fastball;
@@ -344,6 +363,24 @@ class AtBatSimulator {
 
     // フォールバック
     return PitchType.fastball;
+  }
+
+  /// 同球種連続のペナルティ係数。
+  /// [prevSameStreak] = 直前まで同じ球種を投げた連続球数。
+  /// この球を同球種にすると `prevSameStreak + 1` 球連続になる。
+  /// 145km/h 級のストレートを 6 球連続で投げて NPB 打者を抑え続けるのは
+  /// 非現実的なので、配球をばらけさせる。
+  static double _sameTypeStreakPenalty(int prevSameStreak) {
+    switch (prevSameStreak) {
+      case 0:
+        return 1.0;
+      case 1:
+        return 0.5; // 連続 2 球目
+      case 2:
+        return 0.25; // 連続 3 球目
+      default:
+        return 0.1; // 連続 4 球目以降
+    }
   }
 
   /// 球種に応じた球速を生成
@@ -1076,7 +1113,25 @@ class AtBatSimulator {
       // 2. 球種選択と投球
       // 疲労度を計算（投球数とスタミナに基づく）
       final fatigue = _calculateFatigue(currentPitchCount, stamina);
-      final pitchType = _selectPitchType(pitcher, condition);
+      // 直前まで同じ球種を投げた連続数を計算（同球種連続ペナルティ用）
+      PitchType? prevPitchType;
+      int prevSameStreak = 0;
+      if (pitches.isNotEmpty) {
+        prevPitchType = pitches.last.pitchType;
+        for (int i = pitches.length - 1; i >= 0; i--) {
+          if (pitches[i].pitchType == prevPitchType) {
+            prevSameStreak++;
+          } else {
+            break;
+          }
+        }
+      }
+      final pitchType = _selectPitchType(
+        pitcher,
+        condition,
+        prevPitchType: prevPitchType,
+        prevSameStreak: prevSameStreak,
+      );
       final speed = _generatePitchSpeed(avgSpeed, pitchType);
       final pitchParam = _getPitchParam(pitcher, pitchType, condition);
       var pitch = simulatePitch(

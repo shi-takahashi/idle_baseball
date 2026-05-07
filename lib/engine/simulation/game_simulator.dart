@@ -388,6 +388,7 @@ class GameSimulator {
           pitcher: pitcher,
           inning: inning,
           isTop: isTop,
+          battingOrder: currentBattingOrder,
           pitches: atBatResult.pitches,
           result: AtBatResultType.strikeout, // ダミー（isIncomplete=trueなので使われない）
           rbiCount: 0,
@@ -561,6 +562,7 @@ class GameSimulator {
         pitcher: pitcher,
         inning: inning,
         isTop: isTop,
+        battingOrder: currentBattingOrder,
         pitches: pitches,
         result: resultType,
         fieldPosition: fieldPosition,

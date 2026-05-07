@@ -10,6 +10,8 @@ class AtBatResult {
   final Player pitcher;
   final int inning;
   final bool isTop; // 表かどうか
+  /// 打順 (0-8)。0 = 1 番打者、8 = 9 番打者。UI 表示用。
+  final int battingOrder;
   final List<PitchResult> pitches; // 全投球
   final AtBatResultType result;
   final FieldPosition? fieldPosition; // 打球方向（インプレー時のみ）
@@ -53,6 +55,7 @@ class AtBatResult {
     required this.pitcher,
     required this.inning,
     required this.isTop,
+    required this.battingOrder,
     required this.pitches,
     required this.result,
     this.fieldPosition,
@@ -85,6 +88,7 @@ class AtBatResult {
         'pitcher': pitcher.id,
         'inning': inning,
         'isTop': isTop,
+        'battingOrder': battingOrder,
         'pitches': [for (final p in pitches) p.toJson()],
         'result': result.name,
         if (fieldPosition != null) 'fieldPosition': fieldPosition!.name,
@@ -111,6 +115,8 @@ class AtBatResult {
         pitcher: playerById[json['pitcher']]!,
         inning: json['inning'] as int,
         isTop: json['isTop'] as bool,
+        // 古いセーブとの互換性: 未保存なら 0（1 番打者扱い）にフォールバック
+        battingOrder: (json['battingOrder'] as int?) ?? 0,
         pitches: [
           for (final p in (json['pitches'] as List))
             PitchResult.fromJson(p as Map<String, dynamic>, playerById),
