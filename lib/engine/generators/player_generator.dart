@@ -113,8 +113,14 @@ class PlayerGenerator {
       stamina = minStamina;
     }
 
-    // 球種: ストレート + 1〜2球種ランダム
-    final extraCount = _r.chance(0.5) ? 2 : 1;
+    // 球種: ストレート + 2〜4球種ランダム（合計 3〜5 種類）
+    // ストレートに加えて 1 球種だけだと「現代プロ野球にいないレベル」になるため、
+    // 最低でも 2 つの変化球を持たせる。
+    //   合計 3 種類 (extra 2): 50%
+    //   合計 4 種類 (extra 3): 40%
+    //   合計 5 種類 (extra 4): 10%
+    final extraRoll = _r.random.nextDouble();
+    final extraCount = extraRoll < 0.5 ? 2 : (extraRoll < 0.9 ? 3 : 4);
     final extraTypes = _r.pickMany(
       const ['slider', 'curve', 'splitter', 'changeup'],
       extraCount,
