@@ -834,8 +834,10 @@ class GameSimulator {
       case AtBatResultType.double_:
         return _advanceOnDouble(runners, batter);
       case AtBatResultType.single:
-      case AtBatResultType.infieldHit:
         return _advanceOnSingle(runners, batter);
+      case AtBatResultType.infieldHit:
+        // 内野安打は打球が内野で処理されているため、走者の追加進塁は発生しない。
+        return _advanceOnSingle(runners, batter, isInfieldHit: true);
       case AtBatResultType.walk:
         return _advanceOnWalk(runners, batter);
       case AtBatResultType.groundOut:
@@ -973,7 +975,8 @@ class GameSimulator {
   }
 
   /// 単打・内野安打時の走塁
-  _RunnerAdvanceResult _advanceOnSingle(BaseRunners runners, Player batter) {
+  _RunnerAdvanceResult _advanceOnSingle(BaseRunners runners, Player batter,
+      {bool isInfieldHit = false}) {
     final scorers = <Player>[];
     Player? newSecond;
     Player? newThird;
@@ -982,8 +985,9 @@ class GameSimulator {
     if (runners.third != null) scorers.add(runners.third!);
 
     // 2塁ランナー: 基本3塁、走力次第でホーム
+    // 内野安打は打球が内野で止まるため、2塁ランナーのホーム生還は発生しない
     if (runners.second != null) {
-      if (_shouldExtraAdvance(runners.second!)) {
+      if (!isInfieldHit && _shouldExtraAdvance(runners.second!)) {
         scorers.add(runners.second!);
       } else {
         newThird = runners.second;
@@ -991,8 +995,11 @@ class GameSimulator {
     }
 
     // 1塁ランナー: 基本2塁、走力次第で3塁（3塁が空いている場合のみ）
+    // 内野安打では追加進塁は発生しない（1塁→3塁は物理的に困難）
     if (runners.first != null) {
-      if (newThird == null && _shouldExtraAdvance(runners.first!)) {
+      if (!isInfieldHit &&
+          newThird == null &&
+          _shouldExtraAdvance(runners.first!)) {
         newThird = runners.first;
       } else {
         newSecond = runners.first;

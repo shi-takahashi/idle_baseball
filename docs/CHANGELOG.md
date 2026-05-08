@@ -5,6 +5,63 @@
 
 ---
 
+## 2026-05-08 内野安打時の走者追加進塁を抑制
+
+### 動機
+
+ユーザー指摘: 1アウト一塁の場面で打者が内野安打を打ち、1塁ランナーが3塁まで
+進塁していた。内野安打は打球が内野手で処理されているため、1塁→3塁の追加進塁は
+物理的に発生しない（外野前安打のような距離が出る打球ではない）。
+
+### 原因
+
+`_advanceRunners` で `single` と `infieldHit` が同じ `_advanceOnSingle` を呼んでおり、
+内部で `_shouldExtraAdvance` による走力ベースの追加進塁判定が実行されていた。
+打球タイプ（外野/内野）の区別がなかった。
+
+```dart
+case AtBatResultType.single:
+case AtBatResultType.infieldHit:
+  return _advanceOnSingle(runners, batter);
+```
+
+### 変更
+
+`_advanceOnSingle` に `isInfieldHit` フラグを追加し、内野安打時は追加進塁を抑制:
+
+- 1塁ランナー: 必ず 2塁止まり（追加進塁なし）
+- 2塁ランナー: 必ず 3塁止まり（ホーム生還なし）
+- 3塁ランナー: 生還（既存通り、内野ゴロでも前進守備でなければ生還するため）
+
+```dart
+case AtBatResultType.single:
+  return _advanceOnSingle(runners, batter);
+case AtBatResultType.infieldHit:
+  return _advanceOnSingle(runners, batter, isInfieldHit: true);
+```
+
+### 検証 (`bin/measure_infield_hit_advance.dart`、3 シーズン × 270 試合)
+
+```
+総内野安打数: 329
+うち1塁ランナーありの内野安打: 123
+  1塁→2塁: 123
+  1塁→3塁: 0  ✓
+2塁ランナーがホーム生還: 1 (※ バッテリーエラー由来のノイズ、scoringRunners は WP/PB を含む仕様)
+2塁ランナーが3塁: 54
+```
+
+スクショで観測された「1塁ランナーで内野安打 → 3塁まで進塁」は 0 件に。
+
+### ファイル
+
+- `lib/engine/simulation/game_simulator.dart`
+  - `_advanceOnSingle` に `isInfieldHit` パラメータ追加
+  - `_advanceRunners` の `infieldHit` ケースで `isInfieldHit: true` を渡す
+- `bin/measure_infield_hit_advance.dart` — 検証スクリプト新規追加
+
+---
+
 ## 2026-05-08 エラー出塁時の打点を 0 にする
 
 ### 動機
