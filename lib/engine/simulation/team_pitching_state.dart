@@ -62,7 +62,9 @@ class TeamPitchingState {
   /// - ヒット/四球/エラー出塁はストリークを伸ばす
   /// - アウトはonBaseStreakとhitsAllowedStreakをリセット
   void recordAtBat(AtBatResult atBat, {int batteryErrorRuns = 0}) {
-    runsAllowed += atBat.rbiCount + batteryErrorRuns;
+    // 失点はチームの実得点（runsScored）で集計。打点（rbiCount）はエラー出塁時に
+    // 0 になるため、失点用に流用すると得点が記録されない。
+    runsAllowed += atBat.runsScored + batteryErrorRuns;
 
     if (atBat.result.isHit) {
       hitsAllowedStreak++;

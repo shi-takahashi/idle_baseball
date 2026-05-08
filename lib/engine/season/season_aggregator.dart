@@ -171,7 +171,9 @@ class SeasonAggregator {
         final outing = defOutings.last;
         outing.outsRecorded += _outsInAtBat(ab);
 
-        int runsHere = ab.rbiCount;
+        // チーム得点はエラー出塁時にも入るので runsScored を使う。
+        // rbiCount はエラー出塁時に 0 になるため使えない。
+        int runsHere = ab.runsScored;
         for (final pitch in ab.pitches) {
           if (pitch.batteryError != null) {
             runsHere += pitch.batteryError!.runsScored;

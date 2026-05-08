@@ -392,6 +392,7 @@ class GameSimulator {
           pitches: atBatResult.pitches,
           result: AtBatResultType.strikeout, // ダミー（isIncomplete=trueなので使われない）
           rbiCount: 0,
+          runsScored: 0,
           outsBefore: outsBefore,
           runnersBefore: runnersBefore,
           isIncomplete: true,
@@ -463,8 +464,12 @@ class GameSimulator {
         resultType = AtBatResultType.sacrificeFly;
       }
 
-      final rbiCount = advanceResult.runsScored;
-      runs += rbiCount;
+      final runsScored = advanceResult.runsScored;
+      runs += runsScored;
+      // エラー出塁で得点が入った場合は打者に打点はつかない（NPB 公式記録規則）。
+      // 押し出し四球・犠飛・通常打席の得点は通常通り打点となる。
+      final rbiCount =
+          resultType == AtBatResultType.reachedOnError ? 0 : runsScored;
       runners = advanceResult.newRunners;
 
       // アウトカウント（打席結果によるアウト）
@@ -567,6 +572,7 @@ class GameSimulator {
         result: resultType,
         fieldPosition: fieldPosition,
         rbiCount: rbiCount,
+        runsScored: runsScored,
         outsBefore: outsBefore,
         runnersBefore: runnersBefore,
         tagUps: advanceResult.tagUps.isNotEmpty ? advanceResult.tagUps : null,

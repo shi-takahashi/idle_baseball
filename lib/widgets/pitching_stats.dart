@@ -195,8 +195,8 @@ class PitchingStats extends StatelessWidget {
             stat.walks++;
           }
 
-          // 失点
-          stat.runsAllowed += atBat.rbiCount;
+          // 失点（rbiCount はエラー出塁で 0 になるため runsScored を使う）
+          stat.runsAllowed += atBat.runsScored;
         }
       }
     }

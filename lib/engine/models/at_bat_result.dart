@@ -15,7 +15,12 @@ class AtBatResult {
   final List<PitchResult> pitches; // 全投球
   final AtBatResultType result;
   final FieldPosition? fieldPosition; // 打球方向（インプレー時のみ）
-  final int rbiCount; // 打点
+  /// 公式打点。エラー出塁（reachedOnError）で得点が入った場合は 0。
+  /// 押し出し四球・犠飛・通常打席による得点は通常通りカウントされる。
+  final int rbiCount;
+  /// この打席で生還した走者数（バッテリーエラー由来は含まない）。
+  /// チーム得点・投手失点の集計に使用。エラー出塁時も実際に生還した走者数が入る。
+  final int runsScored;
   final int outsBefore; // 打席前のアウトカウント
   final BaseRunners runnersBefore; // 打席前のランナー状況
   final List<TagUpAttempt>? tagUps; // タッチアップの試み
@@ -60,6 +65,7 @@ class AtBatResult {
     required this.result,
     this.fieldPosition,
     required this.rbiCount,
+    required this.runsScored,
     required this.outsBefore,
     required this.runnersBefore,
     this.tagUps,
@@ -93,6 +99,7 @@ class AtBatResult {
         'result': result.name,
         if (fieldPosition != null) 'fieldPosition': fieldPosition!.name,
         'rbiCount': rbiCount,
+        'runsScored': runsScored,
         'outsBefore': outsBefore,
         'runnersBefore': runnersBefore.toJson(),
         if (tagUps != null) 'tagUps': [for (final t in tagUps!) t.toJson()],
@@ -128,6 +135,9 @@ class AtBatResult {
             : FieldPosition.values
                 .firstWhere((p) => p.name == json['fieldPosition']),
         rbiCount: json['rbiCount'] as int,
+        // 古いセーブとの互換性: runsScored が無いセーブでは rbiCount を流用。
+        // エラー出塁時の打点誤差は無視できる範囲なので問題ない。
+        runsScored: (json['runsScored'] as int?) ?? (json['rbiCount'] as int),
         outsBefore: json['outsBefore'] as int,
         runnersBefore: BaseRunners.fromJson(
             json['runnersBefore'] as Map<String, dynamic>, playerById),

@@ -5,6 +5,80 @@
 
 ---
 
+## 2026-05-08 エラー出塁時の打点を 0 にする
+
+### 動機
+
+ユーザー指摘: イニング詳細を見ると、打者がエラーで出塁してランナーが生還した打席で、
+打者に打点 1 が記録されていた。NPB 公式記録規則では、打者がエラー出塁したときの
+得点は打点にならない（押し出し四球・犠飛・通常の打撃結果による得点は打点になる）。
+
+### 原因
+
+`AtBatResult.rbiCount` が「打席で生還した走者数」をそのまま入れていて、`reachedOnError`
+の場合も区別されていなかった。さらに同じ `rbiCount` が以下の3用途で使い回されていた:
+
+1. 打者の打点集計 (`season_aggregator.dart` / `batting_stats.dart`)
+2. チーム得点集計 (`season_aggregator.dart`)
+3. 投手失点集計 (`team_pitching_state.dart` / `pitching_stats.dart`)
+
+エラー出塁時に `rbiCount = 0` にすると、(2) と (3) でチーム得点・投手失点が
+記録されなくなり、整合性が崩れる。
+
+### 設計判断
+
+`AtBatResult` に `runsScored` フィールドを追加し、用途を分離:
+
+- `runsScored`: 打席で生還した走者数（バッテリーエラー由来は含まない）。エラー出塁時も
+  実際に生還した数が入る。チーム得点・投手失点用。
+- `rbiCount`: 公式打点。エラー出塁時は 0、それ以外は `runsScored` と一致。
+
+JSON マイグレーションは `runsScored` が無い古いセーブで `rbiCount` をフォールバックに
+使う形（過去の記録は誤差が残るが、エラー出塁絡みのぶんだけなので無視できる）。
+
+### 変更
+
+- `AtBatResult.runsScored` を追加し、`required` の名前付き引数として加える
+- `game_simulator.dart` で:
+  ```dart
+  final runsScored = advanceResult.runsScored;
+  runs += runsScored;
+  final rbiCount =
+      resultType == AtBatResultType.reachedOnError ? 0 : runsScored;
+  ```
+- `team_pitching_state.dart` の `runsAllowed += atBat.rbiCount` を `runsScored` に
+- `season_aggregator.dart` の `runsHere = ab.rbiCount` を `runsScored` に
+- `pitching_stats.dart` の `stat.runsAllowed += atBat.rbiCount` を `runsScored` に
+- 打者打点 (`bStats.rbi += ab.rbiCount`)・UI の打点表示は `rbiCount` のまま
+
+### 検証 (`bin/measure_error_rbi.dart`、3 シーズン × 270 試合)
+
+```
+総エラー出塁数: 169
+うち得点が入った打席: 14
+得点合計: 14 点
+エラー出塁で rbiCount > 0 の打席数: 0
+✓ エラー出塁時の打点は全て 0 になっている
+
+合計打点: 1758
+合計得点 (runsScored): 1772
+差分: 14（エラー出塁絡みで打点にならなかった得点）
+```
+
+`bin/test_persist.dart` で JSON 往復も問題なし。`bin/measure_league_avg.dart` の
+打率・OBP・SLG・OPS は変わらず（打点と独立した集計のため）。
+
+### ファイル
+
+- `lib/engine/models/at_bat_result.dart` — `runsScored` フィールド追加 + JSON マイグレーション
+- `lib/engine/simulation/game_simulator.dart` — `runsScored` と `rbiCount` を分離して算出
+- `lib/engine/simulation/team_pitching_state.dart` — 失点集計を `runsScored` に
+- `lib/engine/season/season_aggregator.dart` — チーム得点集計を `runsScored` に
+- `lib/widgets/pitching_stats.dart` — 失点集計を `runsScored` に
+- `bin/measure_error_rbi.dart` — エラー出塁時の打点 0 を検証する計測スクリプト
+
+---
+
 ## 2026-05-08 打球タイプ分布をゴロ寄りに調整（内野ライナー過多の解消）
 
 ### 動機
