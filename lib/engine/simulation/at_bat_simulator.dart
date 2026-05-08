@@ -501,10 +501,15 @@ class AtBatSimulator {
   }
 
   /// 打球の種類をランダムに決定
+  ///
+  /// 分布: ゴロ 50% / フライ 38% / ライナー 12%
+  /// （NPB 実測 ゴロ ~46% / フライ ~33% / ライナー ~21% に対し、
+  /// シミュレーターでは内野ライナーが体感的に多く感じられたため、
+  /// ライナーをやや抑え目にしてゴロに振り替えている）
   BattedBallType _randomBattedBallType() {
     final roll = _random.nextDouble();
-    if (roll < 0.45) return BattedBallType.groundBall;
-    if (roll < 0.85) return BattedBallType.flyBall;
+    if (roll < 0.50) return BattedBallType.groundBall;
+    if (roll < 0.88) return BattedBallType.flyBall;
     return BattedBallType.lineDrive;
   }
 
