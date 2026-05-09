@@ -120,6 +120,12 @@ abstract class FielderChangeStrategy {
 }
 
 /// 簡易な野手交代戦略
+///
+/// 代打の判定は **打者の打撃能力（meet+power）と打順** の組み合わせで決める。
+/// 投手かどうかで特別扱いはしない:
+///   - 典型的な投手は打撃能力が低い → 閾値を下回り、自然に代打される
+///   - 大谷型の打撃能力の高い投手 → 閾値を超えるため代打されず打席続行
+/// クリーンアップ（3,4,5番）への代打はハード制約でブロック。
 class SimpleFielderChangeStrategy implements FielderChangeStrategy {
   final int minInningForPinchHit;
   final int weakBatterThreshold;
@@ -143,13 +149,29 @@ class SimpleFielderChangeStrategy implements FielderChangeStrategy {
     if (state.bench.isEmpty) return null;
     if (ctx.inning < minInningForPinchHit) return null;
     if (ctx.scoreDiff > 0) return null;
+
     final current = ctx.currentBatter;
-    // 投手の打席は専用の投手交代ロジックで扱うのでここではスキップ
-    // （投手は通常 9 番だが大谷型で他の打順にもありうるため、index でなく isPitcher で判定）
-    if (current.isPitcher) return null;
+    final order = ctx.battingOrder;
+
+    // 打順による起用方針:
+    //   - クリーンアップ（3,4,5番 = order 2-4）: 起用しない。
+    //     当日の調子で動的に判断するロジックがまだ無いので、
+    //     基本能力での判定だけで主軸に代打を送るのは違和感が大きい。
+    //   - 1番（リードオフ）: 通常は固定起用。よほど弱い打者でない限り温存。
+    //   - その他（2, 6, 7, 8, 9番）: 能力ベース判定。
+    //
+    // 投手も「打者の打撃能力」で扱う。典型的な投手は meet/power が低いので
+    // 自然に閾値を下回って代打が送られる。大谷型のように打撃能力が高ければ
+    // 閾値を超えるので代打されず、そのまま打席に立つ。
+    if (order >= 2 && order <= 4) return null;
+
+    // 通常の能力ベース判定。
+    // 1番は固定起用が基本なので閾値を厳しく（-2）して相当弱くないと代打しない。
+    final threshold =
+        order == 0 ? weakBatterThreshold - 2 : weakBatterThreshold;
 
     final currentScore = (current.meet ?? 5) + (current.power ?? 5);
-    if (currentScore > weakBatterThreshold) return null;
+    if (currentScore > threshold) return null;
 
     Player? best;
     int bestScore = currentScore;

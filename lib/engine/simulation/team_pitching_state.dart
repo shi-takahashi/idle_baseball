@@ -37,6 +37,13 @@ class TeamPitchingState {
   /// 現投手が連続して与えた四球の数（四球以外でリセット）
   int walksStreak = 0;
 
+  /// 次の守備イニング開始時に強制的に投手交代する理由。
+  /// 主に「攻撃側で投手に代打が送られた」場合に設定される
+  /// （代打を送られた投手は試合から退場するため、次の守備で別の投手が必要）。
+  /// 設定されている間は次の `PitcherChangeStrategy.decide` 呼び出しで
+  /// 必ず交代が成立し、フィールドはリセットされる。
+  String? pendingMandatoryChangeReason;
+
   TeamPitchingState({
     required this.currentPitcher,
     required this.condition,

@@ -131,6 +131,22 @@ class SimplePitcherChangeStrategy implements PitcherChangeStrategy {
   @override
   PitcherChangeDecision? decide(PitcherChangeContext context) {
     final state = context.pitchingState;
+
+    // 強制交代（攻撃時に投手へ代打が送られた等）。
+    // 通常の交代条件より最優先で処理する。フラグは消費する。
+    final pendingReason = state.pendingMandatoryChangeReason;
+    if (pendingReason != null) {
+      state.pendingMandatoryChangeReason = null;
+      if (state.bullpen.isNotEmpty) {
+        final newPitcher = _selectReliever(context);
+        return PitcherChangeDecision(
+          newPitcher: newPitcher,
+          reason: pendingReason,
+        );
+      }
+      // ブルペン枯渇は通常起こり得ないが、起きた場合は現投手続投
+    }
+
     // ブルペンに残っている投手がいなければ交代不可
     if (state.bullpen.isEmpty) return null;
 

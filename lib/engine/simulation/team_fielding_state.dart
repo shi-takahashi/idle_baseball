@@ -16,12 +16,19 @@ class TeamFieldingState {
   final List<Player> bench;
   final List<Player> usedPlayers;
 
+  /// 現投手が打順のどのスロットに居るか（0-indexed、0=1番、8=9番）。
+  /// 通常は 9 番（slot 8）だが、大谷型なら他の打順にも置ける。
+  /// 投手代打が発生した直後は、PH 選手がこのスロットに居る状態になり、
+  /// 続く投手交代でこのスロットの選手を新投手に差し替える。
+  int pitcherBattingSlot;
+
   TeamFieldingState._({
     required this.originalTeam,
     required this.currentLineup,
     required this.currentAlignment,
     required this.bench,
     required this.usedPlayers,
+    required this.pitcherBattingSlot,
   });
 
   factory TeamFieldingState.fromTeam(Team team) {
@@ -36,6 +43,7 @@ class TeamFieldingState {
       currentAlignment: alignment,
       bench: List.of(team.bench),
       usedPlayers: List.of(team.players),
+      pitcherBattingSlot: team.pitcherBattingIndex,
     );
   }
 
@@ -65,20 +73,18 @@ class TeamFieldingState {
 
   /// 投手が交代した際の処理
   /// - 守備配置の投手位置を新投手で上書き
-  /// - DH非採用のため、打順スロットに居る古い投手も新投手に差し替え（古い投手は退場）
+  /// - DH非採用のため、投手スロットに居る選手（前任投手 or 投手代打の PH）を
+  ///   新投手に差し替え（前任 / PH は退場扱い）
   /// - 新投手を出場済みに記録
   void setPitcher(Player pitcher) {
-    final oldPitcher = currentAlignment[FieldPosition.pitcher];
     currentAlignment[FieldPosition.pitcher] = pitcher;
 
-    // ラインナップ上の投手スロットを新投手に更新（古い投手を排除）
-    if (oldPitcher != null) {
-      for (int i = 0; i < currentLineup.length; i++) {
-        if (currentLineup[i].id == oldPitcher.id) {
-          currentLineup[i] = pitcher;
-          break;
-        }
-      }
+    // 投手スロットを直接 newPitcher に書き換え。
+    // - 通常: 旧投手 (currentLineup[pitcherBattingSlot] == oldPitcher) を上書き
+    // - 投手代打後: PH 選手が居るスロットを上書き（PH は試合から退場）
+    if (pitcherBattingSlot >= 0 &&
+        pitcherBattingSlot < currentLineup.length) {
+      currentLineup[pitcherBattingSlot] = pitcher;
     }
 
     // 出場記録を更新

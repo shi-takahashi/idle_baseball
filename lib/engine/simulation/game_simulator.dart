@@ -110,6 +110,7 @@ class GameSimulator {
         pitchingFieldingState: homeFieldingState,
         battingOrder: awayBattingOrder,
         pitchingState: homePitchingState,
+        attackingTeamPitchingState: awayPitchingState,
         myTeamScore: homeScore,
         opponentScoreAtStart: awayScore,
         batterConditionModifiers: batterConditionModifiers,
@@ -135,6 +136,7 @@ class GameSimulator {
         pitchingFieldingState: awayFieldingState,
         battingOrder: homeBattingOrder,
         pitchingState: awayPitchingState,
+        attackingTeamPitchingState: homePitchingState,
         myTeamScore: awayScore,
         opponentScoreAtStart: homeScore,
         batterConditionModifiers: batterConditionModifiers,
@@ -173,6 +175,9 @@ class GameSimulator {
     required TeamFieldingState pitchingFieldingState,
     required int battingOrder,
     required TeamPitchingState pitchingState,
+    /// 攻撃側チームの投手運用状態。投手に代打が送られた場合、ここに「強制交代」
+    /// フラグを立てて、次の守備イニング開始時に交代が走るようにする。
+    required TeamPitchingState attackingTeamPitchingState,
     required int myTeamScore, // 投手チームの現在得点
     required int opponentScoreAtStart, // 相手チームの現在得点（このハーフイニング開始時点）
     Map<String, int> batterConditionModifiers = const {},
@@ -239,6 +244,13 @@ class GameSimulator {
           battingOrder: phDecision.battingOrder,
           reason: phDecision.reason,
         ));
+
+        // 投手に代打を送ったら、その投手は試合から退場するので、
+        // 次の守備イニング開始時に必ず投手交代する必要がある。
+        // 攻撃側チームの投手運用状態にフラグを立てる。
+        if (phDecision.outgoing.isPitcher) {
+          attackingTeamPitchingState.pendingMandatoryChangeReason = '代打降板';
+        }
       }
 
       // 代走判断（塁上のランナーごとに評価）
