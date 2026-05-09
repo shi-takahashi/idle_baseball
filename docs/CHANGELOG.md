@@ -5,6 +5,184 @@
 
 ---
 
+## 2026-05-09 代打ロジックの再設計（投手代打有効化・クリーンアップ除外・能力ベース判定）
+
+### 動機
+
+ユーザー指摘 — 8回裏で 9番（投手）に代打を送らず、次イニングで 1番に代打を送る違和感のある起用が観測された。
+旧ロジックは `if (current.isPitcher) return null;` で投手の代打を完全にブロックしており、最も期待値の低い打者（投手）に
+代打が一切送られない設計になっていた。逆に 1〜5番（クリーンアップ含む）にも能力ベースで代打が送られることがあり、
+当日の調子を考慮しない判断ロジックでは違和感が大きい。
+
+### 設計
+
+「投手かどうか」で特別扱いせず、**打者の打撃能力（meet+power）と打順** で統一判定する方針に変更:
+- 典型的な投手は meet/power が低い → 閾値を下回って自然に代打が送られる
+- 大谷型のように打撃能力の高い投手 → 閾値を超えるため代打されず打席続行
+- ユーザーが選手編集 UI で投手の打撃能力を上げれば、自動的に代打を回避するようになる
+
+### 変更
+
+- `fielder_change_strategy.dart` `decidePinchHit`:
+  - `if (current.isPitcher) return null;` を削除
+  - クリーンアップ（3,4,5番 = order 2-4）はハード制約でブロック（当日調子を見ないので主軸代打は違和感）
+  - 1番は閾値を `weakBatterThreshold - 2` に厳しくして、よほど弱くない限り温存
+  - その他（2,6,7,8,9番）は通常の能力ベース判定（meet+power ≤ 閾値）
+- `team_pitching_state.dart`:
+  - `pendingMandatoryChangeReason: String?` フィールド追加
+  - 攻撃時に投手へ代打が送られた場合、退場した投手を次の守備イニングで強制交代するためのフラグ
+- `pitcher_change_strategy.dart` `decide()`:
+  - 冒頭で `pendingMandatoryChangeReason` を最優先で処理。設定されていれば必ず交代成立
+- `team_fielding_state.dart`:
+  - `pitcherBattingSlot: int` フィールド追加（fromTeam で `team.pitcherBattingIndex` から取得）
+  - `setPitcher` がスロット直接書き換えに変わり、PH 後（旧投手が既に lineup から消えている状態）でも
+    新投手を正しく投手スロットに配置できる
+- `game_simulator.dart`:
+  - `_simulateHalfInning` に `attackingTeamPitchingState` パラメータ追加
+  - PH 適用後に `phDecision.outgoing.isPitcher` なら `pendingMandatoryChangeReason='代打降板'` をセット
+- `bin/measure_pinch_hit.dart` 新規追加（打順別の代打分布を計測）
+
+### 検証 (`bin/measure_pinch_hit.dart`、3 シーズン × 270 試合 = 1126 件の代打)
+
+| 打順 | 件数 | 比率 |
+|---|---|---|
+| 1番 | 48 | 4.26% |
+| 2番 | 61 | 5.42% |
+| **3,4,5番（クリーンアップ）** | **0** | **0.00%** ✓ |
+| 6番 | 123 | 10.92% |
+| 7番 | 163 | 14.48% |
+| 8番 | 243 | 21.58% |
+| **9番（投手）** | **488** | **43.34%** ← 最多 |
+
+投手代打が最多に。クリーンアップ代打はゼロ。投手代打後は次の守備イニングで自動的に新投手へ交代する流れが
+JSON 永続化テスト・シーズン完走でも問題なく動作することを確認。
+
+---
+
+## 2026-05-09 送りバントの打順補正（クリーンアップ抑制）
+
+### 動機
+
+ユーザー指摘 — 0アウト1塁で 3 番打者（クリーンアップ）が送りバントを実行する場面が観測された。NPB ではクリーンアップ
+（3,4,5番）はほぼバントしない。逆に 2 番は伝統的にバント担当者だが、最近の MLB 流では 2 番に強打者を置くこともある。
+
+### 設計
+
+`BuntContext` に `battingOrder` を追加し、`SimpleBuntDecisionStrategy._computeBuntProbability` に **打順補正係数**
+を掛ける。既存の power フィルタ（power ≥ 7 は base 0）と組み合わせて:
+- クリーンアップ: 打順補正で × 0.03〜0.08（ほぼゼロ）
+- 1番: × 0.6（控えめ。リードオフは出塁役）
+- 2番: × 1.2（伝統的日本式バント担当。ただし強打者なら power フィルタで弾かれる）
+- 6〜8番: 0.7〜1.1（普通〜やや多め）
+- 9番: × 1.0（多くは投手で base 0.85 で吸収される）
+
+### 変更
+
+- `bunt_decision_strategy.dart`:
+  - `BuntContext.battingOrder` 必須フィールド追加
+  - `_battingOrderModifier(int)` メソッド新設
+  - `_computeBuntProbability` で打順補正を最後に乗算
+- `game_simulator.dart` `BuntContext` 構築時に `currentBattingOrder` を渡す
+- `bin/measure_bunt_by_order.dart` 新規追加
+
+### 検証 (`bin/measure_bunt_by_order.dart`、3 シーズン × 270 試合)
+
+| 打順 | バント数 | バント率 |
+|---|---|---|
+| 1番 | 40 | 1.59% |
+| 2番 | 207 | 8.43% ← 日本式バント担当 |
+| **3番** | **3** | **0.13%** |
+| **4番** | **0** | **0.00%** |
+| **5番** | **4** | **0.17%** |
+| 6番 | 27 | 1.21% |
+| 7番 | 61 | 2.81% |
+| 8番 | 58 | 2.75% |
+| 9番 | 247 | 12.16% ← 投手枠 |
+
+クリーンアップ（3,4,5番）合計 7 件 / 総バント 647 件 = 1.08%。総バント率 3.91% → 3.49% に減少。
+3塁ランナーありでのバント発動 0 件（既存制約も維持）。
+
+---
+
+## 2026-05-09 死球（HBP）の実装
+
+### 動機
+
+ユーザー要望 — 死球（hit by pitch）が未実装だった（`player_season_stats.dart:33` に「死球は未実装のため 0 扱い」と
+明記されていた）。発生頻度はそれほど高くなく、投手の制球力に依存する形で実装したい。
+
+### 設計
+
+- 投球結果の独立試行として 1 球ごとに死球判定（既存の ball/strike/foul の確率配分には影響させない）
+- 制球力 5 で 1 球あたり 0.35%、制球-1 ごとに +0.06pt の補正。clamp [0.05%, 1.0%]
+- NPB 目安: 1 チーム 143 試合で 70〜80 件 ≒ 0.5/試合 ≒ 1 打席あたり 1% 強
+
+### 変更
+
+- `engine/models/enums.dart`:
+  - `PitchResultType.hitByPitch` 追加（displayName=「死球」、shortName=「死」）
+  - `AtBatResultType.hitByPitch` 追加（displayName=「死球」、isOnBase に含む、isHitByPitch getter 追加）
+- `engine/simulation/at_bat_simulator.dart`:
+  - `_baseProbHitByPitch=0.0035` / `_controlHitByPitchModifier=0.0006` 定数追加
+  - `simulatePitch` 冒頭で死球独立試行（最優先）
+  - `_checkAtBatEnd` / `_updateCount` で `PitchResultType.hitByPitch` を処理
+- `engine/simulation/game_simulator.dart`:
+  - `_advanceRunners` で hitByPitch も walk と同じ `_advanceOnWalk` を呼ぶ（押し出しのみで進塁）
+- `engine/simulation/team_pitching_state.dart`:
+  - 死球は walk と異なり `walksStreak` を伸ばさない（hits/walks streak リセット、onBase のみ +1）
+- `engine/season/player_season_stats.dart`:
+  - `BatterSeasonStats.hitByPitch` 追加。OBP 式を `(H + BB + HBP) / (AB + BB + HBP + SF)` に
+  - `PitcherSeasonStats.hitBatsmen`（与死球）追加
+  - JSON マイグレーション（旧セーブは `hitByPitch=0` / `hitBatsmen=0` で読込）
+- `engine/season/season_aggregator.dart`:
+  - HBP は atBats から除外、`bStats.hitByPitch++` / `pStats.hitBatsmen++`
+- `engine/season/recent_form.dart`:
+  - HBP も OBP 分子（isWalk フィールドを「四球＋死球」の意味で再利用、コメントで明記）
+- `widgets/batting_stats.dart` / `widgets/score_board.dart`:
+  - 表示「死球」、深紫の色分け
+  - `_pitchResultFullName` / 打席結果ラベル / 結果チップ背景色を hitByPitch 対応
+- `bin/test_bunt.dart` `bin/measure_league_avg.dart` 既存スクリプト更新
+- `bin/measure_hit_by_pitch.dart` 新規（団-game/打席/制球力別の発生率を計測）
+
+### 検証 (`bin/measure_hit_by_pitch.dart`、3 シーズン × 540 team-games)
+
+| 指標 | 実測 | NPB 目安 |
+|---|---|---|
+| 1 team-game あたり死球 | 0.41 | 0.5 |
+| 死球率（PA 比） | 1.07% | ~1% |
+| 制球 2 の投手 | 0.71%/球 | — |
+| 制球 5 の投手 | 0.31%/球 | — |
+| 制球 7 の投手 | 0.22%/球 | — |
+| OPS | .718 | ~.700 |
+| OBP | .332 | ~.320 |
+
+制球の悪い投手ほど明確に死球が増える挙動になった。`bin/test_persist.dart` の JSON 往復も成功。
+
+---
+
+## 2026-05-09 「野選（fieldersChoice）」表示を「バント失敗」に変更
+
+### 動機
+
+ユーザー指摘 — 0アウト1塁で 2 番打者がバントし、結果が「野選」と表示された。次打席で 1アウト一塁になっていて、
+バント時に守備が先頭走者をアウトにし、打者が 1 塁セーフだったケース。NPB 用語的には「野選（フィールダース・チョイス）」は
+「打者走者を 1 塁でアウトにできる場面で先行走者を狙ったが、結果オールセーフ」のプレーを指す。今回のケースは
+「バント失敗」と表記すべき。
+
+### 変更
+
+- `engine/models/enums.dart` `AtBatResultType.fieldersChoice` の `displayName` を `'野選'` → `'バント失敗'`
+- `widgets/batting_stats.dart` 同じく `'野選'` → `'バント失敗'`
+- enum 名 `fieldersChoice` は JSON 互換性のため維持。enum 定義コメント・関連 getter のドキュメントコメント・
+  `team_pitching_state.dart` のインラインコメント・`bin/test_bunt.dart` の出力ラベルも「バント失敗」表現に統一
+
+### 補足
+
+`fieldersChoice` の生成箇所は `at_bat_simulator.dart:1591` の `_resolveBuntInPlay` ただ 1 箇所で、
+必ずバント時の「先頭走者OUT・打者1塁セーフ」というケースに限定されるため、表示の一律変更で問題なし。
+
+---
+
 ## 2026-05-08 内野安打時の走者追加進塁を抑制
 
 ### 動機
