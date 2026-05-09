@@ -169,7 +169,7 @@ void main() {
   print('--- バント結果別 ---');
   print('  送りバント成功:    $sacBunt   ${pct(sacBunt, total)}');
   print('  バント安打:        $infieldHit   ${pct(infieldHit, total)}');
-  print('  野選 (FC):         $fc   ${pct(fc, total)}');
+  print('  バント失敗 (FC):   $fc   ${pct(fc, total)}');
   print('  バント併殺:        $dp   ${pct(dp, total)}');
   print('  ポップアウト:      $popOut   ${pct(popOut, total)}');
   print('  三振:              $strikeout   ${pct(strikeout, total)}');

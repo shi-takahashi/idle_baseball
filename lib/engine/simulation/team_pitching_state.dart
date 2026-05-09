@@ -80,8 +80,8 @@ class TeamPitchingState {
       walksStreak = 0;
     } else if (atBat.result.isOut ||
         atBat.result == AtBatResultType.fieldersChoice) {
-      // 野選は打者は1塁に出るが、先頭走者をアウトにしているので
-      // 投手側の streak はアウトと同じく全てリセット
+      // バント失敗（fieldersChoice）は打者は1塁に出るが、先頭走者をアウトに
+      // しているので、投手側の streak はアウトと同じく全てリセット
       hitsAllowedStreak = 0;
       onBaseStreak = 0;
       walksStreak = 0;

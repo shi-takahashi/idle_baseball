@@ -190,7 +190,10 @@ enum AtBatResultType {
   reachedOnError, // エラー出塁
   sacrificeBunt, // 送りバント成功（打者OUT・走者進塁、打数にカウントしない）
   sacrificeFly, // 犠飛（外野フライで3塁走者がタッチアップ生還、打数にカウントしない）
-  fieldersChoice, // 野選（バント失敗で先頭走者OUT・打者は1塁セーフ）
+  // バント失敗（先頭走者OUT・打者は1塁セーフ）。
+  // enum 名は JSON 互換性のため fieldersChoice のまま残しているが、
+  // 厳密な野手選択（オールセーフ）ではなく「バント失敗」を表す。
+  fieldersChoice,
 }
 
 /// 塁
@@ -392,12 +395,13 @@ extension AtBatResultTypeExtension on AtBatResultType {
     return this == AtBatResultType.sacrificeFly;
   }
 
-  /// 野選（FC: 走者OUT・打者SAFE）かどうか
+  /// バント失敗（先頭走者OUT・打者1塁SAFE）かどうか。
+  /// enum 名は履歴の都合で fieldersChoice のままだが、厳密な野手選択ではない。
   bool get isFieldersChoice {
     return this == AtBatResultType.fieldersChoice;
   }
 
-  /// 打者が出塁するかどうか（安打・四球・エラー出塁・野選）
+  /// 打者が出塁するかどうか（安打・四球・エラー出塁・バント失敗）
   bool get isOnBase {
     return isHit ||
         this == AtBatResultType.walk ||
@@ -437,7 +441,7 @@ extension AtBatResultTypeExtension on AtBatResultType {
       case AtBatResultType.sacrificeFly:
         return '犠飛';
       case AtBatResultType.fieldersChoice:
-        return '野選';
+        return 'バント失敗';
     }
   }
 }
