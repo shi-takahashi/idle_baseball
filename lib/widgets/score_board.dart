@@ -630,6 +630,8 @@ class ScoreBoard extends StatelessWidget {
                         ? Colors.green.shade100
                         : atBat.result == AtBatResultType.walk
                         ? Colors.blue.shade100
+                        : atBat.result == AtBatResultType.hitByPitch
+                        ? Colors.deepPurple.shade100
                         : atBat.result == AtBatResultType.reachedOnError
                         ? Colors.red.shade100
                         : Colors.grey.shade200,
@@ -643,6 +645,8 @@ class ScoreBoard extends StatelessWidget {
                           ? Colors.green.shade800
                           : atBat.result == AtBatResultType.walk
                           ? Colors.blue.shade800
+                          : atBat.result == AtBatResultType.hitByPitch
+                          ? Colors.deepPurple.shade800
                           : atBat.result == AtBatResultType.reachedOnError
                           ? Colors.red.shade800
                           : Colors.grey.shade800,
@@ -813,6 +817,9 @@ class ScoreBoard extends StatelessWidget {
       case PitchResultType.inPlay:
         resultColor = Colors.blue.shade700;
         break;
+      case PitchResultType.hitByPitch:
+        resultColor = Colors.deepPurple.shade700;
+        break;
     }
 
     final resultLabel = pitch.type == PitchResultType.inPlay
@@ -892,6 +899,8 @@ class ScoreBoard extends StatelessWidget {
         return 'ファウル';
       case PitchResultType.inPlay:
         return 'インプレー';
+      case PitchResultType.hitByPitch:
+        return '死球';
     }
   }
 

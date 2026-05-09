@@ -839,6 +839,8 @@ class GameSimulator {
         // 内野安打は打球が内野で処理されているため、走者の追加進塁は発生しない。
         return _advanceOnSingle(runners, batter, isInfieldHit: true);
       case AtBatResultType.walk:
+      case AtBatResultType.hitByPitch:
+        // 死球も四球と同じく押し出しのみで進塁。
         return _advanceOnWalk(runners, batter);
       case AtBatResultType.groundOut:
         return _advanceOnGroundOut(runners, outs);

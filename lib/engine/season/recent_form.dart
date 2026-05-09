@@ -3,8 +3,10 @@ import '../models/enums.dart';
 
 /// 1打席の集約情報（OPS 計算用）
 class _PA {
-  final bool isAB; // 打数にカウントされるか（四球・犠飛は false）
+  final bool isAB; // 打数にカウントされるか（四球・死球・犠飛は false）
   final bool isHit;
+  /// 出塁したかどうか（安打・四球・死球）。OBP 分子に使用。
+  /// 名前は履歴の都合で isWalk のままだが、四球＋死球を含む。
   final bool isWalk;
   final int totalBases; // 塁打数（単打1〜本塁打4、それ以外は0）
 
@@ -32,8 +34,9 @@ class _PA {
   factory _PA.from(AtBatResult ab) {
     final type = ab.result;
     final isWalk = type == AtBatResultType.walk;
+    final isHbp = type == AtBatResultType.hitByPitch;
     final isSacFly = type == AtBatResultType.sacrificeFly;
-    final isAB = !isWalk && !isSacFly;
+    final isAB = !isWalk && !isHbp && !isSacFly;
     final isHit = type.isHit;
     final int tb;
     switch (type) {
@@ -56,7 +59,8 @@ class _PA {
     return _PA._(
       isAB: isAB,
       isHit: isHit,
-      isWalk: isWalk,
+      // 死球は OBP では出塁として扱う
+      isWalk: isWalk || isHbp,
       totalBases: tb,
     );
   }

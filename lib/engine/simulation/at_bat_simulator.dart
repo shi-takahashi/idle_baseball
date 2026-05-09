@@ -90,6 +90,12 @@ class AtBatSimulator {
   static const double _controlBallModifier = 0.015; // ボール確率補正
   static const double _controlHitModifier = 0.01; // 被打率補正（アウト率への影響）
 
+  // 死球（HBP）関連。
+  // NPB 目安: 1試合 1チームあたり 0.5 件前後（143 試合で 70〜80 件）。
+  // 1 投球あたり 0.35% 程度に当てる。制球が悪いほど発生しやすい。
+  static const double _baseProbHitByPitch = 0.0035; // 制球5基準で1球あたり0.35%
+  static const double _controlHitByPitchModifier = 0.0006; // 制球-1で+0.06pt
+
   // 基準ミート力（このミート力で基本確率になる）
   static const int _baseMeet = 5;
 
@@ -409,6 +415,19 @@ class AtBatSimulator {
   /// isPlatoonDisadvantage: 利き手同士マッチアップで打者不利なら true
   /// batterSide: 打者の実効打席（打球方向バイアス用）
   PitchResult simulatePitch(int balls, int strikes, int speed, int control, int meet, PitchType pitchType, int? pitchParam, {int eye = 5, int power = 5, double fatigue = 0.0, bool isPlatoonDisadvantage = false, Handedness batterSide = Handedness.right}) {
+    // 死球チェック（独立試行、最優先）。
+    // 制球が悪い投手ほど発生しやすい。発生率は1球あたり 0.05〜1.0% の範囲に収まる。
+    final probHbp = (_baseProbHitByPitch +
+            (_baseControl - control) * _controlHitByPitchModifier)
+        .clamp(0.0005, 0.01);
+    if (_random.nextDouble() < probHbp) {
+      return PitchResult(
+        type: PitchResultType.hitByPitch,
+        pitchType: pitchType,
+        speed: speed,
+      );
+    }
+
     // 球種に応じた実効疲労度を計算
     final effectiveFatigue = _getEffectiveFatigue(fatigue, pitchType);
 
@@ -1743,6 +1762,10 @@ class AtBatSimulator {
         }
         return const AtBatEndCheckResult();
 
+      case PitchResultType.hitByPitch:
+        // 死球は即座に打席終了、打者は1塁へ（カウントは関係ない）
+        return const AtBatEndCheckResult(result: AtBatResultType.hitByPitch);
+
       case PitchResultType.strikeLooking:
       case PitchResultType.strikeSwinging:
         if (strikes >= 2) {
@@ -1799,6 +1822,8 @@ class AtBatSimulator {
         }
         break;
       case PitchResultType.inPlay:
+      case PitchResultType.hitByPitch:
+        // 死球はカウント据え置き（打席は即終了するためここに来た時点で次球は無い）
         callback(balls, strikes);
         break;
     }

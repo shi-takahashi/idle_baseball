@@ -10,7 +10,7 @@ class BatterSeasonStats {
 
   int games = 0;
   int plateAppearances = 0; // 打席数
-  int atBats = 0; // 打数（打席 - 四球 - 犠飛）
+  int atBats = 0; // 打数（打席 - 四球 - 死球 - 犠飛 - 犠打）
   int hits = 0; // 安打
   int doubles = 0; // 二塁打
   int triples = 0; // 三塁打
@@ -18,6 +18,7 @@ class BatterSeasonStats {
   int rbi = 0; // 打点
   int runs = 0; // 得点（本塁を踏んだ回数）
   int walks = 0; // 四球
+  int hitByPitch = 0; // 死球
   int strikeouts = 0; // 三振
   int stolenBases = 0; // 盗塁成功
   int caughtStealing = 0; // 盗塁死
@@ -29,11 +30,10 @@ class BatterSeasonStats {
   /// 打率 = 安打 / 打数
   double get battingAverage => atBats == 0 ? 0 : hits / atBats;
 
-  /// 出塁率 = (安打 + 四球) / (打数 + 四球 + 犠飛)
-  /// ※ 簡略: 死球は未実装のため 0 扱い
+  /// 出塁率 = (安打 + 四球 + 死球) / (打数 + 四球 + 死球 + 犠飛)
   double get onBasePct {
-    final denom = atBats + walks + sacFlies;
-    return denom == 0 ? 0 : (hits + walks) / denom;
+    final denom = atBats + walks + hitByPitch + sacFlies;
+    return denom == 0 ? 0 : (hits + walks + hitByPitch) / denom;
   }
 
   /// 長打率 = 塁打数 / 打数
@@ -61,6 +61,7 @@ class BatterSeasonStats {
         'rbi': rbi,
         'runs': runs,
         'walks': walks,
+        'hitByPitch': hitByPitch,
         'strikeouts': strikeouts,
         'stolenBases': stolenBases,
         'caughtStealing': caughtStealing,
@@ -87,6 +88,7 @@ class BatterSeasonStats {
     s.rbi = (json['rbi'] as int?) ?? 0;
     s.runs = (json['runs'] as int?) ?? 0;
     s.walks = (json['walks'] as int?) ?? 0;
+    s.hitByPitch = (json['hitByPitch'] as int?) ?? 0;
     s.strikeouts = (json['strikeouts'] as int?) ?? 0;
     s.stolenBases = (json['stolenBases'] as int?) ?? 0;
     s.caughtStealing = (json['caughtStealing'] as int?) ?? 0;
@@ -112,6 +114,7 @@ class PitcherSeasonStats {
   int hitsAllowed = 0; // 被安打
   int homeRunsAllowed = 0; // 被本塁打
   int walksAllowed = 0; // 与四球
+  int hitBatsmen = 0; // 与死球
   int strikeoutsRecorded = 0; // 奪三振
   int runsAllowed = 0; // 失点（責任投手にホームインされた点をカウント）
   int earnedRuns = 0; // 自責点（エラーが無ければ無かった失点を除く）
@@ -135,6 +138,7 @@ class PitcherSeasonStats {
   }
 
   /// WHIP = (与四球 + 被安打) × 3 / 奪ったアウト数
+  /// ※ 死球は WHIP の分子に含めない（NPB 公式定義）
   double get whip {
     if (outsRecorded == 0) return 0;
     return (walksAllowed + hitsAllowed) * 3 / outsRecorded;
@@ -153,6 +157,7 @@ class PitcherSeasonStats {
         'hitsAllowed': hitsAllowed,
         'homeRunsAllowed': homeRunsAllowed,
         'walksAllowed': walksAllowed,
+        'hitBatsmen': hitBatsmen,
         'strikeoutsRecorded': strikeoutsRecorded,
         'runsAllowed': runsAllowed,
         'earnedRuns': earnedRuns,
@@ -177,6 +182,7 @@ class PitcherSeasonStats {
     s.hitsAllowed = (json['hitsAllowed'] as int?) ?? 0;
     s.homeRunsAllowed = (json['homeRunsAllowed'] as int?) ?? 0;
     s.walksAllowed = (json['walksAllowed'] as int?) ?? 0;
+    s.hitBatsmen = (json['hitBatsmen'] as int?) ?? 0;
     s.strikeoutsRecorded = (json['strikeoutsRecorded'] as int?) ?? 0;
     s.runsAllowed = (json['runsAllowed'] as int?) ?? 0;
     s.earnedRuns = (json['earnedRuns'] as int?) ?? 0;

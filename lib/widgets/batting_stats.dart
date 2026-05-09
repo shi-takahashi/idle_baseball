@@ -309,12 +309,17 @@ class BattingStats extends StatelessWidget {
   }
 
   void _accumulate(_BatterGameStats stat, AtBatResult atBat, int inning) {
-    if (atBat.result != AtBatResultType.walk) stat.atBats++;
+    final isWalk = atBat.result == AtBatResultType.walk;
+    final isHbp = atBat.result == AtBatResultType.hitByPitch;
+    final isSacFly = atBat.result == AtBatResultType.sacrificeFly;
+    final isSacBunt = atBat.result == AtBatResultType.sacrificeBunt;
+    // 打数: 打席 - 四球 - 死球 - 犠飛 - 犠打
+    if (!isWalk && !isHbp && !isSacFly && !isSacBunt) stat.atBats++;
     if (atBat.result.isHit) stat.hits++;
     if (atBat.result == AtBatResultType.homeRun) stat.homeRuns++;
     stat.rbi += atBat.rbiCount;
     if (atBat.result == AtBatResultType.strikeout) stat.strikeouts++;
-    if (atBat.result == AtBatResultType.walk) stat.walks++;
+    if (isWalk) stat.walks++;
 
     final inningIndex = inning - 1;
     if (inningIndex >= 0 && inningIndex < stat.inningResults.length) {
@@ -331,6 +336,8 @@ class BattingStats extends StatelessWidget {
         return '三振';
       case AtBatResultType.walk:
         return '四球';
+      case AtBatResultType.hitByPitch:
+        return '死球';
       case AtBatResultType.single:
         return '安打';
       case AtBatResultType.infieldHit:

@@ -112,6 +112,11 @@ void main() {
               break;
             case AtBatResultType.reachedOnError:
               break;
+            case AtBatResultType.hitByPitch:
+              // バント中の死球はあり得る（バントを引いた瞬間など）が稀。
+              // 集計上は walk と同等扱いで中立。
+              walk++;
+              break;
           }
           if (ab.batter.isPitcher) {
             pitcherBunts++;

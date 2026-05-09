@@ -328,13 +328,18 @@ class SeasonAggregator {
           bStats.plateAppearances++;
           final isSacFly = ab.result == AtBatResultType.sacrificeFly;
           final isSacBunt = ab.result == AtBatResultType.sacrificeBunt;
+          final isHbp = ab.result == AtBatResultType.hitByPitch;
           if (isSacFly) bStats.sacFlies++;
           if (isSacBunt) bStats.sacrificeBunts++;
-          // 打数: 打席 - 四球 - 犠飛 - 犠打
-          if (ab.result != AtBatResultType.walk && !isSacFly && !isSacBunt) {
+          // 打数: 打席 - 四球 - 死球 - 犠飛 - 犠打
+          if (ab.result != AtBatResultType.walk &&
+              !isHbp &&
+              !isSacFly &&
+              !isSacBunt) {
             bStats.atBats++;
           }
           if (ab.result == AtBatResultType.walk) bStats.walks++;
+          if (isHbp) bStats.hitByPitch++;
           if (ab.result == AtBatResultType.strikeout) bStats.strikeouts++;
           if (ab.result.isHit) bStats.hits++;
           if (ab.result == AtBatResultType.double_) bStats.doubles++;
@@ -348,6 +353,7 @@ class SeasonAggregator {
           if (ab.result.isHit) pStats.hitsAllowed++;
           if (ab.result == AtBatResultType.homeRun) pStats.homeRunsAllowed++;
           if (ab.result == AtBatResultType.walk) pStats.walksAllowed++;
+          if (ab.result == AtBatResultType.hitByPitch) pStats.hitBatsmen++;
           if (ab.result == AtBatResultType.strikeout) {
             pStats.strikeoutsRecorded++;
           }

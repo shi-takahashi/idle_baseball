@@ -88,6 +88,7 @@ enum PitchResultType {
   strikeSwinging, // 空振りストライク
   foul, // ファウル
   inPlay, // インプレー（打球が飛んだ）
+  hitByPitch, // 死球（投球が打者に当たる）
 }
 
 extension PitchResultTypeExtension on PitchResultType {
@@ -104,6 +105,8 @@ extension PitchResultTypeExtension on PitchResultType {
         return 'ファウル';
       case PitchResultType.inPlay:
         return '打球';
+      case PitchResultType.hitByPitch:
+        return '死球';
     }
   }
 
@@ -120,6 +123,8 @@ extension PitchResultTypeExtension on PitchResultType {
         return 'F';
       case PitchResultType.inPlay:
         return '打';
+      case PitchResultType.hitByPitch:
+        return '死';
     }
   }
 }
@@ -178,6 +183,7 @@ extension PitchTypeExtension on PitchType {
 enum AtBatResultType {
   strikeout, // 三振
   walk, // 四球
+  hitByPitch, // 死球（打者が投球に当たり、打数にカウントしない出塁）
   single, // 単打
   infieldHit, // 内野安打（単打の一種）
   double_, // 二塁打（doubleは予約語なのでアンダースコア）
@@ -401,10 +407,16 @@ extension AtBatResultTypeExtension on AtBatResultType {
     return this == AtBatResultType.fieldersChoice;
   }
 
-  /// 打者が出塁するかどうか（安打・四球・エラー出塁・バント失敗）
+  /// 死球かどうか
+  bool get isHitByPitch {
+    return this == AtBatResultType.hitByPitch;
+  }
+
+  /// 打者が出塁するかどうか（安打・四球・死球・エラー出塁・バント失敗）
   bool get isOnBase {
     return isHit ||
         this == AtBatResultType.walk ||
+        this == AtBatResultType.hitByPitch ||
         this == AtBatResultType.reachedOnError ||
         this == AtBatResultType.fieldersChoice;
   }
@@ -416,6 +428,8 @@ extension AtBatResultTypeExtension on AtBatResultType {
         return '三振';
       case AtBatResultType.walk:
         return '四球';
+      case AtBatResultType.hitByPitch:
+        return '死球';
       case AtBatResultType.single:
         return '単打';
       case AtBatResultType.infieldHit:

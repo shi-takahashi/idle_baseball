@@ -74,7 +74,10 @@ class TeamPitchingState {
       hitsAllowedStreak = 0;
       onBaseStreak++;
       walksStreak++;
-    } else if (atBat.result == AtBatResultType.reachedOnError) {
+    } else if (atBat.result == AtBatResultType.hitByPitch ||
+        atBat.result == AtBatResultType.reachedOnError) {
+      // 死球・エラー出塁は安打でも四球でもないが、出塁自体は発生する。
+      // 連続四球 streak は伸ばさない（管理判断は「四球連発」基準）。
       hitsAllowedStreak = 0;
       onBaseStreak++;
       walksStreak = 0;
