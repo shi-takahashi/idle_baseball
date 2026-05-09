@@ -322,6 +322,7 @@ class GameSimulator {
       final buntCtx = BuntContext(
         batter: batter,
         nextBatter: nextBatter,
+        battingOrder: currentBattingOrder,
         runners: runners,
         outs: outs,
         inning: inning,

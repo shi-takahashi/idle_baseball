@@ -11,6 +11,9 @@ class BuntContext {
   /// 次打者が強打者ほど「ここはバントで進めて彼に打たせたい」となる。
   final Player? nextBatter;
 
+  /// 打順 (0-8)。0 = 1番、2-4 = クリーンアップ（3,4,5番）、8 = 9番。
+  final int battingOrder;
+
   final BaseRunners runners;
   final int outs;
   final int inning;
@@ -27,6 +30,7 @@ class BuntContext {
   const BuntContext({
     required this.batter,
     this.nextBatter,
+    required this.battingOrder,
     required this.runners,
     required this.outs,
     required this.inning,
@@ -60,6 +64,13 @@ abstract class BuntDecisionStrategy {
 ///   - 弱打者（power ≤ 4）: そこそこ高確率
 ///   - 中堅（power 5-6）: 低確率（0アウト・接戦・終盤に限る）
 ///   - 主軸（power ≥ 7）: しない
+///
+/// 打順補正:
+///   - クリーンアップ（3,4,5番）: ほぼゼロ（× 0.05）
+///   - 1番（リードオフ）: 控えめ（× 0.6）
+///   - 2番: 伝統的な日本式バント担当（× 1.2）
+///   - 6〜8番: 普通〜やや多め
+///   - 9番: 通常通り（多くは投手で power が低いので power 補正で吸収）
 class SimpleBuntDecisionStrategy implements BuntDecisionStrategy {
   /// 大量リード時はバントしない（接戦に効果が無いため）
   static const int maxLeadForBunt = 3;
@@ -171,6 +182,37 @@ class SimpleBuntDecisionStrategy implements BuntDecisionStrategy {
       mod *= 0.8;
     }
 
+    // 打順補正: 打順は 0-indexed（0 = 1番、8 = 9番）。
+    // クリーンアップ（3,4,5番）はほぼバントしない。
+    mod *= _battingOrderModifier(ctx.battingOrder);
+
     return (base * mod).clamp(0.0, 0.95);
+  }
+
+  /// 打順による補正係数。0-indexed。
+  /// クリーンアップ層（3,4,5番）はほぼバントしない設計。
+  double _battingOrderModifier(int battingOrder) {
+    switch (battingOrder) {
+      case 0: // 1番（リードオフ）
+        return 0.6;
+      case 1: // 2番（伝統的な日本式バント担当。MLB流の強打者は power フィルタで吸収）
+        return 1.2;
+      case 2: // 3番（クリーンアップ）
+        return 0.05;
+      case 3: // 4番（クリーンアップ）
+        return 0.03;
+      case 4: // 5番（クリーンアップ）
+        return 0.08;
+      case 5: // 6番
+        return 0.7;
+      case 6: // 7番
+        return 1.0;
+      case 7: // 8番（投手の前は普通〜多め）
+        return 1.1;
+      case 8: // 9番（多くは投手で power 1-2 → base 0.85 で吸収）
+        return 1.0;
+      default:
+        return 1.0;
+    }
   }
 }
