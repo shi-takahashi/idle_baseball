@@ -1174,26 +1174,45 @@ class GameSimulator {
 
     // 2塁ランナーのタッチアップ判定
     //
-    // 物理的整合性: 外野手は捕球後 1 つしか送球できないため、
-    // 3塁走者がタッチアップ試行している場合は本塁送球になり、
-    // 2塁走者の 3塁進塁を阻止することは時間的に不可能（→ 無条件成功）。
-    // 3塁走者がいない場合のみ、外野手は 3塁送球を選び、走力 vs 肩で判定する。
+    // 単独タッチアップ（3塁ランナーなし）:
+    //   外野手は 3塁送球を選べるため、レフトフライは 3塁が近くアウトになりやすい
+    //   → センター/ライトフライのみ試行可（_canSecondRunnerTagUp の制約）。
+    // 同時タッチアップ（3塁ランナーあり）:
+    //   外野手は本塁送球を優先するため、どの方向でも試行できる。
+    //   - センター/ライト: 3塁送球は時間的に不可能 → 無条件成功
+    //   - レフト: 3塁ベースが近く中継返球で阻止される可能性 → 走力 vs 肩で判定
+    final isSimultaneous = thirdRunnerTaggedUp;
+    final canAttempt2nd =
+        isSimultaneous || _canSecondRunnerTagUp(fieldPosition);
     if (!inningAlreadyEnded &&
         runners.second != null &&
-        _canSecondRunnerTagUp(fieldPosition) &&
+        canAttempt2nd &&
         (thirdRunnerTaggedUp || runners.third == null)) {
       if (_shouldAttemptTagUp(runners.second!, flyDepth, outfielderArm)) {
-        if (runners.third != null) {
-          // 同時タッチアップ: 外野手は本塁送球。2塁→3塁は無条件成功。
-          // 3塁走者が本塁でセーフでもアウトでも、2塁走者は 3塁を取れる。
-          newThird = runners.second;
-          newSecond = null;
-          tagUpAttempts.add(TagUpAttempt(
-            runner: runners.second!,
-            fromBase: Base.second,
-            toBase: Base.third,
-            success: true,
-          ));
+        if (isSimultaneous) {
+          // 同時タッチアップ: レフトのみ走力 vs 肩、それ以外は無条件成功
+          final success = fieldPosition == FieldPosition.left
+              ? _isTagUpSuccessful(runners.second!, flyDepth, outfielderArm)
+              : true;
+          if (success) {
+            newThird = runners.second;
+            newSecond = null;
+            tagUpAttempts.add(TagUpAttempt(
+              runner: runners.second!,
+              fromBase: Base.second,
+              toBase: Base.third,
+              success: true,
+            ));
+          } else {
+            tagUpOuts++;
+            newSecond = null;
+            tagUpAttempts.add(TagUpAttempt(
+              runner: runners.second!,
+              fromBase: Base.second,
+              toBase: Base.third,
+              success: false,
+            ));
+          }
         } else {
           // 単独タッチアップ: 外野手は 3塁送球。走力 vs 肩で判定。
           if (_isTagUpSuccessful(runners.second!, flyDepth, outfielderArm)) {
