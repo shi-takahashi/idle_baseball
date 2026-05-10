@@ -683,6 +683,7 @@ class ScoreBoard extends StatelessWidget {
                 i,
                 atBat.pitches[i],
                 inPlayLabel: _getResultDisplayName(atBat),
+                inPlayIsOut: atBat.result.isOut,
               ),
             if (atBat.rbiCount > 0)
               Padding(
@@ -801,7 +802,14 @@ class ScoreBoard extends StatelessWidget {
   /// 結果ごとに色分けし、付加情報（盗塁・バッテリーエラー）はその下に追記。
   /// インプレー球の結果は [inPlayLabel] に「中堅安」「三ゴロ」のような具体的な
   /// 打席結果を渡すと、ラベル「インプレー」の代わりに表示する。
-  Widget _buildPitchRow(int index, PitchResult pitch, {String? inPlayLabel}) {
+  /// [inPlayIsOut] が true の場合、インプレー結果（中フライ・遊ゴロ等）を紫で
+  /// 表示してアウトとヒットを色で区別する。
+  Widget _buildPitchRow(
+    int index,
+    PitchResult pitch, {
+    String? inPlayLabel,
+    bool inPlayIsOut = false,
+  }) {
     Color resultColor;
     switch (pitch.type) {
       case PitchResultType.ball:
@@ -815,7 +823,9 @@ class ScoreBoard extends StatelessWidget {
         resultColor = Colors.orange.shade800;
         break;
       case PitchResultType.inPlay:
-        resultColor = Colors.blue.shade700;
+        // ヒット → 青 / アウト → 紫 で区別
+        resultColor =
+            inPlayIsOut ? Colors.purple.shade700 : Colors.blue.shade700;
         break;
       case PitchResultType.hitByPitch:
         resultColor = Colors.deepPurple.shade700;
