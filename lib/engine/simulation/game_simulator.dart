@@ -479,10 +479,14 @@ class GameSimulator {
 
       final runsScored = advanceResult.runsScored;
       runs += runsScored;
-      // エラー出塁で得点が入った場合は打者に打点はつかない（NPB 公式記録規則）。
+      // 打点が付かないケース（NPB 公式記録規則）:
+      //   - エラー出塁で得点が入った場合
+      //   - 併殺打の間に走者が生還した場合
       // 押し出し四球・犠飛・通常打席の得点は通常通り打点となる。
-      final rbiCount =
-          resultType == AtBatResultType.reachedOnError ? 0 : runsScored;
+      final rbiCount = (resultType == AtBatResultType.reachedOnError ||
+              resultType.isDoublePlay)
+          ? 0
+          : runsScored;
       runners = advanceResult.newRunners;
 
       // アウトカウント（打席結果によるアウト）
@@ -1078,8 +1082,11 @@ class GameSimulator {
     final willBeThreeOuts = outs == 1;
     final scorers = <Player>[];
 
-    // 満塁の場合、3塁ランナーがホームへ（ただし3アウトにならない場合のみ）
-    if (runners.isLoaded && !willBeThreeOuts) {
+    // 3塁ランナーは併殺打の間にホームインできる（3アウトで終わる場合を除く）。
+    // 一般的な 6-4-3 / 4-6-3 のフォース併殺では 3塁走者の生還を阻止せず、
+    // 1塁での 2 つ目のアウトを優先するため、得点が認められる。
+    // ※ NPB 公式記録規則上、併殺打で得点が入っても打者には打点がつかない。
+    if (runners.third != null && !willBeThreeOuts) {
       scorers.add(runners.third!);
     }
 
