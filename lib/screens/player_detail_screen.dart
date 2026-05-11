@@ -159,8 +159,8 @@ class PlayerDetailScreen extends StatelessWidget {
           title: '基本能力',
           children: [
             _SpeedRow(label: '球速', kmh: player.averageSpeed ?? 0),
+            _RatingRow(label: '伸び', value: player.fastball),
             _RatingRow(label: '制球', value: player.control),
-            _RatingRow(label: 'ストレートの質', value: player.fastball),
             _RatingRow(label: 'スタミナ', value: player.stamina),
           ],
         ),
@@ -442,7 +442,7 @@ class _SpeedRow extends StatelessWidget {
           SizedBox(
             width: 56,
             child: Text(
-              '$kmh km/h',
+              '${kmh}km',
               textAlign: TextAlign.right,
               style: const TextStyle(
                 fontSize: 13,

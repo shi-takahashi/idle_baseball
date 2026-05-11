@@ -362,14 +362,14 @@ class _PlayerEditScreenState extends State<PlayerEditScreen> {
           ),
           const SizedBox(height: 8),
           _Slider1to10(
+            label: '伸び',
+            value: _fastball,
+            onChanged: (v) => setState(() => _fastball = v),
+          ),
+          _Slider1to10(
             label: '制球',
             value: _control,
             onChanged: (v) => setState(() => _control = v),
-          ),
-          _Slider1to10(
-            label: 'ストレートの質',
-            value: _fastball,
-            onChanged: (v) => setState(() => _fastball = v),
           ),
           _Slider1to10(
             label: 'スタミナ',
