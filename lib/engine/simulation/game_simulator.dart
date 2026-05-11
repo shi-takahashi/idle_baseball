@@ -649,11 +649,16 @@ class GameSimulator {
     required Map<String, String> runnerResponsibility,
     required Map<String, bool> runnerIsUnearned,
   }) {
-    // 3塁 → 2塁 → 1塁 の順で評価（前のランナーから）
+    // 3塁 → 2塁 → 1塁 の順で評価（前のランナーから）。
+    // 1塁の代走は 2塁にランナーが居ない場合のみ評価する。
+    // 「2塁の先行ランナー（投手等のスローランナー含む）を残して 1塁だけ代走」は
+    // 不自然な采配で、代走は先行ランナーに送るのが定石（NPB の采配観）。
     final candidates = <(Base, Player)>[];
     if (runners.third != null) candidates.add((Base.third, runners.third!));
     if (runners.second != null) candidates.add((Base.second, runners.second!));
-    if (runners.first != null) candidates.add((Base.first, runners.first!));
+    if (runners.first != null && runners.second == null) {
+      candidates.add((Base.first, runners.first!));
+    }
 
     var current = runners;
     for (final (base, runner) in candidates) {

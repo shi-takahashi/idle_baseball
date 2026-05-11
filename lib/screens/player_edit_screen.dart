@@ -97,7 +97,9 @@ class _PlayerEditScreenState extends State<PlayerEditScreen> {
     _meet = p.meet ?? 1;
     _power = p.power ?? 1;
     _eye = p.eye ?? 1;
-    _speed = p.speed ?? 5;
+    // 走力は投手も野手も持つ。null フォールバックは生成時の典型値に合わせる
+    //   (野手 mean 5、投手 mean 3.5)。
+    _speed = p.speed ?? (p.isPitcher ? 3 : 5);
     _arm = p.arm ?? 5;
     _lead = p.lead;
 
@@ -404,7 +406,7 @@ class _PlayerEditScreenState extends State<PlayerEditScreen> {
       ),
       const SizedBox(height: 8),
       _Section(
-        title: '打撃（参考）',
+        title: '打撃・走塁（参考）',
         children: [
           _Slider1to10(
             label: 'ミート',
@@ -420,6 +422,11 @@ class _PlayerEditScreenState extends State<PlayerEditScreen> {
             label: '選球眼',
             value: _eye,
             onChanged: (v) => setState(() => _eye = v),
+          ),
+          _Slider1to10(
+            label: '走力',
+            value: _speed,
+            onChanged: (v) => setState(() => _speed = v),
           ),
         ],
       ),
@@ -540,8 +547,11 @@ class _PlayerEditScreenState extends State<PlayerEditScreen> {
       meet: _meet,
       power: _power,
       eye: _eye,
-      // 野手能力
-      speed: _isPitcher ? null : _speed,
+      // 走力は投手も野手も持つ（_speed をそのまま保存）。
+      // ※ 旧バグで投手保存時に null 上書きしていたため、過去セーブの投手は
+      //   null になっているが、その場合は _speed の初期化時に投手向けデフォルト 3 で
+      //   復元される。
+      speed: _speed,
       arm: _isPitcher ? null : _arm,
       lead: (!_isPitcher && canCatch) ? _lead : null,
       // 守備力（野手のみ）

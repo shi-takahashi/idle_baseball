@@ -177,11 +177,12 @@ class PlayerDetailScreen extends StatelessWidget {
         const SizedBox(height: 8),
         // 投手も打席に立つので簡易表示
         _SectionCard(
-          title: '打撃（参考）',
+          title: '打撃・走塁（参考）',
           children: [
             _RatingRow(label: 'ミート', value: player.meet),
             _RatingRow(label: '長打', value: player.power),
             _RatingRow(label: '選球眼', value: player.eye),
+            _RatingRow(label: '走力', value: player.speed),
           ],
         ),
       ],
