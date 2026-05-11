@@ -57,6 +57,9 @@ abstract class BuntDecisionStrategy {
 ///   - **3塁にランナーが居ない**（1,3塁 / 2,3塁 / 満塁では送りバントしない。
 ///     ヒット 1 本で得点できる場面でアウトをプレゼントするのは基本ナシ。
 ///     スクイズ・奇襲セーフティは別作戦扱いで未実装）
+///   - **2塁単独（1塁空き）は終盤（7回以降）かつ接戦（同点 or 1点差）のみ**。
+///     早い回でランナー2塁・1塁空きにアウトをプレゼントする送りバントは非合理
+///     （ヒットで先制・大量得点の可能性を捨てる）。終盤の 1 点が欲しい場面に限定。
 ///   - 攻撃側が大量リードしているときは行わない
 ///
 /// 確率（ソフト基準）:
@@ -85,6 +88,12 @@ class SimpleBuntDecisionStrategy implements BuntDecisionStrategy {
     // 3塁ランナーがいる状況での送りバントは基本ナシ
     // （ヒットで得点できるのにアウトを増やすメリットが薄い）
     if (ctx.runners.third != null) return false;
+    // 2塁単独（1塁空き）は終盤＋接戦のみ。早い回や大差では発動しない。
+    if (ctx.runners.second != null && ctx.runners.first == null) {
+      final isLateInning = ctx.inning >= 7;
+      final isCloseGame = ctx.scoreDiff.abs() <= 1;
+      if (!isLateInning || !isCloseGame) return false;
+    }
     if (ctx.scoreDiff > maxLeadForBunt) return false;
 
     final probability = _computeBuntProbability(ctx);

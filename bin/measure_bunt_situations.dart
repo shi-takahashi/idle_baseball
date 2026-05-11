@@ -8,6 +8,8 @@ void main() {
   final buntSituations = <String, int>{};
   int totalBunts = 0;
   int totalAtBats = 0;
+  // 2塁単独バントが「7回以降+接戦」のみであることを検証
+  final secondAloneSamples = <String>[];
 
   for (int s = 0; s < numSeasons; s++) {
     final teams = TeamGenerator(random: Random(8000 + s)).generateLeague();
@@ -23,18 +25,34 @@ void main() {
     for (final sg in schedule.games) {
       final result = controller.resultFor(sg.gameNumber);
       if (result == null) continue;
+      int awayScore = 0;
+      int homeScore = 0;
       for (final half in result.halfInnings) {
+        int battingScore = half.isTop ? awayScore : homeScore;
+        final pitchingScore = half.isTop ? homeScore : awayScore;
         for (final atBat in half.atBats) {
           totalAtBats++;
-          if (!atBat.isBunt) continue;
-          totalBunts++;
-          final r = atBat.runnersBefore;
-          final has1 = r.first != null;
-          final has2 = r.second != null;
-          final has3 = r.third != null;
-          final key =
-              '${atBat.outsBefore}OUT ${_runnersLabel(has1, has2, has3)}';
-          buntSituations[key] = (buntSituations[key] ?? 0) + 1;
+          if (atBat.isBunt) {
+            totalBunts++;
+            final r = atBat.runnersBefore;
+            final has1 = r.first != null;
+            final has2 = r.second != null;
+            final has3 = r.third != null;
+            final key =
+                '${atBat.outsBefore}OUT ${_runnersLabel(has1, has2, has3)}';
+            buntSituations[key] = (buntSituations[key] ?? 0) + 1;
+            if (has2 && !has1 && !has3) {
+              final diff = battingScore - pitchingScore;
+              secondAloneSamples.add(
+                  '${atBat.inning}回 ${atBat.outsBefore}OUT 攻撃$battingScore-$pitchingScore守備 (差 $diff)');
+            }
+          }
+          battingScore += atBat.runsScored;
+        }
+        if (half.isTop) {
+          awayScore += half.runs;
+        } else {
+          homeScore += half.runs;
         }
       }
     }
@@ -58,6 +76,23 @@ void main() {
       .fold<int>(0, (sum, e) => sum + e.value);
   print('\n  ▶ 3 塁ランナーあり: '
       '${has3rdRunner == 0 ? "0 件 ✓" : "$has3rdRunner 件 ✗"}');
+
+  // 2塁単独（1塁空き）の発動状況
+  print('\n=== 2塁単独バントの発動局面 ===');
+  print('総件数: ${secondAloneSamples.length}');
+  int earlyOrBlowout = 0;
+  for (final s in secondAloneSamples) {
+    print('  $s');
+    final inningMatch = RegExp(r'^(\d+)回').firstMatch(s);
+    final diffMatch = RegExp(r'差 (-?\d+)').firstMatch(s);
+    if (inningMatch != null && diffMatch != null) {
+      final inning = int.parse(inningMatch.group(1)!);
+      final diff = int.parse(diffMatch.group(1)!);
+      if (inning < 7 || diff.abs() > 1) earlyOrBlowout++;
+    }
+  }
+  print('  ▶ 「7回以降+接戦」以外の件数: '
+      '${earlyOrBlowout == 0 ? "0 件 ✓" : "$earlyOrBlowout 件 ✗"}');
 }
 
 String _runnersLabel(bool has1, bool has2, bool has3) {

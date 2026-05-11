@@ -5,6 +5,69 @@
 
 ---
 
+## 2026-05-11 2塁単独（1塁空き）の送りバントを終盤接戦のみに限定
+
+### 動機
+
+ユーザー指摘 — 1回裏 0アウト 2塁単独で 2 番打者が送りバント。早い回で
+ランナー 2 塁（1 塁空き）にアウトをプレゼントするのは非合理（ヒットで先制・
+大量得点の可能性を捨てる）。NPB 慣習では「7,8,9 回または延長で同点 or 1 点差、
+どうしても 1 点が欲しい場面」に限定される作戦。
+ただし 1,2 塁ノーアウト等のバントは序盤でも普通に発生する。
+
+### 原因
+
+`SimpleBuntDecisionStrategy._computeBuntProbability` の走者位置補正:
+```dart
+if (ctx.runners.second != null && ctx.runners.first == null) {
+  if (ctx.outs == 0) {
+    mod *= 1.2;  // ← むしろバント率を上げていた
+  } else {
+    mod *= 0.5;
+  }
+}
+```
+イニング・スコア差はソフト補正のみで、序盤の 2 塁単独でもバントが普通に発動。
+
+### 変更
+
+`shouldBunt` のハード制約として「2 塁単独は 7 回以降 + 同点 or 1 点差のみ」を追加:
+```dart
+if (ctx.runners.second != null && ctx.runners.first == null) {
+  final isLateInning = ctx.inning >= 7;
+  final isCloseGame = ctx.scoreDiff.abs() <= 1;
+  if (!isLateInning || !isCloseGame) return false;
+}
+```
+1,2 塁・1 塁単独のバントは従来通り（序盤でも発動）。
+
+### 検証 (`bin/measure_bunt_situations.dart`、3 シーズン × 6 チーム × 30 試合)
+
+修正前（参考）: 2 塁単独バントは全イニング・全スコア差で発動していた。
+
+修正後の 2 塁単独バント 19 件:
+
+| 局面 | 件数 |
+|------|------|
+| 7 回 0OUT 接戦 | 7 |
+| 7 回 1OUT 接戦 | 3 |
+| 8 回 0OUT 接戦 | 3 |
+| 8 回 1OUT 接戦 | 3 |
+| 9 回 0OUT 接戦 | 1 |
+| 9 回 1OUT 接戦 | 3 |
+| 10〜12 回 接戦 | 2 |
+
+**「7回以降+接戦」以外: 0 件 ✓**
+
+総バント率: 3.01%（修正前 3.49% → 微減）。1 塁単独・1,2 塁の比率はほぼ変化なし。
+
+### ファイル
+
+- `lib/engine/simulation/bunt_decision_strategy.dart` — ハード制約追加 + コメント更新
+- `bin/measure_bunt_situations.dart` — 2 塁単独バントの局面（イニング + スコア差）を検証する出力を追加
+
+---
+
 ## 2026-05-10 レフトフライでの 2塁ランナー同時タッチアップを許可
 
 ### 動機
