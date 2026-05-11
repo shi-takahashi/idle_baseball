@@ -148,7 +148,6 @@ class SimpleFielderChangeStrategy implements FielderChangeStrategy {
     final state = ctx.fieldingState;
     if (state.bench.isEmpty) return null;
     if (ctx.inning < minInningForPinchHit) return null;
-    if (ctx.scoreDiff > 0) return null;
 
     final current = ctx.currentBatter;
     final order = ctx.battingOrder;
@@ -164,6 +163,25 @@ class SimpleFielderChangeStrategy implements FielderChangeStrategy {
     // 自然に閾値を下回って代打が送られる。大谷型のように打撃能力が高ければ
     // 閾値を超えるので代打されず、そのまま打席に立つ。
     if (order >= 2 && order <= 4) return null;
+
+    // 特別判定: リリーフ投手（中継ぎ・セットアッパー等）に打席が回った場合は
+    // リード中でも代打を送る。次の守備イニングで投手交代するのが定石なので
+    // 「凡退ほぼ確定」の投手に打席を消費させるメリットが薄い。
+    //
+    // 例外: 抑え（クローザー）は試合を締めくくる起用なので代打を送らない。
+    //       8 回途中に登板したクローザーをそのまま 9 回も投げさせるのが基本。
+    //
+    // 先発投手は対象外（スコアによっては続投の選択肢が残る。スコア差リードを
+    // 守る場面では既存の `scoreDiff > 0` 判定が代打を抑止する）。
+    if (current.isPitcher &&
+        current.reliefRole != null &&
+        current.reliefRole != ReliefRole.closer) {
+      final reliefPh = _findReliefPinchHitter(ctx, current);
+      if (reliefPh != null) return reliefPh;
+    }
+
+    // 以降は通常判定: リードしている時は代打を送らない（点差守備に入る）
+    if (ctx.scoreDiff > 0) return null;
 
     // 通常の能力ベース判定。
     // 1番は固定起用が基本なので閾値を厳しく（-2）して相当弱くないと代打しない。
@@ -185,6 +203,35 @@ class SimpleFielderChangeStrategy implements FielderChangeStrategy {
     }
     if (best == null) return null;
 
+    return PinchHitDecision(
+      hitter: best,
+      outgoing: current,
+      battingOrder: ctx.battingOrder,
+      reason: '代打',
+    );
+  }
+
+  /// リリーフ投手（非クローザー）への代打候補を探す。
+  /// 「ベンチに打撃が明確に上の野手がいれば送る」という単純判定。
+  /// 典型的なリリーフ投手の meet+power は 2-4、控え野手は 8-12 程度。
+  /// 大谷型の高打撃リリーフ（meet+power ≥ 10）の場合は自然と候補が見つからない。
+  PinchHitDecision? _findReliefPinchHitter(
+      PinchHitContext ctx, Player current) {
+    final state = ctx.fieldingState;
+    final currentScore = (current.meet ?? 5) + (current.power ?? 5);
+    Player? best;
+    int bestScore = currentScore;
+    for (final b in state.bench) {
+      if (b.isPitcher) continue;
+      final score = (b.meet ?? 5) + (b.power ?? 5);
+      if (score > bestScore) {
+        bestScore = score;
+        best = b;
+      }
+    }
+    if (best == null) return null;
+    // 控え野手が投手と同等以下なら送らない（差が出てから送る）
+    if (bestScore - currentScore < 3) return null;
     return PinchHitDecision(
       hitter: best,
       outgoing: current,

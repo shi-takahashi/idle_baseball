@@ -13,6 +13,11 @@ void main() {
   final phByOrder = List.filled(9, 0);
   int phForPitcher = 0;
   int phForNonPitcher = 0;
+  int phForCloser = 0;
+  int phForReliefNonCloser = 0;
+  int phForStarter = 0;
+  int phForPitcherLeading = 0;
+  int phForPitcherTiedOrLosing = 0;
   int totalPh = 0;
   int totalGames = 0;
 
@@ -31,7 +36,11 @@ void main() {
       final result = controller.resultFor(sg.gameNumber);
       if (result == null) continue;
       totalGames++;
+      int awayScore = 0;
+      int homeScore = 0;
       for (final half in result.halfInnings) {
+        final battingScore = half.isTop ? awayScore : homeScore;
+        final pitchingScore = half.isTop ? homeScore : awayScore;
         for (final fc in half.fielderChanges) {
           if (fc.type != FielderChangeType.pinchHit) continue;
           totalPh++;
@@ -39,9 +48,27 @@ void main() {
           if (order >= 0 && order < 9) phByOrder[order]++;
           if (fc.outgoing.isPitcher) {
             phForPitcher++;
+            if (fc.outgoing.reliefRole == ReliefRole.closer) {
+              phForCloser++;
+            } else if (fc.outgoing.reliefRole != null) {
+              phForReliefNonCloser++;
+            } else {
+              phForStarter++;
+            }
+            final diff = battingScore - pitchingScore;
+            if (diff > 0) {
+              phForPitcherLeading++;
+            } else {
+              phForPitcherTiedOrLosing++;
+            }
           } else {
             phForNonPitcher++;
           }
+        }
+        if (half.isTop) {
+          awayScore += half.runs;
+        } else {
+          homeScore += half.runs;
         }
       }
     }
@@ -68,4 +95,17 @@ void main() {
   final cleanup = phByOrder[2] + phByOrder[3] + phByOrder[4];
   print('クリーンアップ(3,4,5番)への代打: $cleanup '
       '(${pct(cleanup, totalPh)})');
+
+  print('');
+  print('===== 投手への代打の内訳 =====');
+  print('  リリーフ（非クローザー）: $phForReliefNonCloser '
+      '(${pct(phForReliefNonCloser, phForPitcher)})');
+  print('  クローザー: $phForCloser (${pct(phForCloser, phForPitcher)})');
+  print('  先発（reliefRole=null）: $phForStarter '
+      '(${pct(phForStarter, phForPitcher)})');
+  print('');
+  print('  攻撃側リード時: $phForPitcherLeading '
+      '(${pct(phForPitcherLeading, phForPitcher)})');
+  print('  攻撃側 同点 or ビハインド時: $phForPitcherTiedOrLosing '
+      '(${pct(phForPitcherTiedOrLosing, phForPitcher)})');
 }
