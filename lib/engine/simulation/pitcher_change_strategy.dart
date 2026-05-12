@@ -211,7 +211,15 @@ class SimplePitcherChangeStrategy implements PitcherChangeStrategy {
     // ベンチにいるならスイッチする。
     // 抑え/先発の交代として割り込まないようにリリーフ間の交代に限定（先発が
     // まだマウンドにいる場合は普通の交代条件で先に降ろす方が自然）。
-    if (!isCurrentCloser && !isStarter && !isCurrentSituational) {
+    // セットアッパーは信頼度がワンポイントより高いので、ヒットも失点も
+    // していない状態では matchup swap で降ろさない。
+    final isCurrentSetup =
+        state.currentPitcher.reliefRole == ReliefRole.setup;
+    final setupHasBeenHit = state.hitsAllowed > 0 || state.runsAllowed > 0;
+    if (!isCurrentCloser &&
+        !isStarter &&
+        !isCurrentSituational &&
+        (!isCurrentSetup || setupHasBeenHit)) {
       final lefty = _findLefty(context, state);
       if (lefty != null) {
         return PitcherChangeDecision(
@@ -525,8 +533,9 @@ class SimplePitcherChangeStrategy implements PitcherChangeStrategy {
   Player? _findLefty(PitcherChangeContext context, TeamPitchingState state) {
     final batter = context.batter;
     if (batter == null) return null;
-    final batsAgainst = batter.effectiveBatsAgainst(state.currentPitcher);
-    if (batsAgainst != Handedness.left) return null;
+    // 両打ち打者は投手の利き腕に合わせて打席を切り替えるため、左投手を出した
+    // 瞬間に右打席へ移行する。プラトーン優位が得られないので対象外。
+    if (batter.effectiveBatsBase != Handedness.left) return null;
     if (context.inning < 7) return null;
     if (context.scoreDiff.abs() > 2) return null;
     if (state.currentPitcher.effectiveThrows == Handedness.left) return null;

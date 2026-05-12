@@ -28,6 +28,9 @@ class TeamPitchingState {
   /// 現投手の失点（自責/非自責問わず、登板中の総失点）
   int runsAllowed = 0;
 
+  /// 現投手の累計被安打（登板中の総被安打。matchup swap 判断に使う）
+  int hitsAllowed = 0;
+
   /// 現投手が連続して打たれている本数（連打判定用、アウトでリセット）
   int hitsAllowedStreak = 0;
 
@@ -58,6 +61,7 @@ class TeamPitchingState {
     usedPitchers.add(newPitcher);
     bullpen.remove(newPitcher);
     runsAllowed = 0;
+    hitsAllowed = 0;
     hitsAllowedStreak = 0;
     onBaseStreak = 0;
     walksStreak = 0;
@@ -74,6 +78,7 @@ class TeamPitchingState {
     runsAllowed += atBat.runsScored + batteryErrorRuns;
 
     if (atBat.result.isHit) {
+      hitsAllowed++;
       hitsAllowedStreak++;
       onBaseStreak++;
       walksStreak = 0;
