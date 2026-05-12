@@ -567,9 +567,9 @@ class SeasonController {
     return results;
   }
 
-  /// 先発ローテの中で「コンディション高い順 → 背番号低い順」で先頭を返す。
+  /// 先発ローテの中で「コンディション高い順 → エース順 → 背番号低い順」で先頭を返す。
   /// 自チームの作戦自動編成で使う。シーズン序盤は全員 100 で揃うので
-  /// 背番号最小から順に登板し、その後はコンディション差で自然に回るようになる。
+  /// 開幕戦はエース、その後はコンディション差で自然に回るようになる。
   Player _pickFreshestStarter(Team team) {
     final rotation = team.startingRotation;
     if (rotation.isEmpty) return team.pitcher;
@@ -579,6 +579,8 @@ class SeasonController {
         final fb = _pitcherFreshness[b.id] ?? 100;
         final c = fb.compareTo(fa); // freshness 高い順
         if (c != 0) return c;
+        final cs = _aceScore(b).compareTo(_aceScore(a)); // エース順
+        if (cs != 0) return cs;
         return a.number.compareTo(b.number); // 同値なら背番号低い順
       });
     return sorted.first;
@@ -838,6 +840,16 @@ class SeasonController {
     final rotation = team.startingRotation;
     if (rotation.isEmpty) return team.pitcher;
 
+    // 開幕戦: 全員未登板の場合はジッターを入れず、純粋にエース順で選ぶ。
+    // 開幕投手は確定でエース、というのが NPB の標準的な運用。
+    final noOneHasStarted =
+        rotation.every((sp) => _pitcherLastStartDay[sp.id] == null);
+    if (noOneHasStarted) {
+      final sorted = rotation.toList()
+        ..sort((a, b) => _aceScore(b).compareTo(_aceScore(a)));
+      return sorted.first;
+    }
+
     final restEligible = rotation.where((sp) {
       final last = _pitcherLastStartDay[sp.id];
       if (last == null) return true; // 未登板
@@ -889,10 +901,9 @@ class SeasonController {
     return cache.putIfAbsent(p.id, () {
       final last = (_pitcherLastStartDay[p.id] ?? -1000).toDouble();
       final ace = _aceScore(p); // 0..1
-      // ace ボーナスは [0, 1.5] のレンジで効かせる：
-      // ジッター範囲 [0, 2) と組み合わさって、エース差が大きい場合は
-      // 中4日や中6日の振り分けが「能力差」によりはっきり寄る。
-      return last - ace * 1.5 + _rotationRandom.nextDouble() * 2;
+      // ace ボーナスは [0, 4.0] のレンジで効かせる。ジッター [0, 2) を上回らせ、
+      // 同じ休養日のコホート内では「能力高い投手が先に登板」が安定する。
+      return last - ace * 4.0 + _rotationRandom.nextDouble() * 2;
     });
   }
 
