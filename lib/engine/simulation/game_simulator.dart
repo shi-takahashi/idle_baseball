@@ -292,14 +292,10 @@ class GameSimulator {
       final decision = _pitcherChangeStrategy.decide(changeContext);
       if (decision != null) {
         final oldPitcher = pitchingState.currentPitcher;
-        // 旧投手の打順スロットを取得（setPitcher前にチェック）
-        int pitcherSlot = 0;
-        for (int i = 0; i < pitchingFieldingState.currentLineup.length; i++) {
-          if (pitchingFieldingState.currentLineup[i].id == oldPitcher.id) {
-            pitcherSlot = i;
-            break;
-          }
-        }
+        // 旧投手の打順スロット。代打降板の場合は旧投手はラインナップにいないので、
+        // ラインナップを検索しても見つからない。pitcherBattingSlot は投手スロットを
+        // ゲーム開始時から固定で保持しているのでそれを使う。
+        final pitcherSlot = pitchingFieldingState.pitcherBattingSlot;
         pitchingState.changePitcher(
           decision.newPitcher,
           PitcherCondition.random(_random),
