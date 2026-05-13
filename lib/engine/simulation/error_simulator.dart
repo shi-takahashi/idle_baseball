@@ -137,6 +137,11 @@ class ErrorSimulator {
   // 二塁打エラー検知時の内訳: クッション処理ミス vs 中継返球ミス
   static const double _doubleCushionShare = 0.70;
 
+  /// 守れない（canPlay=false）ポジションに強引配置された選手のエラー倍率。
+  /// NPB の「捕手不在で内野手が捕手」のような状況の表現で、守備力 1 の選手
+  /// よりも明らかにミスが多発する想定。
+  static const double _forcedPlacementErrorMultiplier = 3.0;
+
   ErrorSimulator({Random? random}) : _random = random ?? Random();
 
   /// ワイルドピッチ判定
@@ -155,12 +160,15 @@ class ErrorSimulator {
   /// パスボール判定
   /// catcherFielding: 捕手の守備力
   /// pitchType: 球種（変化球はパスボールしやすい）
-  bool checkPassedBall(int catcherFielding, PitchType pitchType) {
+  /// isForcedPlacement: 捕手不在で内野手等を強引配置している場合 true（エラー率3倍）
+  bool checkPassedBall(int catcherFielding, PitchType pitchType,
+      {bool isForcedPlacement = false}) {
     final fieldingDiff = catcherFielding - 5;
     final fieldingModifier = fieldingDiff * _catcherFieldingPassedBallModifier;
     final pitchModifier = (_pitchTypeWildPitchModifier[pitchType] ?? 0.0) * 0.5; // ワイルドピッチより影響小
 
-    final probability = (_basePassedBallRate - fieldingModifier + pitchModifier).clamp(0.0002, 0.005);
+    var probability = (_basePassedBallRate - fieldingModifier + pitchModifier).clamp(0.0002, 0.005);
+    if (isForcedPlacement) probability *= _forcedPlacementErrorMultiplier;
     return _random.nextDouble() < probability;
   }
 
@@ -203,13 +211,17 @@ class ErrorSimulator {
   /// 内野ゴロエラー判定
   /// fielding: 守る野手の守備力
   /// position: 守備位置
+  /// isForcedPlacement: 当該選手がその位置を「守れない」（canPlay=false）まま
+  ///                    強引配置されている場合 true。エラー率3倍。
   /// 戻り値: エラーが発生したらtrue
-  bool checkGroundBallError(int fielding, FieldPosition position) {
+  bool checkGroundBallError(int fielding, FieldPosition position,
+      {bool isForcedPlacement = false}) {
     final fieldingDiff = fielding - 5;
     final fieldingModifier = fieldingDiff * _fieldingErrorModifier;
     final posModifier = _positionErrorModifier[position] ?? 0.0;
 
-    final probability = (_baseGroundBallErrorRate - fieldingModifier + posModifier).clamp(0.010, 0.12);
+    var probability = (_baseGroundBallErrorRate - fieldingModifier + posModifier).clamp(0.010, 0.12);
+    if (isForcedPlacement) probability *= _forcedPlacementErrorMultiplier;
     return _random.nextDouble() < probability;
   }
 
@@ -318,24 +330,30 @@ class ErrorSimulator {
   /// 二塁打エラー判定（クッション処理ミス + 中継本塁返球ミス）。
   /// 二塁打が出た外野方向で、外野手のミスにより打者が三塁まで進むケース。
   /// fielding: 外野手の守備力
-  bool checkDoubleError(int fielding, FieldPosition position) {
+  /// isForcedPlacement: 外野を「守れない」選手が強引配置されている場合 true（エラー率3倍）
+  bool checkDoubleError(int fielding, FieldPosition position,
+      {bool isForcedPlacement = false}) {
     if (!position.isOutfield) return false;
     final fieldingDiff = fielding - 5;
     final fieldingModifier = fieldingDiff * _outfieldFieldingErrorModifier;
-    final probability =
+    var probability =
         (_baseDoubleErrorRate - fieldingModifier).clamp(0.003, 0.04);
+    if (isForcedPlacement) probability *= _forcedPlacementErrorMultiplier;
     return _random.nextDouble() < probability;
   }
 
   /// 単打エラー判定（中継・返球ミス）。
   /// 単打が出た外野方向で、外野手の返球ミスにより打者が二塁まで進むケース。
   /// 二塁打エラーより低確率（クッション処理がなく長距離返球の機会も少ない）。
-  bool checkSingleError(int fielding, FieldPosition position) {
+  /// isForcedPlacement: 外野を「守れない」選手が強引配置されている場合 true（エラー率3倍）
+  bool checkSingleError(int fielding, FieldPosition position,
+      {bool isForcedPlacement = false}) {
     if (!position.isOutfield) return false;
     final fieldingDiff = fielding - 5;
     final fieldingModifier = fieldingDiff * _outfieldFieldingErrorModifier;
-    final probability =
+    var probability =
         (_baseSingleErrorRate - fieldingModifier).clamp(0.001, 0.02);
+    if (isForcedPlacement) probability *= _forcedPlacementErrorMultiplier;
     return _random.nextDouble() < probability;
   }
 

@@ -362,10 +362,12 @@ class PlayerGenerator {
   Player generateRookieFielder({
     required int number,
     RookieType type = RookieType.college,
+    List<DefensePosition>? forcedPositions,
   }) {
     final boost = _abilityBoostForRookieType(type);
     final potentialBonus = _potentialBonusForRookieType(type);
-    final positions = _r.pick(_rookieFieldingPatterns);
+    final List<DefensePosition> positions =
+        forcedPositions ?? _r.pick(_rookieFieldingPatterns);
     final fielding = <DefensePosition, int>{};
     // 1つ目（メイン）は若手平均、サブはやや低めにする
     for (int i = 0; i < positions.length; i++) {

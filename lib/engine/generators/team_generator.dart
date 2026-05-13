@@ -8,10 +8,14 @@ import 'player_generator.dart';
 /// - スタメン野手 8 (players[0..7]: 1〜8番。捕/一/二/三/遊/左/中/右)
 /// - 先発ローテ 6 (startingRotation、うち1人が試合ごとに players[8]=9番 に入る)
 /// - 救援投手 7 (bullpen: 中継6 + 抑え1)
-/// - 控え野手 8 (bench: 控え捕手2・内野UT3・外野UT2・万能UT1)
+/// - 控え野手 8 (bench: 控え捕手2・内野UT2・外野UT3・万能UT1)
 ///
 /// 捕手はチームに必ず 3 人（先発 1 + 控え 2）。捕手は専門性が高いポジション
 /// なので、自動生成時は他ポジションを兼任しない（チーム編集画面では制約なし）。
+///
+/// 開幕時に各ポジションを守れる選手の人数:
+///   捕手 3 / 一塁 3 / 二塁 3 / 三塁 3 / 遊撃 3 / 外野 7
+/// 試合中の代打・代走で控えを使っても、守備配置を回せるだけの厚みを確保。
 class TeamGenerator {
   final PlayerGenerator _playerGen;
   final Random _random;
@@ -140,12 +144,11 @@ class TeamGenerator {
       ));
     }
 
-    // 内野UT 3人（2〜3ポジション守れる）
+    // 内野UT 2人（2〜3ポジション守れる）
     // 1B/3B は守備イマイチでも務まる、2B/SS は守備が得意な選手の組み合わせが多い
     final infieldCombos = [
       [DefensePosition.first, DefensePosition.third],
       [DefensePosition.second, DefensePosition.shortstop],
-      [DefensePosition.second, DefensePosition.shortstop, DefensePosition.third],
     ];
     for (final combo in infieldCombos) {
       bench.add(_playerGen.generateBenchFielder(
@@ -154,10 +157,11 @@ class TeamGenerator {
       ));
     }
 
-    // 外野UT 2人
+    // 外野UT 3人（外野は試合中の主役で控えも厚くする）
     final outfieldCombos = [
       [DefensePosition.outfield],
       [DefensePosition.outfield, DefensePosition.first],
+      [DefensePosition.outfield, DefensePosition.third],
     ];
     for (final combo in outfieldCombos) {
       bench.add(_playerGen.generateBenchFielder(

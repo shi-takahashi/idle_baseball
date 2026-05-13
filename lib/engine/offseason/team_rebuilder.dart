@@ -18,10 +18,15 @@ import 'offseason_plan.dart';
 class TeamRebuilder {
   static const int retireFieldersPerTeam = 2;
   static const int retirePitchersPerTeam = 2;
-  static const int minPlayersPerPosition = 2;
 
   /// 引退候補に入る最低年齢（これ未満は能力が低くても引退しない）
   static const int minRetirementAge = 26;
+
+  /// 各ポジションで最低限守れる選手数（CPU 自動再編で必ず維持される）。
+  /// 外野は試合中 3 人配置するため厚めに必要。
+  /// この水準を割らないよう引退判定をブロックし、新人加入で不足ポジションを補う。
+  static int minPlayersForPosition(DefensePosition pos) =>
+      pos == DefensePosition.outfield ? 5 : 2;
 
   final PlayerGenerator playerGen;
 
@@ -247,7 +252,7 @@ class TeamRebuilder {
       bool wouldBreakConstraint = false;
       for (final pos in DefensePosition.values) {
         if (candidate.canPlay(pos)) {
-          if (canPlayCount[pos]! - 1 < minPlayersPerPosition) {
+          if (canPlayCount[pos]! - 1 < minPlayersForPosition(pos)) {
             wouldBreakConstraint = true;
             break;
           }
@@ -264,20 +269,47 @@ class TeamRebuilder {
       }
     }
 
-    // 引退者を新人野手と入れ替え。新人は自分独自の守備プロファイルを持つ
-    // （引退者のポジションは継承しない＝個性が出る）。
-    // スロット位置との整合性は LineupPlanner が吸収する：
-    // 守れない選手がスタメンスロットにいれば、ベンチから守れる選手が
-    // 自動的に昇格して新人がベンチに回る。
+    // 引退者を新人野手と入れ替え。各引退で減ったポジションが最低ラインを
+    // 下回るなら、新人はそのポジションを守れる選手として生成（補充重視）。
+    // それ以外の引退はランダム守備プロファイル（新人の個性を尊重）。
     for (final retiredPlayer in retiredPlayers) {
+      final shortage = _shortagePositionForRetiree(canPlayCount, retiredPlayer);
       final rookie = playerGen.generateRookieFielder(
         number: retiredPlayer.number,
         type: _pickCpuRookieType(),
+        forcedPositions: shortage == null ? null : [shortage],
       );
+      // 新人が守れる位置を canPlayCount に加算（次の新人選択の参照用）
+      for (final pos in DefensePosition.values) {
+        if (rookie.canPlay(pos)) canPlayCount[pos] = canPlayCount[pos]! + 1;
+      }
       _replacePlayerInTeam(team, retiredPlayer, rookie);
     }
 
     return retiredIds;
+  }
+
+  /// 引退者が守っていたポジションで、引退後に最低ラインを下回るものを返す。
+  /// 複数あれば外野を優先（最も枯渇しやすいため）、なければ null。
+  DefensePosition? _shortagePositionForRetiree(
+    Map<DefensePosition, int> currentCount,
+    Player retiredPlayer,
+  ) {
+    DefensePosition? best;
+    int bestDeficit = 0;
+    for (final pos in DefensePosition.values) {
+      if (!retiredPlayer.canPlay(pos)) continue;
+      final deficit = minPlayersForPosition(pos) - currentCount[pos]!;
+      if (deficit <= 0) continue;
+      // 外野不足を優先（試合中 3 人配置が必要なため）
+      final priority =
+          deficit * 10 + (pos == DefensePosition.outfield ? 1 : 0);
+      if (priority > bestDeficit) {
+        bestDeficit = priority;
+        best = pos;
+      }
+    }
+    return best;
   }
 
   // ---------------------------------------------------

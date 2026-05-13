@@ -843,10 +843,12 @@ class AtBatSimulator {
     required int? batterSpeed,
     required int? fielderArm,
     bool isLeftBatter = false,
+    bool isForcedPlacement = false,
   }) {
     // ゴロの場合、まずエラーチェック（内野のみ）
     if (fieldPosition != null && !fieldPosition.isOutfield) {
-      if (_errorSimulator.checkGroundBallError(fielding, fieldPosition)) {
+      if (_errorSimulator.checkGroundBallError(fielding, fieldPosition,
+          isForcedPlacement: isForcedPlacement)) {
         // エラー発生 → 打者出塁。捕球 / 送球の内訳を抽選（進塁ロジックは共通）。
         return InPlayResult(
           result: AtBatResultType.reachedOnError,
@@ -882,9 +884,11 @@ class AtBatSimulator {
   InPlayResult _determineDoubleResult({
     required FieldPosition? fieldPosition,
     required int fielding,
+    bool isForcedPlacement = false,
   }) {
     if (fieldPosition != null && fieldPosition.isOutfield) {
-      if (_errorSimulator.checkDoubleError(fielding, fieldPosition)) {
+      if (_errorSimulator.checkDoubleError(fielding, fieldPosition,
+          isForcedPlacement: isForcedPlacement)) {
         return InPlayResult(
           result: AtBatResultType.triple,
           fieldingError: FieldingError(
@@ -905,9 +909,11 @@ class AtBatSimulator {
   InPlayResult _determineSingleResult({
     required FieldPosition? fieldPosition,
     required int fielding,
+    bool isForcedPlacement = false,
   }) {
     if (fieldPosition != null && fieldPosition.isOutfield) {
-      if (_errorSimulator.checkSingleError(fielding, fieldPosition)) {
+      if (_errorSimulator.checkSingleError(fielding, fieldPosition,
+          isForcedPlacement: isForcedPlacement)) {
         return InPlayResult(
           result: AtBatResultType.double_,
           fieldingError: FieldingError(
@@ -947,6 +953,7 @@ class AtBatSimulator {
     double fatigue = 0.0,
     bool isPlatoonDisadvantage = false,
     bool isLeftBatter = false,
+    bool isFielderForcedPlacement = false,
   }) {
     final fieldingValue = fielding ?? _baseFielding;
     final leadValue = catcherLead ?? 5;
@@ -991,6 +998,7 @@ class AtBatSimulator {
             batterSpeed: batterSpeed,
             fielderArm: fielderArm,
             isLeftBatter: isLeftBatter,
+            isForcedPlacement: isFielderForcedPlacement,
           );
         case BattedBallType.flyBall:
           return const InPlayResult(result: AtBatResultType.flyOut);
@@ -1005,6 +1013,7 @@ class AtBatSimulator {
       return _determineSingleResult(
         fieldPosition: fieldPosition,
         fielding: fieldingValue,
+        isForcedPlacement: isFielderForcedPlacement,
       );
     }
 
@@ -1014,6 +1023,7 @@ class AtBatSimulator {
       return _determineDoubleResult(
         fieldPosition: fieldPosition,
         fielding: fieldingValue,
+        isForcedPlacement: isFielderForcedPlacement,
       );
     }
 
@@ -1116,6 +1126,9 @@ class AtBatSimulator {
     final batteryErrorScorers = <({Player runner, BatteryErrorType type})>[];
     // 捕手の守備力（パスボール判定に使用）
     final catcherFielding = catcher?.getFielding(DefensePosition.catcher) ?? 5;
+    // 捕手が「捕手を守れない」状態で強引配置されているか（エラー率3倍の対象）
+    final isCatcherForced =
+        catcher != null && !catcher.canPlay(DefensePosition.catcher);
 
     while (true) {
       // 盗塁失敗で3アウトになったら打席終了
@@ -1197,7 +1210,8 @@ class AtBatSimulator {
           );
         }
         // ワイルドピッチでなければパスボールチェック（捕手の守備力と球種に依存）
-        else if (_errorSimulator.checkPassedBall(catcherFielding, pitchType)) {
+        else if (_errorSimulator.checkPassedBall(catcherFielding, pitchType,
+            isForcedPlacement: isCatcherForced)) {
           final scorer = currentRunners.third;
           final errorResult = _errorSimulator.applyBatteryError(
             ErrorType.passedBall,
@@ -1780,6 +1794,9 @@ class AtBatSimulator {
         final fielding = pitchingTeam.getFieldingAt(pitch.fieldPosition!);
         final fielder = pitchingTeam.getFielder(pitch.fieldPosition!);
         final catcher = pitchingTeam.getFielder(FieldPosition.catcher);
+        final defPos = pitch.fieldPosition!.defensePosition;
+        final isFielderForced =
+            fielder != null && defPos != null && !fielder.canPlay(defPos);
         final inPlayResult = simulateInPlayResult(
           pitch.battedBallType!,
           speed,
@@ -1796,6 +1813,7 @@ class AtBatSimulator {
           fatigue: fatigue,
           isPlatoonDisadvantage: isPlatoonDisadvantage,
           isLeftBatter: isLeftBatter,
+          isFielderForcedPlacement: isFielderForced,
         );
         return AtBatEndCheckResult(
           result: inPlayResult.result,
