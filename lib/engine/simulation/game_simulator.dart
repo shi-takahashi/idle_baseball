@@ -226,6 +226,7 @@ class GameSimulator {
         currentBatter: currentBatterBeforePH,
         opposingPitcher: pitchingState.currentPitcher,
         random: _random,
+        hasReservePitcher: attackingTeamPitchingState.bullpen.isNotEmpty,
       );
       final phDecision = _fielderChangeStrategy.decidePinchHit(phContext);
       if (phDecision != null) {

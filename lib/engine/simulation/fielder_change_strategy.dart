@@ -23,6 +23,11 @@ class PinchHitContext {
   final Player opposingPitcher;
   final Random random;
 
+  /// 攻撃側チームのブルペンに次に投げられる投手が残っているか。
+  /// 投手代打（リリーフ投手 → 代打野手）は代打成立で投手が退場するため、
+  /// 残り投手が居ない場合は代打を送らない。
+  final bool hasReservePitcher;
+
   const PinchHitContext({
     required this.fieldingState,
     required this.inning,
@@ -35,9 +40,14 @@ class PinchHitContext {
     required this.currentBatter,
     required this.opposingPitcher,
     required this.random,
+    this.hasReservePitcher = true,
   });
 
   int get scoreDiff => myTeamScore - opponentScore;
+
+  /// 試合終了が確定する局面（延長12回裏）かどうか。
+  /// この局面では代打後に守備に就く必要が無いため、守備カバー要件を緩める。
+  bool get isFinalHalfInning => inning >= 12 && !isTop;
 }
 
 /// 代打の決定（攻撃面のみ）
@@ -87,6 +97,10 @@ class PinchRunContext {
   });
 
   int get scoreDiff => myTeamScore - opponentScore;
+
+  /// 試合終了が確定する局面（延長12回裏）かどうか。
+  /// この局面では代走後に守備に就く必要が無いため、守備カバー要件を緩める。
+  bool get isFinalHalfInning => inning >= 12 && !isTop;
 }
 
 /// 代走の決定（攻撃面のみ）
@@ -176,8 +190,16 @@ class SimpleFielderChangeStrategy implements FielderChangeStrategy {
     if (current.isPitcher &&
         current.reliefRole != null &&
         current.reliefRole != ReliefRole.closer) {
-      final reliefPh = _findReliefPinchHitter(ctx, current);
-      if (reliefPh != null) return reliefPh;
+      // 投手代打は投手交代を強制する。残り投手が居ない場合は送らない
+      // （ただし延長12回裏は試合終了確定なので投手枯渇を気にしない）。
+      if (!ctx.hasReservePitcher && !ctx.isFinalHalfInning) {
+        // 投手代打は不可。通常判定にフォールスルー（current は野手扱い）
+      } else {
+        final reliefPh = _findReliefPinchHitter(ctx, current);
+        if (reliefPh != null) {
+          return _filterByDefenseCoverage(ctx, reliefPh);
+        }
+      }
     }
 
     // 以降は通常判定: リードしている時は代打を送らない（点差守備に入る）
@@ -203,12 +225,62 @@ class SimpleFielderChangeStrategy implements FielderChangeStrategy {
     }
     if (best == null) return null;
 
-    return PinchHitDecision(
+    final decision = PinchHitDecision(
       hitter: best,
       outgoing: current,
       battingOrder: ctx.battingOrder,
       reason: '代打',
     );
+    return _filterByDefenseCoverage(ctx, decision);
+  }
+
+  /// 代打を送った場合に、outgoing の守備位置を誰かが守れるかチェック。
+  /// 守れる選手がどこにも居なければ代打を送らない。
+  /// 投手への代打は投手交代を強制するため、残り投手が居なければ送らない。
+  ///
+  /// 「守れる」の判定対象:
+  ///   - incoming (代打で入った選手) が直接守れる
+  ///   - 既存野手 (outgoing 以外) の誰かが守れる → スワップで埋められる
+  ///   - ベンチに守れる選手が居る → 守備固めで投入できる
+  ///
+  /// 主に「捕手の代打」で控え捕手がベンチに居ない場合に代打を抑止する。
+  /// 一塁・外野等は誰でも守りやすいので影響は小さい。
+  ///
+  /// 例外: 延長12回裏は試合終了確定なので守備カバーも投手枯渇も気にしない。
+  PinchHitDecision? _filterByDefenseCoverage(
+    PinchHitContext ctx,
+    PinchHitDecision decision,
+  ) {
+    if (ctx.isFinalHalfInning) return decision;
+
+    // 投手代打 → 投手交代を強制するため、残り投手が居なければ送らない
+    if (decision.outgoing.isPitcher && !ctx.hasReservePitcher) {
+      return null;
+    }
+
+    final state = ctx.fieldingState;
+    final outgoingPos = state.positionOf(decision.outgoing);
+    if (outgoingPos == null) return decision;
+    if (outgoingPos == FieldPosition.pitcher) return decision;
+    final defPos = outgoingPos.defensePosition;
+    if (defPos == null) return decision;
+
+    if (decision.hitter.canPlay(defPos)) return decision;
+
+    for (final entry in state.currentAlignment.entries) {
+      if (entry.key == outgoingPos) continue;
+      if (entry.key == FieldPosition.pitcher) continue;
+      if (entry.value.id == decision.outgoing.id) continue;
+      if (entry.value.canPlay(defPos)) return decision;
+    }
+
+    for (final b in state.bench) {
+      if (b.id == decision.hitter.id) continue;
+      if (b.isPitcher) continue;
+      if (b.canPlay(defPos)) return decision;
+    }
+
+    return null;
   }
 
   /// リリーフ投手（非クローザー）への代打候補を探す。
@@ -264,13 +336,50 @@ class SimpleFielderChangeStrategy implements FielderChangeStrategy {
     }
     if (best == null) return null;
 
-    return PinchRunDecision(
+    final decision = PinchRunDecision(
       runner: best,
       outgoing: ctx.runner,
       base: ctx.base,
       battingOrder: ctx.battingOrder,
       reason: '代走',
     );
+    return _filterPinchRunByDefenseCoverage(ctx, decision);
+  }
+
+  /// 代走を送った場合に、outgoing の守備位置を誰かが守れるかチェック。
+  /// 代打と同じく、捕手など専門ポジションの選手に代走を出した結果、
+  /// 守備が破綻するケースを防ぐ。
+  ///
+  /// 例外: 延長12回裏は試合終了確定なので守備カバー不要。
+  PinchRunDecision? _filterPinchRunByDefenseCoverage(
+    PinchRunContext ctx,
+    PinchRunDecision decision,
+  ) {
+    if (ctx.isFinalHalfInning) return decision;
+
+    final state = ctx.fieldingState;
+    final outgoingPos = state.positionOf(decision.outgoing);
+    if (outgoingPos == null) return decision;
+    if (outgoingPos == FieldPosition.pitcher) return decision;
+    final defPos = outgoingPos.defensePosition;
+    if (defPos == null) return decision;
+
+    if (decision.runner.canPlay(defPos)) return decision;
+
+    for (final entry in state.currentAlignment.entries) {
+      if (entry.key == outgoingPos) continue;
+      if (entry.key == FieldPosition.pitcher) continue;
+      if (entry.value.id == decision.outgoing.id) continue;
+      if (entry.value.canPlay(defPos)) return decision;
+    }
+
+    for (final b in state.bench) {
+      if (b.id == decision.runner.id) continue;
+      if (b.isPitcher) continue;
+      if (b.canPlay(defPos)) return decision;
+    }
+
+    return null;
   }
 }
 

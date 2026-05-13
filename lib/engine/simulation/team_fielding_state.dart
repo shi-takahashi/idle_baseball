@@ -239,16 +239,118 @@ class TeamFieldingState {
       }
     }
 
-    // ケース3: どうしても無理 → 強引に配置
+    // ケース2.5: 2段スワップ（A → B → C のローテーション）
+    // 単発スワップが組めない時、既存野手 2 人をローテして newcomer を埋める。
+    //   例: SS の打者に代打 N (SS 不可・2B 可) を送った
+    //       現 2B (F) は SS 不可、現 1B (G) が SS 可、F は 1B 可 →
+    //       SS ← G、 1B ← F、 2B ← N で全員が守れる位置に着く。
+    //
+    // 条件: F が vacant を守れる、F の元位置を G が守れる、G の元位置を newcomer が守れる。
+    for (final vacant in vacantPositions) {
+      final vacantDefPos = vacant.defensePosition;
+      if (vacantDefPos == null) continue;
+
+      var matched = false;
+      for (final fEntry in currentAlignment.entries.toList()) {
+        if (matched) break;
+        final fPos = fEntry.key;
+        final f = fEntry.value;
+        if (fPos == FieldPosition.pitcher) continue;
+        if (!f.canPlay(vacantDefPos)) continue;
+
+        final fDefPos = fPos.defensePosition;
+        if (fDefPos == null) continue;
+
+        for (final gEntry in currentAlignment.entries.toList()) {
+          final gPos = gEntry.key;
+          final g = gEntry.value;
+          if (gPos == FieldPosition.pitcher) continue;
+          if (gPos == fPos) continue;
+          if (!g.canPlay(fDefPos)) continue;
+
+          final gDefPos = gPos.defensePosition;
+          if (gDefPos == null) continue;
+          if (!newcomer.canPlay(gDefPos)) continue;
+
+          currentAlignment[vacant] = f;
+          currentAlignment[fPos] = g;
+          currentAlignment[gPos] = newcomer;
+          changes.add(DefensiveChange(
+            player: f,
+            fromPosition: fPos,
+            toPosition: vacant,
+          ));
+          changes.add(DefensiveChange(
+            player: g,
+            fromPosition: gPos,
+            toPosition: fPos,
+          ));
+          changes.add(DefensiveChange(
+            player: newcomer,
+            fromPosition: null,
+            toPosition: gPos,
+          ));
+          matched = true;
+          break;
+        }
+      }
+      if (matched) return vacant;
+    }
+
+    // ケース3: ベンチから「vacant を直接守れる選手」を呼んで投入し、
+    // newcomer は試合から退場させる（守備固めの代替）。
+    // newcomer は代打で打席を消費済みなので、退場しても攻撃面の損失は無い。
+    for (final vacant in vacantPositions) {
+      final defPos = vacant.defensePosition;
+      if (defPos == null) continue;
+      Player? reliever;
+      for (final b in bench) {
+        if (b.isPitcher) continue;
+        if (b.id == newcomer.id) continue;
+        if (b.canPlay(defPos)) {
+          reliever = b;
+          break;
+        }
+      }
+      if (reliever == null) continue;
+
+      final slot = currentLineup.indexWhere((p) => p.id == newcomer.id);
+      if (slot < 0) continue;
+
+      currentLineup[slot] = reliever;
+      bench.removeWhere((p) => p.id == reliever!.id);
+      if (!usedPlayers.any((p) => p.id == reliever!.id)) {
+        usedPlayers.add(reliever);
+      }
+      currentAlignment[vacant] = reliever;
+      changes.add(DefensiveChange(
+        player: reliever,
+        fromPosition: null,
+        toPosition: vacant,
+      ));
+      return vacant;
+    }
+
+    // ケース4: それでも埋まらない → 残った vacant のうち newcomer がまだ守れる
+    // 位置を優先的に選んで強引配置（守れる位置が無ければ守備力 1 で強行）。
     if (vacantPositions.isNotEmpty) {
-      final pos = vacantPositions.first;
-      currentAlignment[pos] = newcomer;
+      FieldPosition? chosen;
+      for (final pos in vacantPositions) {
+        final defPos = pos.defensePosition;
+        if (defPos == null) continue;
+        if (newcomer.canPlay(defPos)) {
+          chosen = pos;
+          break;
+        }
+      }
+      chosen ??= vacantPositions.first;
+      currentAlignment[chosen] = newcomer;
       changes.add(DefensiveChange(
         player: newcomer,
         fromPosition: null,
-        toPosition: pos,
+        toPosition: chosen,
       ));
-      return pos;
+      return chosen;
     }
 
     return null;

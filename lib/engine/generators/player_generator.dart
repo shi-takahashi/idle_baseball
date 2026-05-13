@@ -323,8 +323,12 @@ class PlayerGenerator {
   /// 新人の守備プロファイル候補（現実的な組み合わせ）。
   /// 1〜3 ポジションをランダムに抽選してその選手の個性とする。
   /// 引退者のポジションには連動させない（新人は新人で独立した個性を持つ）。
+  ///
+  /// 捕手は専門性が高いポジションなので、自動生成時は単独パターンのみ。
+  /// チーム編集画面では引き続き任意のポジションを兼任設定できる。
   static const _rookieFieldingPatterns = <List<DefensePosition>>[
     // スペシャリスト（1 ポジション）。外野は実数が多いので重複させて確率を上げる
+    [DefensePosition.catcher],
     [DefensePosition.catcher],
     [DefensePosition.first],
     [DefensePosition.second],
@@ -339,7 +343,6 @@ class PlayerGenerator {
     [DefensePosition.second, DefensePosition.third],
     [DefensePosition.first, DefensePosition.outfield],
     [DefensePosition.third, DefensePosition.outfield],
-    [DefensePosition.catcher, DefensePosition.first],
     // スーパーユーティリティ（3 ポジション）
     [DefensePosition.second, DefensePosition.shortstop, DefensePosition.third],
     [DefensePosition.first, DefensePosition.third, DefensePosition.outfield],
