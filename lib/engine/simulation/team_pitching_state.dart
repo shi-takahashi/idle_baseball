@@ -2,6 +2,7 @@ import '../models/at_bat_result.dart';
 import '../models/enums.dart';
 import '../models/pitcher_condition.dart';
 import '../models/player.dart';
+import 'pitcher_change_strategy.dart' show PitcherChangeDecision;
 
 /// 1チーム分の投手運用状態（可変）
 ///
@@ -47,6 +48,16 @@ class TeamPitchingState {
   /// 必ず交代が成立し、フィールドはリセットされる。
   String? pendingMandatoryChangeReason;
 
+  /// 次の守備イニング頭で実行する「予約交代」。
+  /// 攻撃中に投手の打席が回ってきた時点で、次の守備イニング頭の状況を
+  /// 仮想的に渡して `PitcherChangeStrategy.preview` を呼んだ結果を保存する。
+  /// 次の `decide` 呼出時に最優先で消費・実行されるので、次イニング頭で
+  /// 再判定は行わない（先読みフェーズで判定済みの内容をそのまま実行する）。
+  ///
+  /// 代打が送られて `pendingMandatoryChangeReason` がセットされた場合は
+  /// そちらが優先される（投手退場の方が強い制約のため）。
+  PitcherChangeDecision? plannedChange;
+
   TeamPitchingState({
     required this.currentPitcher,
     required this.condition,
@@ -65,6 +76,7 @@ class TeamPitchingState {
     hitsAllowedStreak = 0;
     onBaseStreak = 0;
     walksStreak = 0;
+    plannedChange = null;
   }
 
   /// 打席結果を反映して各指標を更新する

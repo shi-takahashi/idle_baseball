@@ -28,6 +28,13 @@ class PinchHitContext {
   /// 残り投手が居ない場合は代打を送らない。
   final bool hasReservePitcher;
 
+  /// 現打者が投手で、次の守備イニング頭で交代する予定かどうか（先読み結果）。
+  /// `game_simulator` が `PitcherChangeStrategy.preview` を仮想 context で
+  /// 呼んで判定し、戻り値が非 null ならここに true をセットする。
+  /// 「次回どうせ交代するなら、打席を消費する前に代打を送る」判定の入力。
+  /// 先発・クローザー含めて統一的に使う（投手ロール別の特別扱いは不要）。
+  final bool pitcherWillBePulledNextInning;
+
   const PinchHitContext({
     required this.fieldingState,
     required this.inning,
@@ -41,6 +48,7 @@ class PinchHitContext {
     required this.opposingPitcher,
     required this.random,
     this.hasReservePitcher = true,
+    this.pitcherWillBePulledNextInning = false,
   });
 
   int get scoreDiff => myTeamScore - opponentScore;
@@ -178,23 +186,20 @@ class SimpleFielderChangeStrategy implements FielderChangeStrategy {
     // 閾値を超えるので代打されず、そのまま打席に立つ。
     if (order >= 2 && order <= 4) return null;
 
-    // 特別判定: リリーフ投手（中継ぎ・セットアッパー等）に打席が回った場合は
-    // リード中でも代打を送る。次の守備イニングで投手交代するのが定石なので
-    // 「凡退ほぼ確定」の投手に打席を消費させるメリットが薄い。
+    // 特別判定: 投手が打席に立ち、かつ「次の守備イニング頭でどうせ交代する」と
+    // 先読みで判定されている場合、リード中でも代打を送る。
+    // 「凡退ほぼ確定」の投手に打席を消費させるメリットが薄いため。
     //
-    // 例外: 抑え（クローザー）は試合を締めくくる起用なので代打を送らない。
-    //       8 回途中に登板したクローザーをそのまま 9 回も投げさせるのが基本。
-    //
-    // 先発投手は対象外（スコアによっては続投の選択肢が残る。スコア差リードを
-    // 守る場面では既存の `scoreDiff > 0` 判定が代打を抑止する）。
-    if (current.isPitcher &&
-        current.reliefRole != null &&
-        current.reliefRole != ReliefRole.closer) {
+    // 先読みは `game_simulator` が `PitcherChangeStrategy.preview` を仮想 context
+    // で呼んで判定する。先発・リリーフ・クローザーで分け隔てない:
+    //   - 先発: 球数 100 や QS 崩壊で次回交代予定 → 代打
+    //   - リリーフ（非クローザー）: 25 球到達やイニング終了で次回交代予定 → 代打
+    //   - クローザー: 通常は続投予定なので preview が null を返す → 代打しない
+    //     （8 回途中から登板して 9 回まで投げきる運用が維持される）
+    if (current.isPitcher && ctx.pitcherWillBePulledNextInning) {
       // 投手代打は投手交代を強制する。残り投手が居ない場合は送らない
       // （ただし延長12回裏は試合終了確定なので投手枯渇を気にしない）。
-      if (!ctx.hasReservePitcher && !ctx.isFinalHalfInning) {
-        // 投手代打は不可。通常判定にフォールスルー（current は野手扱い）
-      } else {
+      if (ctx.hasReservePitcher || ctx.isFinalHalfInning) {
         final reliefPh = _findReliefPinchHitter(ctx, current);
         if (reliefPh != null) {
           return _filterByDefenseCoverage(ctx, reliefPh);
@@ -283,10 +288,10 @@ class SimpleFielderChangeStrategy implements FielderChangeStrategy {
     return null;
   }
 
-  /// リリーフ投手（非クローザー）への代打候補を探す。
+  /// 投手への代打候補を探す（先読みで「次回交代予定」と判定された投手向け）。
   /// 「ベンチに打撃が明確に上の野手がいれば送る」という単純判定。
-  /// 典型的なリリーフ投手の meet+power は 2-4、控え野手は 8-12 程度。
-  /// 大谷型の高打撃リリーフ（meet+power ≥ 10）の場合は自然と候補が見つからない。
+  /// 典型的な投手の meet+power は 2-4、控え野手は 8-12 程度。
+  /// 大谷型の高打撃投手（meet+power ≥ 10）の場合は自然と候補が見つからない。
   PinchHitDecision? _findReliefPinchHitter(
       PinchHitContext ctx, Player current) {
     final state = ctx.fieldingState;

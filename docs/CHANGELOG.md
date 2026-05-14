@@ -5,6 +5,94 @@
 
 ---
 
+## 2026-05-14 投手交代判定の前倒し（先読み代打）
+
+### 動機
+
+ユーザー指摘 — 7 回裏で 9 番打者（自チーム投手・藤田）に代打を送らず三振、
+直後の 8 回表頭で投手交代という采配が発生。代打を送らない理由が無いケース
+（次の守備で交代するなら、その前に代打を出して野手で 1 打席稼ぐべき）。
+
+藤田は先発投手で、7 回まで投げ切った時点の状態（球数・スコア差等）から
+「8 回頭で自動的に交代される」シナリオが確定していた。既存の代打ロジックは
+リリーフ非クローザーのみ「リード中でも代打」の特別判定があり、先発投手は
+通常判定（`scoreDiff > 0` で代打抑止）に従っていたため、リード時の先発代打が
+構造的にゼロになっていた。
+
+### 設計
+
+「新しい判定基準を追加」ではなく、**「既存の投手交代判定 (`decide()`) を
+前倒しで呼んで、結果が交代決定なら代打を送る + 次イニング頭の交代を予約」**
+という方針（ユーザー設計）。新しい閾値・スコアリングは導入しない。
+
+`PitcherChangeStrategy` に副作用なしの `preview()` を追加（`decide()` から
+状態変更ロジックを除いた純粋判定）。打席前に投手の打順が来た時、攻撃側の
+`PitcherChangeStrategy.preview` を「次の守備イニング頭の context」
+(`inning+1`, `outs=0`, `runners=empty`) で呼ぶ。戻り値が非 null（=交代する）なら:
+
+- `TeamPitchingState.plannedChange` に予約を保存
+- `PinchHitContext.pitcherWillBePulledNextInning = true` を渡して代打候補を選定
+
+次の守備イニング頭の `decide()` は `pendingMandatoryChangeReason` →
+`plannedChange` の順で最優先処理し、再判定は行わない（先読み済みの内容を
+そのまま実行）。
+
+### 変更
+
+- `engine/simulation/team_pitching_state.dart`:
+  - `plannedChange: PitcherChangeDecision?` フィールド追加
+  - `changePitcher()` でリセット
+- `engine/simulation/pitcher_change_strategy.dart`:
+  - 抽象メソッド `preview(context)` 追加（デフォルト実装は `decide()` を呼ぶ）
+  - `SimplePitcherChangeStrategy`: 判定本体を `_decideCore()` に切り出し、
+    `decide()` は副作用込み（フラグ消費）、`preview()` は副作用なしで
+    `_decideCore()` を共有
+  - `_decideCore()` で `pendingMandatoryChangeReason` の次に `plannedChange`
+    を最優先処理（ブルペンに当該投手が残っていることだけ確認）
+- `engine/simulation/fielder_change_strategy.dart`:
+  - `PinchHitContext.pitcherWillBePulledNextInning: bool` 追加
+  - `decidePinchHit` の「リリーフ非クローザー専用パス」を撤去し、
+    「投手 && `pitcherWillBePulledNextInning`」に統合。先発・クローザー含めて
+    統一的に判定（クローザーは通常 preview() が続投と返すので自然と除外される）
+- `engine/simulation/game_simulator.dart`:
+  - `_previewNextInningPull()` ヘルパー追加
+  - 打席前に投手の打順なら preview() で先読み → 予約と PinchHitContext のフラグを設定
+- `bin/measure_pinch_hit.dart`: 先発・リリーフのリード時 / 同点・負け時の
+  内訳を集計するよう拡張
+
+### 検証 (`bin/measure_pinch_hit.dart`、3 シーズン × 270 試合)
+
+| 投手代打の内訳 | 修正前 | 修正後 |
+|----------------|--------|--------|
+| 総代打数 | 1250 | 1407 (+157) |
+| 投手への代打 | 629 (50.3%) | 603 (42.9%) |
+| **先発投手 (合計)** | **73** | **91 (+18)** |
+| **先発投手 (リード時)** | **0** | **23 件** ← 藤田型を捕捉 |
+| 先発投手 (同点・負け) | 73 | 68 |
+| リリーフ非クローザー (合計) | 544 | 501 |
+| リリーフ非クローザー (リード時) | 134 | 81 |
+| クローザー | 12 | 11 |
+| クリーンアップ代打 | 0 | 0 ✓ |
+
+リード時の先発代打 0 → 23 件で、ユーザー指摘の「7 回完投予定の先発を代打せず
+8 回頭で自動交代」のケースが解消した。リリーフ非クローザーのリード時代打が
+減った（134 → 81）のは「まだ 1 イニング投げ切ってないリリーフは続投予定」
+が先読みで除外されたため（preview() が続投判定で null を返す） — これも
+合理的な挙動。
+
+JSON 永続化テスト (`bin/test_persist.dart`) も問題なし。`plannedChange` は
+試合中の一時状態なので JSON シリアライズの対象外。
+
+### ファイル
+
+- `lib/engine/simulation/team_pitching_state.dart`
+- `lib/engine/simulation/pitcher_change_strategy.dart`
+- `lib/engine/simulation/fielder_change_strategy.dart`
+- `lib/engine/simulation/game_simulator.dart`
+- `bin/measure_pinch_hit.dart`
+
+---
+
 ## 2026-05-11 投手編集時の走力 null 上書きバグ修正 + 走力スライダー追加
 
 ### 動機

@@ -16,6 +16,10 @@ void main() {
   int phForCloser = 0;
   int phForReliefNonCloser = 0;
   int phForStarter = 0;
+  int phForStarterLeading = 0;
+  int phForStarterTiedOrLosing = 0;
+  int phForReliefLeading = 0;
+  int phForReliefTiedOrLosing = 0;
   int phForPitcherLeading = 0;
   int phForPitcherTiedOrLosing = 0;
   int totalPh = 0;
@@ -48,15 +52,26 @@ void main() {
           if (order >= 0 && order < 9) phByOrder[order]++;
           if (fc.outgoing.isPitcher) {
             phForPitcher++;
+            final diff = battingScore - pitchingScore;
+            final leading = diff > 0;
             if (fc.outgoing.reliefRole == ReliefRole.closer) {
               phForCloser++;
             } else if (fc.outgoing.reliefRole != null) {
               phForReliefNonCloser++;
+              if (leading) {
+                phForReliefLeading++;
+              } else {
+                phForReliefTiedOrLosing++;
+              }
             } else {
               phForStarter++;
+              if (leading) {
+                phForStarterLeading++;
+              } else {
+                phForStarterTiedOrLosing++;
+              }
             }
-            final diff = battingScore - pitchingScore;
-            if (diff > 0) {
+            if (leading) {
               phForPitcherLeading++;
             } else {
               phForPitcherTiedOrLosing++;
@@ -100,12 +115,14 @@ void main() {
   print('===== 投手への代打の内訳 =====');
   print('  リリーフ（非クローザー）: $phForReliefNonCloser '
       '(${pct(phForReliefNonCloser, phForPitcher)})');
+  print('    リード時: $phForReliefLeading / 同点・負け: $phForReliefTiedOrLosing');
   print('  クローザー: $phForCloser (${pct(phForCloser, phForPitcher)})');
   print('  先発（reliefRole=null）: $phForStarter '
       '(${pct(phForStarter, phForPitcher)})');
+  print('    リード時: $phForStarterLeading / 同点・負け: $phForStarterTiedOrLosing');
   print('');
-  print('  攻撃側リード時: $phForPitcherLeading '
+  print('  攻撃側リード時 合計: $phForPitcherLeading '
       '(${pct(phForPitcherLeading, phForPitcher)})');
-  print('  攻撃側 同点 or ビハインド時: $phForPitcherTiedOrLosing '
+  print('  攻撃側 同点 or ビハインド時 合計: $phForPitcherTiedOrLosing '
       '(${pct(phForPitcherTiedOrLosing, phForPitcher)})');
 }

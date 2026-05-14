@@ -214,6 +214,29 @@ class GameSimulator {
       // 代打判断（打者前に評価）
       final currentBatterBeforePH =
           battingFieldingState.currentBatter(currentBattingOrder);
+
+      // 「次の守備イニング頭で投手を交代するか」を先読み判定する。
+      // 投手の打席が回ってきたタイミングだけ計算（無関係な打席で呼ばない）。
+      // 結果は PinchHitContext に渡して代打判断に使い、同時に
+      // attackingTeamPitchingState.plannedChange に予約として保存する。
+      // 次の守備イニング頭の `PitcherChangeStrategy.decide` は予約を最優先で
+      // 消費するので、再判定は行わずそのまま交代が実行される。
+      bool willPullNext = false;
+      if (currentBatterBeforePH.isPitcher) {
+        final lookahead = _previewNextInningPull(
+          inning: inning,
+          isTop: isTop,
+          attackingScore: opponentScoreAtStart + runs,
+          defendingScore: myTeamScore,
+          attackingTeam: battingFieldingState.originalTeam,
+          attackingPitchingState: attackingTeamPitchingState,
+        );
+        if (lookahead != null) {
+          attackingTeamPitchingState.plannedChange = lookahead;
+          willPullNext = true;
+        }
+      }
+
       final phContext = PinchHitContext(
         fieldingState: battingFieldingState,
         inning: inning,
@@ -227,6 +250,7 @@ class GameSimulator {
         opposingPitcher: pitchingState.currentPitcher,
         random: _random,
         hasReservePitcher: attackingTeamPitchingState.bullpen.isNotEmpty,
+        pitcherWillBePulledNextInning: willPullNext,
       );
       final phDecision = _fielderChangeStrategy.decidePinchHit(phContext);
       if (phDecision != null) {
@@ -629,6 +653,50 @@ class GameSimulator {
       ),
       nextBattingOrder: currentBattingOrder,
     );
+  }
+
+  /// 投手の打席が回ってきた時に、次の守備イニング頭で投手交代するかを先読み判定する。
+  ///
+  /// `PitcherChangeStrategy.preview` を「次の守備イニング頭の context」で呼ぶ:
+  ///   - inning, isTop は次の守備ハーフのもの
+  ///   - outs = 0, runners = empty（イニング頭の初期状態）
+  ///   - スコアは現時点のもの（攻撃中の打席前なので確定値）
+  ///
+  /// 戻り値が非 null なら、その PitcherChangeDecision がそのまま次の
+  /// 守備イニング頭で実行される（呼出側で `plannedChange` に保存する）。
+  PitcherChangeDecision? _previewNextInningPull({
+    required int inning,
+    required bool isTop,
+    required int attackingScore,
+    required int defendingScore,
+    required Team attackingTeam,
+    required TeamPitchingState attackingPitchingState,
+  }) {
+    // 攻撃側チームは次の守備ハーフでマウンドに立つ。
+    // 表 → 裏（同じ inning）、裏 → 表（inning + 1）。
+    final nextInning = isTop ? inning : inning + 1;
+    final nextIsTop = !isTop;
+    // 12回裏 → 試合終了なので、それ以降の予測は不要
+    if (nextInning > maxInnings) return null;
+
+    // 攻撃側チームの抑え情報（ブルペンに残っている場合のみ候補として渡す）
+    final closer = attackingTeam.closer;
+    final isCloserAvailable = closer != null &&
+        attackingPitchingState.bullpen.any((p) => p.id == closer.id);
+
+    final ctx = PitcherChangeContext(
+      pitchingState: attackingPitchingState,
+      inning: nextInning,
+      isTop: nextIsTop,
+      outs: 0,
+      myTeamScore: attackingScore, // 投手側 = 攻撃側 (次ハーフでは守る側)
+      opponentScore: defendingScore,
+      runners: BaseRunners.empty,
+      closer: isCloserAvailable ? closer : null,
+      batter: null, // 次の先頭打者は分かるがワンポイント判定はスキップで OK
+      random: _random,
+    );
+    return _pitcherChangeStrategy.preview(ctx);
   }
 
   /// 塁上のランナーごとに代走判定を行い、適用する

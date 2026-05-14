@@ -87,6 +87,15 @@ abstract class PitcherChangeStrategy {
   /// 現時点で投手交代すべきか判定する
   /// 交代しない場合は null を返す
   PitcherChangeDecision? decide(PitcherChangeContext context);
+
+  /// 副作用なしで「この context なら交代する判定になるか」を返す。
+  /// `decide` と同じロジックを使うが、`pendingMandatoryChangeReason` の
+  /// 消費・`plannedChange` の消費等の状態変更は行わない。
+  ///
+  /// 主な用途: 攻撃中に投手の打席が回ってきた時に「次の守備イニング頭で
+  /// 投手交代する予定か」を先読みして、代打判断に使う。
+  PitcherChangeDecision? preview(PitcherChangeContext context) =>
+      decide(context);
 }
 
 /// デフォルトの単純な戦略
@@ -130,13 +139,31 @@ class SimplePitcherChangeStrategy implements PitcherChangeStrategy {
 
   @override
   PitcherChangeDecision? decide(PitcherChangeContext context) {
+    final decision = _decideCore(context);
+    if (decision == null) return null;
+    // 副作用: 強制交代フラグと予約交代をどちらも消費する。
+    // どちらが採用されたかにかかわらず両方クリアして、二重実行を防ぐ。
+    final state = context.pitchingState;
+    state.pendingMandatoryChangeReason = null;
+    state.plannedChange = null;
+    return decision;
+  }
+
+  @override
+  PitcherChangeDecision? preview(PitcherChangeContext context) {
+    // 副作用なしで判定だけ行う。state は変更しない。
+    return _decideCore(context);
+  }
+
+  /// 純粋判定本体（state を読むだけで変更しない）。
+  /// `decide` と `preview` の共通実装。
+  PitcherChangeDecision? _decideCore(PitcherChangeContext context) {
     final state = context.pitchingState;
 
     // 強制交代（攻撃時に投手へ代打が送られた等）。
-    // 通常の交代条件より最優先で処理する。フラグは消費する。
+    // 通常の交代条件より最優先で処理する。
     final pendingReason = state.pendingMandatoryChangeReason;
     if (pendingReason != null) {
-      state.pendingMandatoryChangeReason = null;
       if (state.bullpen.isNotEmpty) {
         final newPitcher = _selectReliever(context);
         return PitcherChangeDecision(
@@ -145,6 +172,14 @@ class SimplePitcherChangeStrategy implements PitcherChangeStrategy {
         );
       }
       // ブルペン枯渇は通常起こり得ないが、起きた場合は現投手続投
+    }
+
+    // 予約交代（先読みフェーズで決定済み）。再判定せずそのまま実行する。
+    // ブルペンに該当投手が残っていることだけ確認する（理論上残っている）。
+    final planned = state.plannedChange;
+    if (planned != null &&
+        state.bullpen.any((p) => p.id == planned.newPitcher.id)) {
+      return planned;
     }
 
     // ブルペンに残っている投手がいなければ交代不可
