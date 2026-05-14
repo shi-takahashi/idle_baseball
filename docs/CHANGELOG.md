@@ -5,6 +5,75 @@
 
 ---
 
+## 2026-05-14 投手成績タブに「自責点」列を追加 + インヘリット失点バグ修正
+
+### 動機
+
+ユーザー要望 — 試合の投手成績タブに失点はあるが自責点列がない。シーズン集計
+（`PitcherSeasonStats.earnedRuns` → 防御率算出）では既に自責点を持っているので、
+試合単位の表示にも追加する。
+
+実装中に副次的なバグも判明: `pitching_stats.dart` の失点集計が
+`stat.runsAllowed += atBat.runsScored` で「現在の atBat の投手」に積んでいて、
+インヘリット走者（前任投手が出した走者）の失点が新投手にカウントされていた。
+シーズン集計（`season_aggregator.dart`）は `atBat.runsByPitcher` を使って
+責任投手別に正しく分配していたため、試合タブとシーズン集計で失点が乖離する
+可能性があった。
+
+### 変更
+
+- `_PitcherGameStats.earnedRuns` フィールド追加
+- 失点・自責点の集計を `atBat.runsByPitcher` / `atBat.earnedRunsByPitcher`
+  ベースに変更（責任投手別に分配）。バッテリーエラー由来の失点もこのマップに
+  含まれているので一元化される
+- テーブルに「自責点」列を追加（失点の右隣）
+
+### ファイル
+
+- `lib/widgets/pitching_stats.dart`
+
+---
+
+## 2026-05-14 打撃成績タブの打席結果表示を具体化（スコア詳細と統一）
+
+### 動機
+
+ユーザー指摘 — 打撃成績タブの打席結果が「ゴロ」「直球」「飛球」のような短縮
+表示で何ゴロ・どこのフライか分からない。特に「直球」は AtBatResultType.lineOut
+（ライナー）の意味だが、ストレートと混同しやすい。スコア詳細画面側では
+「遊ゴロ」「左フライ」のように打球方向込みで表示しているので、打撃成績タブも
+同じ表記に統一して欲しい。
+
+### 変更
+
+打席結果の表示ロジックを `lib/widgets/at_bat_result_label.dart` の
+`atBatResultDisplayName(AtBatResult)` に共通化。`score_board.dart` の
+`_getResultDisplayName` を削除し、`batting_stats.dart` の
+`_resultShortName(AtBatResultType)` も削除して両方が共通ヘルパーを呼ぶ形に。
+
+打撃成績タブでの表示が以下のように変わる:
+
+| 旧表記 | 新表記 |
+|--------|--------|
+| ゴロ | 遊ゴロ / 投ゴロ / 三ゴロ ... |
+| 直球 | 左ライナー / 中ライナー / 右ライナー |
+| 飛球 | 左フライ / 中フライ / 右フライ ... |
+| 安打 | 遊撃安 / 右翼安 / 中堅安 ... |
+| 内安 | 内野安打（fieldPosition があれば「投撃安」等） |
+| エラー | 遊エラー / 三エラー ... |
+| 三振 / 四球 / 死球 / 送りバント / 犠飛 / バント失敗 | 変更なし |
+
+「送りバント」も「バント」に短縮するか検討したが、ユーザー要望どおり
+そのまま表示する（混乱しないため）。
+
+### ファイル
+
+- `lib/widgets/at_bat_result_label.dart` （新規）
+- `lib/widgets/score_board.dart` — `_getResultDisplayName` を削除、import 追加
+- `lib/widgets/batting_stats.dart` — `_resultShortName` を削除、import 追加
+
+---
+
 ## 2026-05-14 投手交代判定の前倒し（先読み代打）
 
 ### 動機

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../engine/engine.dart';
+import 'at_bat_result_label.dart';
 
 /// 打撃成績ウィジェット
 class BattingStats extends StatelessWidget {
@@ -324,46 +325,9 @@ class BattingStats extends StatelessWidget {
     final inningIndex = inning - 1;
     if (inningIndex >= 0 && inningIndex < stat.inningResults.length) {
       final current = stat.inningResults[inningIndex];
-      final newResult = _resultShortName(atBat.result);
+      final newResult = atBatResultDisplayName(atBat);
       stat.inningResults[inningIndex] =
           (current == null || current.isEmpty) ? newResult : '$current, $newResult';
-    }
-  }
-
-  String _resultShortName(AtBatResultType result) {
-    switch (result) {
-      case AtBatResultType.strikeout:
-        return '三振';
-      case AtBatResultType.walk:
-        return '四球';
-      case AtBatResultType.hitByPitch:
-        return '死球';
-      case AtBatResultType.single:
-        return '安打';
-      case AtBatResultType.infieldHit:
-        return '内安';
-      case AtBatResultType.double_:
-        return '二塁打';
-      case AtBatResultType.triple:
-        return '三塁打';
-      case AtBatResultType.homeRun:
-        return '本塁打';
-      case AtBatResultType.groundOut:
-        return 'ゴロ';
-      case AtBatResultType.doublePlay:
-        return '併殺';
-      case AtBatResultType.flyOut:
-        return '飛球';
-      case AtBatResultType.lineOut:
-        return '直球';
-      case AtBatResultType.reachedOnError:
-        return 'エラー';
-      case AtBatResultType.sacrificeBunt:
-        return '送りバント';
-      case AtBatResultType.sacrificeFly:
-        return '犠飛';
-      case AtBatResultType.fieldersChoice:
-        return 'バント失敗';
     }
   }
 }

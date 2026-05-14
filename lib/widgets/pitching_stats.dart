@@ -104,6 +104,7 @@ class PitchingStats extends StatelessWidget {
         DataColumn(label: Text('奪三振', style: TextStyle(fontSize: 12))),
         DataColumn(label: Text('与四球', style: TextStyle(fontSize: 12))),
         DataColumn(label: Text('失点', style: TextStyle(fontSize: 12))),
+        DataColumn(label: Text('自責点', style: TextStyle(fontSize: 12))),
       ],
       rows: stats.map((stat) => _buildPitcherRow(stat)).toList(),
     );
@@ -120,6 +121,7 @@ class PitchingStats extends StatelessWidget {
         DataCell(Text('${stat.strikeouts}', style: const TextStyle(fontSize: 12))),
         DataCell(Text('${stat.walks}', style: const TextStyle(fontSize: 12))),
         DataCell(Text('${stat.runsAllowed}', style: const TextStyle(fontSize: 12))),
+        DataCell(Text('${stat.earnedRuns}', style: const TextStyle(fontSize: 12))),
       ],
     );
   }
@@ -194,9 +196,21 @@ class PitchingStats extends StatelessWidget {
           if (atBat.result == AtBatResultType.walk) {
             stat.walks++;
           }
+        }
 
-          // 失点（rbiCount はエラー出塁で 0 になるため runsScored を使う）
-          stat.runsAllowed += atBat.runsScored;
+        // 失点・自責点（責任投手別）
+        // インヘリット走者の失点は前任投手に計上されるので、現在の投手 (atBat.pitcher)
+        // ではなく atBat.runsByPitcher / earnedRunsByPitcher の責任投手別マップを使う。
+        // バッテリーエラー由来の失点もこのマップに含まれる。
+        for (final atBat in halfInning.atBats) {
+          for (final entry in atBat.runsByPitcher.entries) {
+            final s = statsMap[entry.key];
+            if (s != null) s.runsAllowed += entry.value;
+          }
+          for (final entry in atBat.earnedRunsByPitcher.entries) {
+            final s = statsMap[entry.key];
+            if (s != null) s.earnedRuns += entry.value;
+          }
         }
       }
     }
@@ -215,6 +229,7 @@ class _PitcherGameStats {
   int strikeouts = 0;
   int walks = 0;
   int runsAllowed = 0;
+  int earnedRuns = 0;
 
   _PitcherGameStats({required this.playerName});
 
