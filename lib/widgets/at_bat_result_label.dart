@@ -1,3 +1,4 @@
+import 'package:flutter/material.dart';
 import '../engine/models/at_bat_result.dart';
 import '../engine/models/enums.dart';
 
@@ -37,4 +38,23 @@ String atBatResultDisplayName(AtBatResult atBat) {
   }
 
   return atBat.result.displayName;
+}
+
+/// 打席結果のテキスト表示色。
+///
+/// 安打=緑 / 四球=青 / 死球=紫 / 失策出塁=赤 / アウト系=null（既定色のまま）。
+/// アウト（三振・ゴロ・フライ・ライナー・併殺・犠打・犠飛・バント失敗）は
+/// 大多数なので色を付けず、出塁系だけを色分けして見分けやすくする。
+Color? atBatResultTextColor(AtBatResultType type) {
+  if (type.isHit) return Colors.green.shade700;
+  switch (type) {
+    case AtBatResultType.walk:
+      return Colors.blue.shade700;
+    case AtBatResultType.hitByPitch:
+      return Colors.deepPurple.shade600;
+    case AtBatResultType.reachedOnError:
+      return Colors.red.shade600;
+    default:
+      return null;
+  }
 }

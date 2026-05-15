@@ -183,25 +183,25 @@ class BattingStats extends StatelessWidget {
     );
   }
 
-  Widget _buildResultCell(String? result, TextStyle baseStyle) {
-    if (result == null || result.isEmpty) {
+  Widget _buildResultCell(List<_InningEntry> entries, TextStyle baseStyle) {
+    if (entries.isEmpty) {
       return Text('', style: baseStyle);
     }
 
-    Color? textColor;
-    if (result.contains('安打') ||
-        result.contains('本塁打') ||
-        result.contains('二塁打') ||
-        result.contains('三塁打')) {
-      textColor = Colors.red;
-    } else if (result.contains('四球')) {
-      textColor = Colors.blue;
+    // 同一イニングに複数打席ある場合は「, 」区切り。打席ごとに色分けする
+    // （安打=緑 / 四球=青 / 死球=紫 / 失策出塁=赤 / アウト=既定色）。
+    final spans = <TextSpan>[];
+    for (int i = 0; i < entries.length; i++) {
+      if (i > 0) {
+        spans.add(TextSpan(text: ', ', style: baseStyle));
+      }
+      final color = atBatResultTextColor(entries[i].type);
+      spans.add(TextSpan(
+        text: entries[i].label,
+        style: baseStyle.copyWith(color: color ?? baseStyle.color),
+      ));
     }
-
-    return Text(
-      result,
-      style: baseStyle.copyWith(color: textColor ?? baseStyle.color),
-    );
+    return Text.rich(TextSpan(children: spans));
   }
 
   /// 打者行の一覧を構築する
@@ -348,12 +348,19 @@ class BattingStats extends StatelessWidget {
 
     final inningIndex = inning - 1;
     if (inningIndex >= 0 && inningIndex < stat.inningResults.length) {
-      final current = stat.inningResults[inningIndex];
-      final newResult = atBatResultDisplayName(atBat);
-      stat.inningResults[inningIndex] =
-          (current == null || current.isEmpty) ? newResult : '$current, $newResult';
+      stat.inningResults[inningIndex].add(
+        _InningEntry(atBatResultDisplayName(atBat), atBat.result),
+      );
     }
   }
+}
+
+/// イニング内の1打席分の結果（表示ラベルと結果タイプ）。
+/// タイプは色分けに使う。
+class _InningEntry {
+  final String label;
+  final AtBatResultType type;
+  const _InningEntry(this.label, this.type);
 }
 
 /// 1人の打者の試合成績（1つの出場分）
@@ -364,10 +371,12 @@ class _BatterGameStats {
   int rbi = 0;
   int strikeouts = 0;
   int walks = 0;
-  final List<String?> inningResults;
+  // イニングごとの打席結果（同一イニングに複数打席あればリストに追加）
+  final List<List<_InningEntry>> inningResults;
 
   _BatterGameStats(int inningCount)
-      : inningResults = List.filled(inningCount, null, growable: false);
+      : inningResults =
+            List.generate(inningCount, (_) => <_InningEntry>[], growable: false);
 }
 
 /// 打撃成績の1行分のデータ
