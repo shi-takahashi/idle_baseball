@@ -1245,7 +1245,13 @@ class AtBatSimulator {
       }
 
       // 3. 盗塁がある場合の処理
-      if (stealAttempts.isNotEmpty) {
+      // 盗塁が成立するのは投球がボール・見逃しストライク・空振りストライクの時のみ。
+      // ファール（走者は塁に戻る）・インプレー（打球で進塁が決まる）・死球（押し出し
+      // のみ）の球では走者は走らない／戻るため、盗塁は不成立として破棄する。
+      final stealResolvable = pitch.type == PitchResultType.ball ||
+          pitch.type == PitchResultType.strikeLooking ||
+          pitch.type == PitchResultType.strikeSwinging;
+      if (stealAttempts.isNotEmpty && stealResolvable) {
         final result = _resolveStealAndPitch(
           stealAttempts: stealAttempts,
           pitch: pitch,
@@ -1308,7 +1314,7 @@ class AtBatSimulator {
           );
         }
       } else {
-        // 盗塁なしの場合
+        // 盗塁なし、または投球がインプレー/ファール/死球で盗塁不成立
         pitches.add(pitch);
       }
 
