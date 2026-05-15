@@ -5,6 +5,52 @@
 
 ---
 
+## 2026-05-15 打撃成績タブに守備交代の新規出場選手を表示
+
+### 動機
+
+ユーザー指摘 — 代打（石井）が打席後に守備につかず、ベンチから別の選手（林）が
+その打順スロットを引き継いで守備についたケースで、打撃成績タブに林が表示されず、
+誰がそのスロットを守ったのか分からない。代打の下に「林 (二) 0打数0安打」のように
+出したい。
+
+### 原因
+
+`TeamFieldingState.reconcileAlignmentBeforeDefense`（ケース3）は、代打が守備に
+つけない時にベンチから野手を呼び、その代打の打順スロットを引き継がせて
+`DefensiveChange` を記録する。しかし `DefensiveChange` は打順スロット情報を
+持たず、`batting_stats.dart` の `_computeRows` は先発・代打代走（`fielderChanges`）・
+投手交代（`pitcherChanges`）からしか打者行を作っていなかったため、守備交代だけで
+入った選手は行が作られず非表示だった。
+
+### 変更
+
+- `DefensiveChange` に `battingOrder`（打順スロット 0-8、任意）を追加。JSON は
+  optional フィールドなので後方互換。
+- `team_fielding_state.dart`: `_battingSlotOf` ヘルパーを追加し、`_assignUnplaced`
+  内で生成する全 `DefensiveChange`（直接配置・スワップ・2 段スワップ・ベンチ
+  リリーバー・強引配置）に打順スロットを付与。
+- `batting_stats.dart` `_computeRows`: 守備ハーフ開始時の `defensiveChangesAtStart`
+  を走査し、`isNewOnField` かつ既知でない選手（= 代打本人ではなく、引き継いだ
+  別選手）を打者行（`FielderChangeType.defensiveReplacement` =「守備固め」バッジ）
+  として追加。二重追加防止に `knownIds` で先発・交代済み選手を管理。
+  `_SlotSub.outgoing` は守備交代の新規出場では不明なため nullable 化。
+
+### 検証
+
+- 5 シーズン分の試合を走査: 新規出場 `DefensiveChange` 1229 件すべてに打順
+  スロットが付与され、うち 684 件が「代打が守備につかず別選手が引き継いだ」
+  ケースで、従来は打撃成績タブに非表示だった行。
+- `dart analyze` クリーン、`bin/test_persist.dart`（JSON 往復）正常。
+
+### ファイル
+
+- `lib/engine/models/fielder_change.dart`
+- `lib/engine/simulation/team_fielding_state.dart`
+- `lib/widgets/batting_stats.dart`
+
+---
+
 ## 2026-05-15 単打時の走者進塁をリアル化（2塁走者の生還率分離 + フルカウント補正）
 
 ### 動機

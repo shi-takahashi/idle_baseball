@@ -71,6 +71,12 @@ class TeamFieldingState {
     return null;
   }
 
+  /// 選手が現在のラインナップで占めている打順スロット（0-8）。不在なら null。
+  int? _battingSlotOf(Player player) {
+    final i = currentLineup.indexWhere((p) => p.id == player.id);
+    return i < 0 ? null : i;
+  }
+
   /// 投手が交代した際の処理
   /// - 守備配置の投手位置を新投手で上書き
   /// - DH非採用のため、投手スロットに居る選手（前任投手 or 投手代打の PH）を
@@ -200,6 +206,7 @@ class TeamFieldingState {
           player: newcomer,
           fromPosition: null,
           toPosition: pos,
+          battingOrder: _battingSlotOf(newcomer),
         ));
         return pos;
       }
@@ -229,11 +236,13 @@ class TeamFieldingState {
           player: fielder,
           fromPosition: fielderPos,
           toPosition: vacant,
+          battingOrder: _battingSlotOf(fielder),
         ));
         changes.add(DefensiveChange(
           player: newcomer,
           fromPosition: null,
           toPosition: fielderPos,
+          battingOrder: _battingSlotOf(newcomer),
         ));
         return vacant;
       }
@@ -279,16 +288,19 @@ class TeamFieldingState {
             player: f,
             fromPosition: fPos,
             toPosition: vacant,
+            battingOrder: _battingSlotOf(f),
           ));
           changes.add(DefensiveChange(
             player: g,
             fromPosition: gPos,
             toPosition: fPos,
+            battingOrder: _battingSlotOf(g),
           ));
           changes.add(DefensiveChange(
             player: newcomer,
             fromPosition: null,
             toPosition: gPos,
+            battingOrder: _battingSlotOf(newcomer),
           ));
           matched = true;
           break;
@@ -327,6 +339,7 @@ class TeamFieldingState {
         player: reliever,
         fromPosition: null,
         toPosition: vacant,
+        battingOrder: _battingSlotOf(reliever),
       ));
       return vacant;
     }
@@ -349,6 +362,7 @@ class TeamFieldingState {
         player: newcomer,
         fromPosition: null,
         toPosition: chosen,
+        battingOrder: _battingSlotOf(newcomer),
       ));
       return chosen;
     }

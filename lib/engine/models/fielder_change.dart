@@ -106,10 +106,16 @@ class DefensiveChange {
   /// 移動後のポジション
   final FieldPosition toPosition;
 
+  /// この選手が入っている打順スロット（0-8、不明なら null）。
+  /// 代打が守備につかず別選手がその打順スロットを引き継いだケースを、
+  /// 打撃成績画面で打者行として表示するために使う。
+  final int? battingOrder;
+
   const DefensiveChange({
     required this.player,
     required this.fromPosition,
     required this.toPosition,
+    this.battingOrder,
   });
 
   /// ベンチから新規出場したかどうか
@@ -119,6 +125,7 @@ class DefensiveChange {
         'player': player.id,
         if (fromPosition != null) 'fromPosition': fromPosition!.name,
         'toPosition': toPosition.name,
+        if (battingOrder != null) 'battingOrder': battingOrder,
       };
 
   factory DefensiveChange.fromJson(
@@ -133,6 +140,7 @@ class DefensiveChange {
                 .firstWhere((p) => p.name == json['fromPosition']),
         toPosition: FieldPosition.values
             .firstWhere((p) => p.name == json['toPosition']),
+        battingOrder: json['battingOrder'] as int?,
       );
 
   @override

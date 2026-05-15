@@ -228,8 +228,12 @@ class BattingStats extends StatelessWidget {
     }
 
     // このチームのスロット交代を発生順に収集（表示の並び順用）
-    // 代打・代走（攻撃ハーフ）と、投手交代（守備ハーフ）の両方を含める
+    // 代打・代走（攻撃ハーフ）、投手交代・守備交代（守備ハーフ）をすべて含める
     final subs = <_SlotSub>[];
+
+    // 既に行として把握済みの選手 ID（先発 + 交代で入った選手）。
+    // 守備交代の新規出場者を二重に追加しないために使う。
+    final knownIds = <String>{for (final p in team.players.take(9)) p.id};
 
     // ハーフイニングを順番に進めながら、守備半ではスナップショット、攻撃半では退場処理
     for (final halfInning in gameResult.halfInnings) {
@@ -241,11 +245,27 @@ class BattingStats extends StatelessWidget {
         }
         // 2. ハーフ冒頭の状態をスナップショット
         snapshot();
-        // 3. このハーフで発生した投手交代を適用＆スナップショット
+        // 3. 代打などが守備につかず、ベンチから別選手がその打順スロットを
+        //    引き継いで守備についたケースを打者行として拾う。
+        //    （代打本人が守備につく場合は knownIds 済みなのでここでは追加しない）
+        for (final change in halfInning.defensiveChangesAtStart) {
+          if (!change.isNewOnField) continue;
+          if (change.battingOrder == null) continue;
+          if (knownIds.contains(change.player.id)) continue;
+          knownIds.add(change.player.id);
+          subs.add(_SlotSub(
+            battingOrder: change.battingOrder!,
+            outgoing: null,
+            incoming: change.player,
+            fielderType: FielderChangeType.defensiveReplacement,
+          ));
+        }
+        // 4. このハーフで発生した投手交代を適用＆スナップショット
         for (final pc in halfInning.pitcherChanges) {
           playerPos.remove(pc.oldPitcher.id);
           playerPos[pc.newPitcher.id] = FieldPosition.pitcher;
           snapshot();
+          knownIds.add(pc.newPitcher.id);
           subs.add(_SlotSub(
             battingOrder: pc.battingOrder,
             outgoing: pc.oldPitcher,
@@ -258,6 +278,7 @@ class BattingStats extends StatelessWidget {
         // 代打・代走で退場した選手を playerPos から除外（履歴に残さないため）
         for (final event in halfInning.fielderChanges) {
           playerPos.remove(event.outgoing.id);
+          knownIds.add(event.incoming.id);
           subs.add(_SlotSub(
             battingOrder: event.battingOrder,
             outgoing: event.outgoing,
@@ -367,10 +388,10 @@ class _BatterRow {
   });
 }
 
-/// 打順スロットの交代情報（代打・代走・投手交代を横断的に扱う）
+/// 打順スロットの交代情報（代打・代走・投手交代・守備交代を横断的に扱う）
 class _SlotSub {
   final int battingOrder;
-  final Player outgoing;
+  final Player? outgoing; // 守備交代の新規出場者では不明（null）
   final Player incoming;
   final FielderChangeType? fielderType; // nullの場合は投手交代
 
