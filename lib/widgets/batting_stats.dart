@@ -111,10 +111,13 @@ class BattingStats extends StatelessWidget {
   /// 選手列のセル（代替選手のインデント・種類バッジ含む）
   Widget _buildPlayerCell(_BatterRow row) {
     // 代替選手は名前の前に小さな種類ラベル
-    // - subType あり: 代打/代走/守備固めを表示
+    // - 守備交代の新規出場: 「守備」（代打が守備につかず引き継いだ選手）
+    // - その他 subType あり: 代打/代走を表示
     // - subType なしで starter でない: 投手交代（DH非採用）で入った投手
     String? subTypeLabel;
-    if (row.subType != null) {
+    if (row.subType == FielderChangeType.defensiveReplacement) {
+      subTypeLabel = '守備';
+    } else if (row.subType != null) {
       subTypeLabel = row.subType!.displayName;
     } else if (!row.isStarter) {
       subTypeLabel = '投手';

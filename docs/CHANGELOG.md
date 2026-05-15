@@ -32,9 +32,11 @@
   リリーバー・強引配置）に打順スロットを付与。
 - `batting_stats.dart` `_computeRows`: 守備ハーフ開始時の `defensiveChangesAtStart`
   を走査し、`isNewOnField` かつ既知でない選手（= 代打本人ではなく、引き継いだ
-  別選手）を打者行（`FielderChangeType.defensiveReplacement` =「守備固め」バッジ）
-  として追加。二重追加防止に `knownIds` で先発・交代済み選手を管理。
+  別選手）を打者行（`FielderChangeType.defensiveReplacement`）として追加。
+  二重追加防止に `knownIds` で先発・交代済み選手を管理。
   `_SlotSub.outgoing` は守備交代の新規出場では不明なため nullable 化。
+- バッジ表示は `_buildPlayerCell` で `defensiveReplacement` のみ「守備」と表示
+  （enum の `displayName`「守備固め」は将来の守備固め機能用にそのまま残す）。
 
 ### 検証
 
