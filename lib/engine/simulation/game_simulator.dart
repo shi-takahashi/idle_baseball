@@ -481,6 +481,11 @@ class GameSimulator {
       // バッテリーエラーによる得点を加算
       runs += atBatResult.batteryErrorRuns;
 
+      // フルカウント（3-2）で決着した打席は走者が投球と同時にスタートを切って
+      // いるため、単打での追加進塁が出やすい（3-2 は走者の自動スタートの定石）。
+      final (lastBalls, lastStrikes) = _countBeforeLastPitch(pitches);
+      final runnersStarted = lastBalls == 3 && lastStrikes == 2;
+
       // 走塁処理（打席結果による進塁、盗塁後のランナー状態を使用）
       final advanceResult = _advanceRunners(
         runners,
@@ -489,6 +494,7 @@ class GameSimulator {
         outs,
         fieldPosition: fieldPosition,
         pitchingTeam: pitchingTeamSnapshot,
+        runnersStarted: runnersStarted,
       );
 
       // 犠飛: 外野フライ + 3塁走者がタッチアップ生還 → 結果を sacrificeFly に上書き。
@@ -811,6 +817,46 @@ class GameSimulator {
     return _random.nextDouble() < _extraAdvanceProbability(speed);
   }
 
+  /// 単打で 2 塁走者がホームまで生還する確率。
+  /// 2 塁→本塁は単打でも過半数が生還できる（1 塁→3 塁より走りやすい）。
+  /// フルカウント（3-2）で走者がスタートを切っていた場合はさらに上がる。
+  double _secondToHomeOnSingleProb(int speed, {bool runnersStarted = false}) {
+    final base = runnersStarted ? 0.85 : 0.58;
+    return (base + (speed - 5) * 0.04).clamp(0.20, 0.97);
+  }
+
+  /// 単打で 1 塁走者が 3 塁まで進む確率（1 塁→3 塁の追加進塁）。
+  /// フルカウント（3-2）で走者がスタートを切っていた場合は大きく上がる。
+  double _firstToThirdOnSingleProb(int speed, {bool runnersStarted = false}) {
+    final base = runnersStarted ? 0.62 : 0.28;
+    return (base + (speed - 5) * 0.035).clamp(0.05, 0.92);
+  }
+
+  /// 打席の最後の投球が投じられた時点の（ボール, ストライク）カウントを返す。
+  /// フルカウント（3-2）判定に使用。
+  (int, int) _countBeforeLastPitch(List<PitchResult> pitches) {
+    int balls = 0;
+    int strikes = 0;
+    for (int i = 0; i < pitches.length - 1; i++) {
+      switch (pitches[i].type) {
+        case PitchResultType.ball:
+          balls++;
+          break;
+        case PitchResultType.strikeLooking:
+        case PitchResultType.strikeSwinging:
+          strikes++;
+          break;
+        case PitchResultType.foul:
+          if (strikes < 2) strikes++;
+          break;
+        case PitchResultType.inPlay:
+        case PitchResultType.hitByPitch:
+          break;
+      }
+    }
+    return (balls, strikes);
+  }
+
   /// 併殺成功率を計算（打者の走力と打席に基づく）
   /// 走力1: 94%, 走力5: 70%, 走力10: 40%
   /// 走力が高いほど併殺崩れが起きやすい
@@ -912,6 +958,7 @@ class GameSimulator {
     int outs, {
     FieldPosition? fieldPosition,
     Team? pitchingTeam,
+    bool runnersStarted = false,
   }) {
     switch (result) {
       case AtBatResultType.homeRun:
@@ -921,7 +968,8 @@ class GameSimulator {
       case AtBatResultType.double_:
         return _advanceOnDouble(runners, batter);
       case AtBatResultType.single:
-        return _advanceOnSingle(runners, batter);
+        return _advanceOnSingle(runners, batter,
+            runnersStarted: runnersStarted);
       case AtBatResultType.infieldHit:
         // 内野安打は打球が内野で処理されているため、走者の追加進塁は発生しない。
         return _advanceOnSingle(runners, batter, isInfieldHit: true);
@@ -1065,7 +1113,7 @@ class GameSimulator {
 
   /// 単打・内野安打時の走塁
   _RunnerAdvanceResult _advanceOnSingle(BaseRunners runners, Player batter,
-      {bool isInfieldHit = false}) {
+      {bool isInfieldHit = false, bool runnersStarted = false}) {
     final scorers = <Player>[];
     Player? newSecond;
     Player? newThird;
@@ -1073,22 +1121,29 @@ class GameSimulator {
     // 3塁ランナーはホーム
     if (runners.third != null) scorers.add(runners.third!);
 
-    // 2塁ランナー: 基本3塁、走力次第でホーム
-    // 内野安打は打球が内野で止まるため、2塁ランナーのホーム生還は発生しない
+    // 2塁ランナー: 単打なら過半数がホームへ生還、残りは3塁止まり。
+    // 内野安打は打球が内野で止まるため、2塁ランナーのホーム生還は発生しない。
     if (runners.second != null) {
-      if (!isInfieldHit && _shouldExtraAdvance(runners.second!)) {
+      final speed = runners.second!.speed ?? 5;
+      if (!isInfieldHit &&
+          _random.nextDouble() <
+              _secondToHomeOnSingleProb(speed,
+                  runnersStarted: runnersStarted)) {
         scorers.add(runners.second!);
       } else {
         newThird = runners.second;
       }
     }
 
-    // 1塁ランナー: 基本2塁、走力次第で3塁（3塁が空いている場合のみ）
-    // 内野安打では追加進塁は発生しない（1塁→3塁は物理的に困難）
+    // 1塁ランナー: 基本2塁、走力・カウント次第で3塁（3塁が空いている場合のみ）。
+    // 内野安打では追加進塁は発生しない（1塁→3塁は物理的に困難）。
     if (runners.first != null) {
+      final speed = runners.first!.speed ?? 5;
       if (!isInfieldHit &&
           newThird == null &&
-          _shouldExtraAdvance(runners.first!)) {
+          _random.nextDouble() <
+              _firstToThirdOnSingleProb(speed,
+                  runnersStarted: runnersStarted)) {
         newThird = runners.first;
       } else {
         newSecond = runners.first;
