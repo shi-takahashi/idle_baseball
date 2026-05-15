@@ -168,6 +168,7 @@ class _TeamStatsScreenState extends State<TeamStatsScreen>
         DataColumn(label: _Hd('盗')),
         DataColumn(label: _Hd('四球')),
         DataColumn(label: _Hd('三振')),
+        DataColumn(label: _Hd('犠打')),
         DataColumn(label: _Hd('出塁')),
         DataColumn(label: _Hd('長打')),
         DataColumn(label: _Hd('OPS')),
@@ -187,6 +188,8 @@ class _TeamStatsScreenState extends State<TeamStatsScreen>
             _Cell.num(b.stolenBases),
             _Cell.num(b.walks),
             _Cell.num(b.strikeouts),
+            // 犠打 = 送りバント成功 + 犠飛 の合算
+            _Cell.num(b.sacrificeBunts + b.sacFlies),
             _Cell.rate(b.onBasePct),
             _Cell.rate(b.sluggingPct),
             _Cell.rate(b.ops),

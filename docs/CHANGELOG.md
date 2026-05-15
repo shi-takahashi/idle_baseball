@@ -5,6 +5,30 @@
 
 ---
 
+## 2026-05-15 犠打（送りバント + 犠飛）の列を UI に追加
+
+### 動機
+
+ユーザー要望 — 犠打・犠飛は `BatterSeasonStats.sacrificeBunts` / `sacFlies` で
+集計・永続化されているが UI に一切表示されていなかった。チーム成績画面と
+試合の打撃成績タブに表示したい。送りバント成功と犠飛を合算した 1 列「犠打」
+として出す（ユーザー指定）。
+
+### 変更
+
+- `team_stats_screen.dart`: 打撃タブの各選手行に「犠打」列を追加（三振の右、
+  出塁の左）。値は `sacrificeBunts + sacFlies`。
+- `batting_stats.dart`: 試合の打撃成績タブに「犠打」列を追加（四球の右、
+  イニング別の左）。`_BatterGameStats.sacrifices` カウンタを追加し、`_accumulate`
+  で犠飛・送りバントの打席を加算。
+
+### ファイル
+
+- `lib/screens/team_stats_screen.dart`
+- `lib/widgets/batting_stats.dart`
+
+---
+
 ## 2026-05-15 打撃成績タブの打席結果の色分け修正
 
 ### 動機

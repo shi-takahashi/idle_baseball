@@ -101,6 +101,7 @@ class BattingStats extends StatelessWidget {
         const DataColumn(label: Text('打点', style: TextStyle(fontSize: 11))),
         const DataColumn(label: Text('三振', style: TextStyle(fontSize: 11))),
         const DataColumn(label: Text('四球', style: TextStyle(fontSize: 11))),
+        const DataColumn(label: Text('犠打', style: TextStyle(fontSize: 11))),
         for (int i = 1; i <= inningCount; i++)
           DataColumn(label: Text('$i回', style: const TextStyle(fontSize: 11))),
       ],
@@ -177,6 +178,7 @@ class BattingStats extends StatelessWidget {
         DataCell(Text('${stat.rbi}', style: nameStyle)),
         DataCell(Text('${stat.strikeouts}', style: nameStyle)),
         DataCell(Text('${stat.walks}', style: nameStyle)),
+        DataCell(Text('${stat.sacrifices}', style: nameStyle)),
         ...List.generate(inningCount,
             (i) => DataCell(_buildResultCell(stat.inningResults[i], nameStyle))),
       ],
@@ -345,6 +347,7 @@ class BattingStats extends StatelessWidget {
     stat.rbi += atBat.rbiCount;
     if (atBat.result == AtBatResultType.strikeout) stat.strikeouts++;
     if (isWalk) stat.walks++;
+    if (isSacFly || isSacBunt) stat.sacrifices++;
 
     final inningIndex = inning - 1;
     if (inningIndex >= 0 && inningIndex < stat.inningResults.length) {
@@ -371,6 +374,7 @@ class _BatterGameStats {
   int rbi = 0;
   int strikeouts = 0;
   int walks = 0;
+  int sacrifices = 0; // 犠打（送りバント成功 + 犠飛 の合算）
   // イニングごとの打席結果（同一イニングに複数打席あればリストに追加）
   final List<List<_InningEntry>> inningResults;
 
