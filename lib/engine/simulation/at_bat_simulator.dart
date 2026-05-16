@@ -144,8 +144,11 @@ class AtBatSimulator {
   // インプレー時の結果確率（球速145km、制球力5基準）
   static const double _baseProbOut = 0.70;
   static const double _baseProbSingle = 0.20;
-  static const double _baseProbDouble = 0.05;
-  static const double _baseProbTriple = 0.01;
+  // 二塁打を引き上げ・三塁打を引き下げ（2026-05-16 微調整）。
+  // 旧 0.05 / 0.01 では 143試合換算 二塁打189・三塁打48 で、三塁打が NPB の
+  // 約2倍・二塁打:三塁打が 3.9:1（NPB ~10:1）と乖離していた。
+  static const double _baseProbDouble = 0.058;
+  static const double _baseProbTriple = 0.004;
   // 本塁打確率は残り
 
   // 基準球種パラメータ（この値で基本効果）
@@ -797,7 +800,7 @@ class AtBatSimulator {
             .clamp(0.002, 0.18);
     final probTriple =
         (_baseProbTriple + tripleModifier + pitchXbhModifier * 0.3 + fatigueXbhIncrease * 0.3)
-            .clamp(0.005, 0.04);
+            .clamp(0.0025, 0.025);
     final probDouble =
         (_baseProbDouble + doubleModifier + pitchXbhModifier * 0.5 + fatigueXbhIncrease * 0.5)
             .clamp(0.02, 0.15);
