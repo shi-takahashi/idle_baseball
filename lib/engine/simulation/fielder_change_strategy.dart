@@ -169,7 +169,6 @@ class SimpleFielderChangeStrategy implements FielderChangeStrategy {
   PinchHitDecision? decidePinchHit(PinchHitContext ctx) {
     final state = ctx.fieldingState;
     if (state.bench.isEmpty) return null;
-    if (ctx.inning < minInningForPinchHit) return null;
 
     final current = ctx.currentBatter;
     final order = ctx.battingOrder;
@@ -190,6 +189,11 @@ class SimpleFielderChangeStrategy implements FielderChangeStrategy {
     // 先読みで判定されている場合、リード中でも代打を送る。
     // 「凡退ほぼ確定」の投手に打席を消費させるメリットが薄いため。
     //
+    // この判定は通常の代打（7回以降・ビハインド時）とは別軸なので、
+    // `minInningForPinchHit`・リード状況の制限を受けない。先読みで「次回どうせ
+    // 交代」と分かった以上、6回でも代打を送らないと「代打しないのに次回頭で
+    // 交代」という采配の一貫性のなさが出てしまう（イニング制限より前で判定）。
+    //
     // 先読みは `game_simulator` が `PitcherChangeStrategy.preview` を仮想 context
     // で呼んで判定する。先発・リリーフ・クローザーで分け隔てない:
     //   - 先発: 球数 100 や QS 崩壊で次回交代予定 → 代打
@@ -207,7 +211,11 @@ class SimpleFielderChangeStrategy implements FielderChangeStrategy {
       }
     }
 
-    // 以降は通常判定: リードしている時は代打を送らない（点差守備に入る）
+    // ---- 以降は通常の能力ベース判定 ----
+    // 7回以降・ビハインド時のみ。投手交代の先読み判定はここまでに済んでいる。
+    if (ctx.inning < minInningForPinchHit) return null;
+
+    // リードしている時は代打を送らない（点差守備に入る）
     if (ctx.scoreDiff > 0) return null;
 
     // 通常の能力ベース判定。
