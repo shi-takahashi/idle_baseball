@@ -3,10 +3,31 @@ import '../models/models.dart';
 import 'name_data.dart';
 import 'random_utils.dart';
 
+/// 守備位置による打撃・走力傾向のオフセット。
+///
+/// 能力値生成時の **平均（mean）に加算** し、標準偏差（sd 1.5）は変えない。
+/// これにより「一塁手はだいたい長打あり鈍足」という傾向は明確に出るが、
+/// ハードな分岐ではないので、分布の裾で例外（大型遊撃手・打てる捕手）が
+/// 数%の確率で自然に発生する。
+class _PositionalProfile {
+  final double meet;
+  final double power;
+  final double speed;
+  final double arm;
+  const _PositionalProfile({
+    this.meet = 0,
+    this.power = 0,
+    this.speed = 0,
+    this.arm = 0,
+  });
+}
+
 /// 選手を自動生成する
 ///
 /// - 名前は苗字＋名前のランダム組み合わせで、同一ジェネレーター内では重複しない
 /// - 能力値は平均5・標準偏差1.5の正規分布で1〜10にクリップ
+/// - 守備位置ごとに打撃・走力の平均をオフセット（[_profileForPosition]）。
+///   一三塁＝長打型、二遊＝俊足型、捕手＝打撃控えめ、外野＝3型を抽選。
 /// - ポテンシャル（[Player.potentials] / [Player.potentialFielding] /
 ///   [Player.potentialAverageSpeed]）は生成時に確定し、加齢成長時の上限となる
 class PlayerGenerator {
@@ -201,6 +222,50 @@ class PlayerGenerator {
     );
   }
 
+  /// 守備位置ごとの打撃・走力傾向を返す。
+  ///
+  /// - 一塁: 長距離砲・鈍足
+  /// - 三塁: 強打＋強肩
+  /// - 二塁: 巧打俊足・長打少なめ
+  /// - 遊撃: 守備の要・強肩・長打少なめ
+  /// - 捕手: 打撃控えめ・強肩・鈍足
+  /// - 外野: 強打型 / 守備型 / 中距離型 を抽選（[_rollOutfieldProfile]）
+  _PositionalProfile _profileForPosition(DefensePosition pos) {
+    switch (pos) {
+      case DefensePosition.first:
+        return const _PositionalProfile(
+            power: 1.5, speed: -2.0, meet: 0.5, arm: -0.5);
+      case DefensePosition.third:
+        return const _PositionalProfile(power: 1.0, speed: -1.0, arm: 1.0);
+      case DefensePosition.second:
+        return const _PositionalProfile(power: -1.0, speed: 1.5, meet: 0.5);
+      case DefensePosition.shortstop:
+        return const _PositionalProfile(power: -1.0, speed: 1.5, arm: 1.0);
+      case DefensePosition.catcher:
+        return const _PositionalProfile(
+            power: -1.0, speed: -2.0, meet: -0.5, arm: 1.0);
+      case DefensePosition.outfield:
+        return _rollOutfieldProfile();
+    }
+  }
+
+  /// 外野手の型を抽選する。
+  /// 強打型 40% / 守備型 35% / 中距離型 25%。
+  /// 外野は LF/CF/RF を区別しない作りなので、生成時に1回だけ型を引いて個性とする。
+  _PositionalProfile _rollOutfieldProfile() {
+    final roll = _r.random.nextDouble();
+    if (roll < 0.40) {
+      // 強打型: 長打を期待される代わりにやや足が落ちる
+      return const _PositionalProfile(power: 1.0, speed: -0.5);
+    }
+    if (roll < 0.75) {
+      // 守備型: 広い守備範囲と強肩、長打は控えめ
+      return const _PositionalProfile(power: -0.5, speed: 1.5, arm: 1.0);
+    }
+    // 中距離型: 平均的（オフセットなし）
+    return const _PositionalProfile();
+  }
+
   /// スタメン野手（専任ポジション1つだけ守れる、守備力高め）
   Player generateStarterFielder({
     required int number,
@@ -209,11 +274,12 @@ class PlayerGenerator {
     final fielding = {
       primaryPosition: _r.normalInt(mean: 6.5, sd: 1.5),
     };
-    final meet = _r.normalInt();
-    final power = _r.normalInt();
-    final speed = _r.normalInt();
+    final profile = _profileForPosition(primaryPosition);
+    final meet = _r.normalInt(mean: 5.0 + profile.meet);
+    final power = _r.normalInt(mean: 5.0 + profile.power);
+    final speed = _r.normalInt(mean: 5.0 + profile.speed);
     final eye = _r.normalInt();
-    final arm = _r.normalInt();
+    final arm = _r.normalInt(mean: 5.0 + profile.arm);
     final lead =
         primaryPosition == DefensePosition.catcher ? _r.normalInt() : null;
     return Player(
@@ -251,11 +317,13 @@ class PlayerGenerator {
     for (final pos in positions) {
       fielding[pos] = _r.normalInt(mean: 4.5, sd: 1.5);
     }
-    final meet = _r.normalInt(mean: 4.5);
-    final power = _r.normalInt(mean: 4.5);
-    final speed = _r.normalInt();
+    // 守備傾向は主ポジション（positions の先頭）で決める
+    final profile = _profileForPosition(positions.first);
+    final meet = _r.normalInt(mean: 4.5 + profile.meet);
+    final power = _r.normalInt(mean: 4.5 + profile.power);
+    final speed = _r.normalInt(mean: 5.0 + profile.speed);
     final eye = _r.normalInt();
-    final arm = _r.normalInt();
+    final arm = _r.normalInt(mean: 5.0 + profile.arm);
     final lead =
         positions.contains(DefensePosition.catcher) ? _r.normalInt() : null;
     return Player(
@@ -375,11 +443,13 @@ class PlayerGenerator {
       final mean = (i == 0 ? 5.5 : 4.5) + boost;
       fielding[positions[i]] = _r.normalInt(mean: mean, sd: 1.5);
     }
-    final meet = _r.normalInt(mean: 5.0 + boost, sd: 1.8);
-    final power = _r.normalInt(mean: 5.0 + boost, sd: 1.8);
-    final speed = _r.normalInt(mean: 5.5 + boost, sd: 1.5);
+    // 守備傾向は主ポジション（positions の先頭）で決める
+    final profile = _profileForPosition(positions.first);
+    final meet = _r.normalInt(mean: 5.0 + boost + profile.meet, sd: 1.8);
+    final power = _r.normalInt(mean: 5.0 + boost + profile.power, sd: 1.8);
+    final speed = _r.normalInt(mean: 5.5 + boost + profile.speed, sd: 1.5);
     final eye = _r.normalInt(mean: 4.5 + boost, sd: 1.5);
-    final arm = _r.normalInt(mean: 5.0 + boost);
+    final arm = _r.normalInt(mean: 5.0 + boost + profile.arm);
     final lead = positions.contains(DefensePosition.catcher)
         ? _r.normalInt(mean: 5.0 + boost)
         : null;
