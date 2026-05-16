@@ -504,6 +504,13 @@ class GameSimulator {
         resultType = AtBatResultType.sacrificeFly;
       }
 
+      // 1,2塁の三・遊ゴロで守備が先頭走者（2塁走者）を3塁で封殺 → 打者は
+      // 1塁セーフ。結果を groundOut → fieldersChoice（野選）に書き換える。
+      if (resultType == AtBatResultType.groundOut &&
+          advanceResult.wasGroundOutFieldersChoice) {
+        resultType = AtBatResultType.fieldersChoice;
+      }
+
       final runsScored = advanceResult.runsScored;
       runs += runsScored;
       // 打点が付かないケース（NPB 公式記録規則）:
@@ -978,7 +985,7 @@ class GameSimulator {
         // 死球も四球と同じく押し出しのみで進塁。
         return _advanceOnWalk(runners, batter);
       case AtBatResultType.groundOut:
-        return _advanceOnGroundOut(runners, outs);
+        return _advanceOnGroundOut(runners, outs, batter, fieldPosition);
       case AtBatResultType.doublePlay:
         return _advanceOnDoublePlay(runners, outs);
       case AtBatResultType.flyOut:
@@ -1185,20 +1192,92 @@ class GameSimulator {
   }
 
   /// ゴロアウト時の走塁
-  _RunnerAdvanceResult _advanceOnGroundOut(BaseRunners runners, int outs) {
+  ///
+  /// 2塁走者の3塁進塁は打球方向と1塁走者の有無で挙動が変わる:
+  ///  - 1塁走者なし（フォースなし）: 一・二・投・捕ゴロ（前方の打球）は野手の
+  ///    前を横切らずに走れるため高確率で進塁、三・遊ゴロは野手が三塁側にいる
+  ///    ため基本ステイ（高いバウンドや三遊間でサードが出るケースのみ進塁）。
+  ///  - 1塁走者あり（フォース）: 2塁走者は強制的に3塁へ。三・遊ゴロでは守備が
+  ///    先頭走者（2塁走者）を狙って3塁へ送球することがあり、封殺成立なら打者は
+  ///    1塁セーフ。呼び出し側で結果が groundOut → fieldersChoice に書き換わる。
+  _RunnerAdvanceResult _advanceOnGroundOut(
+    BaseRunners runners,
+    int outs,
+    Player batter,
+    FieldPosition? fieldPosition,
+  ) {
     // 2アウト時は3アウトチェンジ、走者進塁なし
     if (outs >= 2) {
       return const _RunnerAdvanceResult(newRunners: BaseRunners.empty);
     }
 
-    // 0-1アウト: 走者進塁
+    // 3塁走者はゴロで生還（前進守備でなければ通常生還する）
     final scorers = <Player>[];
     if (runners.third != null) scorers.add(runners.third!);
 
+    // 三・遊ゴロ（三塁側の打球）かどうか
+    final isLeftSide = fieldPosition == FieldPosition.third ||
+        fieldPosition == FieldPosition.shortstop;
+
+    // --- フォース局面（1塁走者あり）---
+    if (runners.first != null) {
+      // 1,2塁の三・遊ゴロ（3塁は空き）では、守備が先頭走者を狙って3塁送球
+      // することがある。封殺成立 → 打者1塁セーフの野選（fieldersChoice）。
+      if (isLeftSide &&
+          runners.second != null &&
+          runners.third == null &&
+          _random.nextDouble() < _forceOutAtThirdProb(runners.second!)) {
+        return _RunnerAdvanceResult(
+          newRunners: BaseRunners(first: batter, second: runners.first),
+          additionalOuts: 1, // 2塁走者が3塁で封殺
+          wasGroundOutFieldersChoice: true,
+        );
+      }
+      // それ以外は通常のゴロアウト（打者アウト・全走者が1つ進塁）
+      return _RunnerAdvanceResult(
+        newRunners: BaseRunners(second: runners.first, third: runners.second),
+        scoringRunners: scorers,
+      );
+    }
+
+    // --- フォースなし（1塁走者なし）---
+    // 2塁走者は打球方向しだいで3塁へ進むかステイ。
+    if (runners.second != null) {
+      final advance = _random.nextDouble() <
+          _secondRunnerGroundOutAdvanceProb(runners.second!, isLeftSide);
+      return _RunnerAdvanceResult(
+        newRunners: advance
+            ? BaseRunners(third: runners.second)
+            : BaseRunners(second: runners.second),
+        scoringRunners: scorers,
+      );
+    }
+
+    // 2塁走者なし（3塁走者の生還のみ、いれば）
     return _RunnerAdvanceResult(
-      newRunners: BaseRunners(second: runners.first, third: runners.second),
+      newRunners: BaseRunners.empty,
       scoringRunners: scorers,
     );
+  }
+
+  /// 1塁走者なしのゴロアウトで、2塁走者が3塁へ進塁する確率。
+  /// 一・二・投・捕ゴロ（前方の打球）は高確率、三・遊ゴロ（三塁側の打球）は
+  /// 野手が走路の前にいるため基本ステイ。走力でわずかに前後する。
+  double _secondRunnerGroundOutAdvanceProb(Player runner, bool isLeftSide) {
+    final speed = runner.speed ?? 5;
+    if (isLeftSide) {
+      // 三・遊ゴロ: 基本ステイ。高いバウンド・三遊間の打球のみ進塁できる。
+      return (0.15 + (speed - 5) * 0.03).clamp(0.05, 0.45);
+    }
+    // 一・二・投・捕ゴロ: 高確率で進塁。強い打球ではステイになることもある。
+    return (0.85 + (speed - 5) * 0.03).clamp(0.55, 0.97);
+  }
+
+  /// フォース局面（1,2塁）の三・遊ゴロで、2塁走者が3塁で封殺される確率。
+  /// 守備が先頭走者を狙う度合い。鈍足ほど刺されやすい。
+  double _forceOutAtThirdProb(Player runner) {
+    final speed = runner.speed ?? 5;
+    return (0.45 - (speed - 5) * 0.07).clamp(0.10, 0.75);
   }
 
   /// 併殺打時の走塁
@@ -1426,12 +1505,17 @@ class _RunnerAdvanceResult {
   /// 呼び出し側で打席結果を flyOut → sacrificeFly に書き換えるためのフラグ。
   final bool wasSacrificeFly;
 
+  /// 1,2塁の三・遊ゴロで2塁走者が3塁で封殺され、打者が1塁セーフになったケース。
+  /// 呼び出し側で打席結果を groundOut → fieldersChoice に書き換えるためのフラグ。
+  final bool wasGroundOutFieldersChoice;
+
   const _RunnerAdvanceResult({
     required this.newRunners,
     this.additionalOuts = 0,
     this.tagUps = const [],
     this.scoringRunners = const [],
     this.wasSacrificeFly = false,
+    this.wasGroundOutFieldersChoice = false,
   });
 
   int get runsScored => scoringRunners.length;

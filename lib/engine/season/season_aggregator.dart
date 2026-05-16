@@ -404,6 +404,10 @@ class SeasonAggregator {
     if (!ab.isIncomplete) {
       if (ab.result.isOut) {
         outs = ab.result.isDoublePlay ? 2 : 1;
+      } else if (ab.result == AtBatResultType.fieldersChoice) {
+        // 野選（バント失敗・三遊ゴロの3塁封殺）は打者が1塁セーフだが
+        // 先頭走者が1つアウトになっている。
+        outs = 1;
       }
       if (ab.tagUps != null) {
         for (final tu in ab.tagUps!) {

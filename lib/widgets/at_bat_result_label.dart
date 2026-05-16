@@ -32,6 +32,9 @@ String atBatResultDisplayName(AtBatResult atBat) {
         return '本塁打';
       case AtBatResultType.reachedOnError:
         return '$posShortエラー'; // 「遊エラー」「三エラー」
+      case AtBatResultType.fieldersChoice:
+        // バント失敗はそのまま、三遊ゴロの3塁封殺は「三ゴロ野選」等で表示。
+        return atBat.isBunt ? 'バント失敗' : '$posShortゴロ野選';
       default:
         return atBat.result.displayName;
     }

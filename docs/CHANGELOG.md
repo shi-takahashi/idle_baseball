@@ -5,6 +5,64 @@
 
 ---
 
+## 2026-05-16 内野ゴロアウト時の2塁走者進塁を打球方向で分岐
+
+### 動機
+
+ユーザー指摘 — 斎藤が三ゴロを打った打席で、2塁ランナーが3塁へ進塁していた。
+三・遊ゴロは野手が三塁側にいるため2塁走者は基本ステイ。一律で「2塁走者 → 3塁」
+としていた `_advanceOnGroundOut` が打球方向を考慮していなかった。
+
+### 設計（現実の内野ゴロ時の2塁走者）
+
+- **1塁走者なし（フォースなし）**:
+  - 一・二・投・捕ゴロ（前方の打球）→ ゴロと判断した瞬間にスタートでき、
+    高確率で3塁進塁（打球が強いとステイもある）
+  - 三・遊ゴロ（三塁側の打球）→ 野手が走路の前にいるため**基本ステイ**
+    （高いバウンド・三遊間でサードが出るケースのみ進塁）
+- **1塁走者あり（フォース）**:
+  - 2塁走者は押し出される形で3塁へ強制スタート
+  - 三・遊ゴロでは守備が先頭走者を狙って3塁送球することがあり、**3塁で封殺**
+    される。封殺成立時は打者が1塁セーフ（野選）
+
+### 変更
+
+`_advanceOnGroundOut(runners, outs)` → `(runners, outs, batter, fieldPosition)`:
+
+- フォースなし + 2塁走者あり: `_secondRunnerGroundOutAdvanceProb` で進塁判定。
+  一二投捕ゴロ base 0.85 / 三遊ゴロ base 0.15、走力で ±0.03/pt。
+- フォース（1,2塁・3塁空き）+ 三遊ゴロ: `_forceOutAtThirdProb`（base 0.45、
+  鈍足ほど刺されやすい）で封殺判定。成立時は `wasGroundOutFieldersChoice`
+  フラグを立て、呼び出し側が `groundOut` → `fieldersChoice` に書き換え。
+  打者は1塁セーフ、1塁走者 → 2塁、2塁走者は3塁で封殺（`additionalOuts: 1`）。
+- `fieldersChoice` は enum 名そのまま流用（バント失敗と同じ「先頭走者OUT・
+  打者1塁SAFE」の意味）。表示は `isBunt` で出し分け:
+  バント由来 → 「バント失敗」、ゴロ由来 → 「三ゴロ野選」「遊ゴロ野選」。
+- `season_aggregator._outsInAtBat`: `fieldersChoice` を1アウトとして計上
+  （`isOut` が false のため従来カウント漏れ。バント失敗の投球回にも影響して
+  いた既存バグの修正を兼ねる）。
+
+### 検証 (`bin/measure_groundout_advance.dart`、3シーズン)
+
+| ケース | 結果 | 期待 |
+|--------|------|------|
+| 1塁走者なし・一二投捕ゴロの2塁走者3塁進塁 | 82.5% (85/103) | ~85% |
+| 1塁走者なし・三遊ゴロの2塁走者3塁進塁 | 14.8% (13/88) | ~15% |
+| フォース三遊ゴロの3塁封殺（野選化） | 40.0% (6/15) | ~45% |
+| 非バント野選が三遊以外で発生 | 0 ✓ | 0 |
+| 非バント野選が1,2塁以外で発生 | 0 ✓ | 0 |
+
+`test_season` / `test_persist` / `test_bunt` / `test_game` 回帰なし。
+
+### ファイル
+
+- `lib/engine/simulation/game_simulator.dart`
+- `lib/engine/season/season_aggregator.dart`
+- `lib/widgets/at_bat_result_label.dart`
+- `bin/measure_groundout_advance.dart`（新規）
+
+---
+
 ## 2026-05-15 犠打（送りバント + 犠飛）の列を UI に追加
 
 ### 動機
