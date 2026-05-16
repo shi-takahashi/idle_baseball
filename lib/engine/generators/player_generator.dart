@@ -97,13 +97,14 @@ class PlayerGenerator {
     int? ageOverride,
     RookieType? rookieType,
   }) {
-    // 球速: NPB 平均の 147 km/h を中心に正規分布（sd=5）
-    // - 147 km/h ≒ 1〜10 能力での 5、160 km/h ≒ 10（数年に一人レベル）
-    // - 生成時 clamp 130〜160（編集 UI のみ最大 165 まで設定可、生成では出ない）
+    // 球速: NPB 平均の 147 km/h を中心に正規分布（sd=3）
+    // - 自動生成は「だいたい 140〜155 km/h」に収まるよう sd を絞り clamp [139,156]。
+    //   現代プロに 140 km/h 未満は稀、常時 160 km/h 超もほぼいないため。
+    // - 140 未満 / 156 超の特殊な投手は編集 UI（最大 165 km/h）からのみ作成可能。
     // - abilityBoost 1 ポイントごとに +2 km/h（抑え・エースは速い）
     final speedMean = 147.0 + abilityBoost * 2.0;
     final avgSpeed =
-        (speedMean + _r.nextGaussian() * 5.0).round().clamp(130, 160);
+        (speedMean + _r.nextGaussian() * 3.0).round().clamp(139, 156);
 
     // スタミナ: 先発は高め、救援は低め
     // minStamina が指定された場合は下限として作用
