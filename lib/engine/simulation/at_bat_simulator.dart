@@ -285,10 +285,15 @@ class AtBatSimulator {
   static const double _platoonOutModifier = 0.02; // インプレー時のアウト率 +2%
   static const double _platoonBallModifier = -0.015; // ボール率 -1.5%（制球しやすい）
 
-  // === 左打者の一塁ベース近さによる補正 ===
-  // 左打者は一塁に近い位置から走れるため、内野安打が増える
+  // === 左右の打席による内野安打補正 ===
+  // 左打者は一塁に近い位置から走れるため内野安打が増える。
+  // 旧実装は左に ×1.15 のみだったが、左打者が1・2塁方向へ引っ張る（その方向は
+  // 内野安打になりにくい）効果と相殺して、実測で左右ほぼ同率になっていた。
+  // そこで左に強めの加点・右に減点を入れ、ネットで左/右 ≒ 1.35倍（実測）に
+  // しつつ、リーグ全体の内野安打数は維持する（左 ×1.40 / 右 ×0.89）。
   // （併殺率の補正は GameSimulator 側で適用）
-  static const double _leftBatterInfieldHitMultiplier = 1.15; // 内野安打率 ×1.15
+  static const double _leftBatterInfieldHitFactor = 1.40;
+  static const double _rightBatterInfieldHitFactor = 0.89;
 
   late final ErrorSimulator _errorSimulator;
 
@@ -719,14 +724,16 @@ class AtBatSimulator {
     // 肩5で1.0、肩10で0.85、肩1で1.12
     final armModifier = 1.0 - (arm - 5) * 0.03;
 
-    // 左打者は一塁に近いため内野安打になりやすい
-    final leftBatterBonus = isLeftBatter ? _leftBatterInfieldHitMultiplier : 1.0;
+    // 左打者は一塁に近いため内野安打になりやすく、右打者はその逆。
+    final handednessFactor = isLeftBatter
+        ? _leftBatterInfieldHitFactor
+        : _rightBatterInfieldHitFactor;
 
     return (baseProbability *
             directionModifier *
             fieldingModifier *
             armModifier *
-            leftBatterBonus)
+            handednessFactor)
         .clamp(0.0, 0.30);
   }
 
