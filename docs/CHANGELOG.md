@@ -5,6 +5,132 @@
 
 ---
 
+## 2026-05-17 選手編集が保存済み作戦に反映されないバグ修正
+
+### 動機
+
+ユーザー指摘 — 選手編集画面である選手を「ミート5 / 長打9 / 選球眼5 / 走力5」に
+編集して 150 試合したのに、打率 .179・本塁打 6 本。長打9 なら 40 本前後のはずで、
+明らかに編集が試合に効いていない。
+
+「同じシーズン内では反映されず、次シーズンになると反映される」という挙動。
+原因は **2 か所**あり、両方とも自チームの選手編集だけで発生した。
+
+### 原因 1: エンジン側 — `updatePlayer` が作戦を更新しない
+
+`SeasonController.updatePlayer` は同 id の Player を各 `Team` のリスト
+（`players` / `startingRotation` / `bullpen` / `bench` / `defenseAlignment`）に
+in-place で差し替えていたが、**保存済みの作戦 `_myStrategy`（NextGameStrategy）
+内の Player 参照を差し替えていなかった**。自チームの試合は `_applyMyStrategy`
+が `strategy.fullLineup` から編成するため、編集後も旧能力の Player が残った。
+
+### 原因 2: UI 側 — 作戦画面が古い Player をキャッシュし再 commit する
+
+`StrategyScreen` は画面ロード時に `_slots`（`_Slot.player`）へ Player を
+キャッシュする。`_onControllerNotify` は **日付が変わった時だけ** `_slots` を
+リロードしていたため、選手編集（日付は変わらない）では `_slots` が古い Player
+を保持し続けた。「試合開始」/「早送り」を押すと `_buildStrategyFromForm` が
+その古い `_slots` から `NextGameStrategy` を組み立て `setMyStrategy` で commit —
+**原因 1 で直したはずの `_myStrategy` を再び旧データで上書き**していた。
+
+次シーズンに切り替わると `currentDay` が変わって `_loadFromCurrent` が走り、
+`_slots` が更新済みの controller から読み直されるため「次シーズンには反映
+されている」ように見えた。
+
+CPU チームは作戦を持たず `_withGameLineup` が `team.players` から編成するため、
+このバグは**自チームの選手を編集したときだけ**発生した。
+
+### 変更
+
+エンジン側:
+- `updatePlayer` に `_myStrategy` 内の Player も差し替える処理を追加
+  （`_replacePlayerInStrategy`）。`NextGameStrategy` は final フィールドなので
+  同 id の選手を差し替えた新インスタンスを構築して再代入する。
+
+UI 側（`StrategyScreen`）:
+- `_onControllerNotify` で、日付が変わらない通知でも `_refreshSlotPlayers` を
+  呼び、`_slots` / `_initialSlots` 内の Player を controller の最新インスタンスに
+  id で引き直す（スロット順・守備位置は維持）。
+- `_buildStrategyFromForm` で commit 時にも各選手を `findPlayerById` で引き直す
+  （通知のタイミングに依存しない保険）。
+
+### 検証
+
+- `bin/test_edit_with_strategy.dart`（新規）— 作戦を保存した状態で打順内の
+  野手を「長打9」に編集 → 150 試合: 作戦内 power が 9 に差し替わり、編集選手は
+  150試合 / 719打席 / 本塁打 **38**・打率 .262（修正前は 6 本前後）。
+- regression: `test_strategy` / `test_persist` / `test_edit_player` すべて pass。
+
+### ファイル
+
+- `lib/engine/season/season_controller.dart` — `updatePlayer` に `_myStrategy`
+  差し替えを追加、`_replacePlayerInStrategy` ヘルパーを新設。
+- `lib/screens/strategy_screen.dart` — `_refreshSlotPlayers` を新設、
+  `_onControllerNotify` / `_buildStrategyFromForm` を最新 Player 引き直しに対応。
+- `bin/test_edit_with_strategy.dart` — 作戦保存状態での編集反映を検証する新スクリプト。
+
+---
+
+## 2026-05-17 長打力 → 本塁打カーブの非線形化（パラメータの影響を強化）
+
+### 動機
+
+ユーザー指摘 — パラメータよりランダム性が優って見える。例として、150 試合で
+長打力 9 の打者が 22 本、長打力 4 の打者が 16 本と差がほとんど出ていない。
+「長打力 9 なら 40 本、長打力 4 で 2 桁本塁打は多すぎる」という基準。
+
+### 原因
+
+`_calculateInPlayProbabilities` の本塁打確率が **長打力 1pt あたり一律 +0.015 の
+線形補正**（`probHomeRun = 0.025 + (power-5)*0.015 + …`）。上下の差が小さく、
+さらに球種・疲労の被長打率補正（ストレート +0.02 等）が長打力に関係なく一律
+加算されるため、弱打者にも本塁打の「下駄」が乗っていた。
+
+### 計測（修正前、6シーズン×150試合、規定打席到達者の平均 HR）
+
+| power | 4 | 5 | 6 | 7 | 8 | 9 | 10 |
+|-------|---|---|---|---|---|---|----|
+| HR    | 8.9 | 13.2 | 18.0 | 24.0 | 24.9 | 28.3 | 33.0 |
+
+power7〜10 がほぼ横ばいで、上位の長距離砲が体感できなかった。
+
+### 変更
+
+- 線形補正を廃止し、**長打力ごとの非線形（上に凸）テーブル** `_powerHomeRunBase`
+  を導入。下位（1〜4）は本塁打をほぼ出さず、上位（8〜10）を強く引き離す。
+- 球種・疲労の被長打率補正を **長打力に比例**させてから加算（`xbhPowerFactor =
+  sqrt(base / base[5])`）。弱打者はストレートでも柵越えしにくく、強打者ほど
+  甘い球を仕留める。
+- クランプを `[0.002, 0.18]` → `[0.0005, 0.24]` に拡張（上下のレンジを確保）。
+
+### 計測（修正後、14シーズン×150試合、規定打席到達者の平均 HR）
+
+| power | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 |
+|-------|---|---|---|---|---|---|---|---|---|----|
+| HR    | 2.0 | 3.0 | 3.8 | 6.6 | 11.2 | 19.4 | 26.1 | 34.9 | 40.4 | 49.3 |
+
+power9 が 40 本前後、power4 は 1 桁前半に着地。上下の差が約 6 倍に開いた。
+
+### リーグ全体への影響（NPB 水準を維持）
+
+凸カーブは平均を押し上げる（Jensen）ため、テーブルの中〜上位を抑え目に調整し、
+リーグ全体が NPB 水準を超えないことを確認:
+
+| 指標 | 修正前 | 修正後 | NPB 目安 |
+|------|--------|--------|----------|
+| 本塁打（143試合換算） | 141 | 135 | ~110-130 |
+| 長打率 | .411 | .389 | ~.380 |
+| OPS | .737 | .713 | ~.700 |
+
+### ファイル
+
+- `lib/engine/simulation/at_bat_simulator.dart` — `_powerHomeRunModifier`（線形）
+  を削除、`_powerHomeRunBase`（テーブル）を追加。`_calculateInPlayProbabilities`
+  の `probHomeRun` 算出を書き換え。
+- `bin/measure_power_hr.dart` — 長打力ごとの HR を 150 試合換算で計測する新スクリプト。
+
+---
+
 ## 2026-05-16 守備位置による能力傾向のパターン化
 
 ### 動機

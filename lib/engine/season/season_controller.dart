@@ -332,7 +332,33 @@ class SeasonController {
     if (bs != null) bs.player = updated;
     final ps = _aggregator.pitcherStats[updated.id];
     if (ps != null) ps.player = updated;
+    // 保存済みの作戦（NextGameStrategy）内の Player 参照も差し替える。
+    // strategy の lineup / alignment は Team とは別に Player を保持しており、
+    // 自チームの試合は `_applyMyStrategy` が `strategy.fullLineup` から編成する。
+    // ここを差し替えないと、編集した選手が自チームの試合で旧能力のまま
+    // シミュレートされる（UI には新能力が出るのに成績に反映されない）。
+    final strategy = _myStrategy;
+    if (strategy != null) {
+      _myStrategy = _replacePlayerInStrategy(strategy, updated);
+    }
     _notify();
+  }
+
+  /// [strategy] 内の同 id の Player を [updated] に差し替えた新しい
+  /// [NextGameStrategy] を返す。該当選手がいなければ [strategy] をそのまま返す。
+  NextGameStrategy _replacePlayerInStrategy(
+      NextGameStrategy strategy, Player updated) {
+    final inLineup = strategy.lineup.any((p) => p.id == updated.id);
+    if (!inLineup) return strategy;
+    return NextGameStrategy(
+      lineup: [
+        for (final p in strategy.lineup) p.id == updated.id ? updated : p,
+      ],
+      alignment: {
+        for (final e in strategy.alignment.entries)
+          e.key: e.value.id == updated.id ? updated : e.value,
+      },
+    );
   }
 
   /// チームの基本情報（名前 / 略称 / カラー）を編集する。

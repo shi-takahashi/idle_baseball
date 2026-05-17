@@ -120,10 +120,31 @@ class AtBatSimulator {
   static const int _basePower = 5;
 
   // 長打力1あたりの補正率
-  static const double _powerHomeRunModifier = 0.015; // ホームラン確率補正（大きく影響）
   static const double _powerDoubleModifier = 0.005; // 二塁打確率補正
   static const double _powerTripleModifier = 0.002; // 三塁打確率補正
   static const double _powerSingleModifier = 0.003; // 単打確率補正（打球速度で少し増）
+
+  // 長打力ごとの本塁打基本確率（インプレー時・正規化前・球種/疲労補正前）
+  //
+  // 旧実装は長打力1ptあたり一律 +0.015 の線形補正だったが、power7〜10 の差が
+  // 体感できない（randomness が parameter を上回って見える）という指摘を受け、
+  // 上に凸の非線形カーブへ変更。下位（1〜4）は本塁打をほぼ出さず、
+  // 上位（8〜10）を強く引き離す。
+  // 6シーズン×150試合の計測で 規定打席到達者の平均 HR が概ね次の水準になるよう調整:
+  //   power4≈6 / power5≈12 / power7≈25 / power8≈31 / power9≈39 / power10≈48
+  // （リーグ全体の HR/SLG が NPB 水準を超えない範囲で、上下を最大限引き離す）
+  static const Map<int, double> _powerHomeRunBase = {
+    1: 0.0015,
+    2: 0.0025,
+    3: 0.0042,
+    4: 0.0085,
+    5: 0.0210,
+    6: 0.0390,
+    7: 0.0590,
+    8: 0.0840,
+    9: 0.1080,
+    10: 0.1250,
+  };
 
   // 基準守備力（この守備力で基本確率になる）
   static const int _baseFielding = 5;
@@ -752,10 +773,16 @@ class AtBatSimulator {
 
     // 長打力による補正（高いほど長打が増える）
     final powerDiff = power - _basePower;
-    final homeRunModifier = powerDiff * _powerHomeRunModifier;
     final doubleModifier = powerDiff * _powerDoubleModifier;
     final tripleModifier = powerDiff * _powerTripleModifier;
     final singleModifier = powerDiff * _powerSingleModifier;
+
+    // 本塁打は長打力ごとの非線形テーブルで基本確率を決める。
+    final powerHomeRunBase = _powerHomeRunBase[power.clamp(1, 10)]!;
+    // 球種・疲労の被長打率補正は長打力に比例させる（弱打者はストレートでも
+    // 柵越えしないので、一律 +0.02 のような加算はしない）。sqrt でゆるく効かせる。
+    final xbhPowerFactor =
+        sqrt(powerHomeRunBase / _powerHomeRunBase[_basePower]!);
 
     // ミート力によるアウト率補正
     // 高ミート → アウト率↓（ヒットが増える）、低ミート → アウト率↑（弱い当たり=アウト）
@@ -792,12 +819,12 @@ class AtBatSimulator {
       probOut = (probOut + adjust).clamp(0.05, 0.95);
     }
 
-    // 長打確率（長打力 + 球種効果 + 疲労で変動）
-    // floor を 0.002 に下げて、低長打力打者（投手など）の HR をより抑える
-    // 基本値 0.025 はインプレー結果の正規化後の HR 率がリーグ平均で約2.5%になるよう調整
+    // 長打確率（長打力テーブル + 球種効果 + 疲労で変動）
+    // 球種・疲労の補正は xbhPowerFactor で長打力に比例させてから加算する。
     final probHomeRun =
-        (0.025 + homeRunModifier + pitchXbhModifier + fatigueXbhIncrease)
-            .clamp(0.002, 0.18);
+        (powerHomeRunBase +
+                (pitchXbhModifier + fatigueXbhIncrease) * xbhPowerFactor)
+            .clamp(0.0005, 0.24);
     final probTriple =
         (_baseProbTriple + tripleModifier + pitchXbhModifier * 0.3 + fatigueXbhIncrease * 0.3)
             .clamp(0.0025, 0.025);

@@ -74,7 +74,28 @@ class StrategyScreenState extends State<StrategyScreen> {
     if (!mounted) return;
     if (widget.controller.currentDay != _loadedForDay) {
       setState(_loadFromCurrent);
+    } else {
+      // 同じ日内でも、選手編集（updatePlayer）等でフォームが保持する Player の
+      // 能力が変わっている可能性がある。スロット順・守備位置は維持したまま、
+      // 保持する Player を controller の最新インスタンスに差し替える。
+      setState(_refreshSlotPlayers);
     }
+  }
+
+  /// `_slots` / `_initialSlots` 内の Player を controller の最新インスタンスに
+  /// id で引き直す。スロット順・守備位置・スロット id は維持する。
+  /// 選手編集をフォーム表示・commit 内容の両方に反映するため。
+  void _refreshSlotPlayers() {
+    _Slot refresh(_Slot s) {
+      final p = s.player;
+      if (p == null) return s;
+      final latest = widget.controller.findPlayerById(p.id);
+      if (latest == null || identical(latest, p)) return s;
+      return s.copyWith(player: latest);
+    }
+
+    _slots = [for (final s in _slots) refresh(s)];
+    _initialSlots = [for (final s in _initialSlots) refresh(s)];
   }
 
   /// 既存の作戦 or オート提案からフォームを初期化。
@@ -644,26 +665,30 @@ class StrategyScreenState extends State<StrategyScreen> {
       if (s.position == null) {
         return (strategy: null, error: '${i + 1} 番打者の守備位置が未選択です');
       }
+      // _slots が保持する Player 参照は選手編集で古くなっている場合があるため、
+      // commit 時に controller の最新 Player を id で引き直す。
+      final player =
+          widget.controller.findPlayerById(s.player!.id) ?? s.player!;
       if (assigned.contains(s.position)) {
         return (
           strategy: null,
           error: '守備位置 ${s.position!.displayName} が重複しています',
         );
       }
-      if (s.position == FieldPosition.pitcher && !s.player!.isPitcher) {
+      if (s.position == FieldPosition.pitcher && !player.isPitcher) {
         return (
           strategy: null,
           error: '${i + 1} 番に投手以外を投手位置で指定しています',
         );
       }
-      if (s.position != FieldPosition.pitcher && s.player!.isPitcher) {
+      if (s.position != FieldPosition.pitcher && player.isPitcher) {
         return (
           strategy: null,
           error: '${i + 1} 番に投手を野手位置で指定しています',
         );
       }
       assigned.add(s.position!);
-      lineup.add(s.player!);
+      lineup.add(player);
     }
     if (lineup.map((p) => p.id).toSet().length != 9) {
       return (strategy: null, error: '打順に重複した選手があります');
@@ -676,8 +701,9 @@ class StrategyScreenState extends State<StrategyScreen> {
       return (strategy: null, error: '未配置のポジション: $missing');
     }
 
+    // lineup[i] は _slots[i] と同じ並びで、controller の最新 Player に解決済み。
     final alignment = <FieldPosition, Player>{
-      for (int i = 0; i < 9; i++) _slots[i].position!: _slots[i].player!,
+      for (int i = 0; i < 9; i++) _slots[i].position!: lineup[i],
     };
     return (
       strategy: NextGameStrategy(lineup: lineup, alignment: alignment),
