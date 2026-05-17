@@ -125,7 +125,6 @@ String _playerSummary(Player p) {
     buf.write(' 走${p.speed}');
     buf.write(' 眼${p.eye}');
     buf.write(' 肩${p.arm}');
-    if (p.lead != null) buf.write(' 捕${p.lead}');
     if (p.fielding != null) {
       final fields = p.fielding!.entries
           .map((e) => '${e.key.shortName}${e.value}')

@@ -74,7 +74,6 @@ class PlayerAging {
       speed: adjust('speed', p.speed),
       eye: adjust('eye', p.eye),
       arm: adjust('arm', p.arm),
-      lead: adjust('lead', p.lead),
       fielding: adjustFielding(p.fielding),
       throws: p.throws,
       bats: p.bats,

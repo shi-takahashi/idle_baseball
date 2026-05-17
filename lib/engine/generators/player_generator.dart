@@ -280,8 +280,6 @@ class PlayerGenerator {
     final speed = _r.normalInt(mean: 5.0 + profile.speed);
     final eye = _r.normalInt();
     final arm = _r.normalInt(mean: 5.0 + profile.arm);
-    final lead =
-        primaryPosition == DefensePosition.catcher ? _r.normalInt() : null;
     return Player(
       id: _newId(),
       name: _uniqueName(),
@@ -292,7 +290,6 @@ class PlayerGenerator {
       speed: speed,
       eye: eye,
       arm: arm,
-      lead: lead,
       bats: _batterHandedness(),
       throws: _r.chance(0.15) ? Handedness.left : Handedness.right,
       fielding: fielding,
@@ -302,7 +299,6 @@ class PlayerGenerator {
         speed: speed,
         eye: eye,
         arm: arm,
-        lead: lead,
       ),
       potentialFielding: _buildPotentialFielding(fielding),
     );
@@ -324,8 +320,6 @@ class PlayerGenerator {
     final speed = _r.normalInt(mean: 5.0 + profile.speed);
     final eye = _r.normalInt();
     final arm = _r.normalInt(mean: 5.0 + profile.arm);
-    final lead =
-        positions.contains(DefensePosition.catcher) ? _r.normalInt() : null;
     return Player(
       id: _newId(),
       name: _uniqueName(),
@@ -336,7 +330,6 @@ class PlayerGenerator {
       speed: speed,
       eye: eye,
       arm: arm,
-      lead: lead,
       bats: _batterHandedness(),
       throws: _r.chance(0.15) ? Handedness.left : Handedness.right,
       fielding: fielding,
@@ -346,7 +339,6 @@ class PlayerGenerator {
         speed: speed,
         eye: eye,
         arm: arm,
-        lead: lead,
       ),
       potentialFielding: _buildPotentialFielding(fielding),
     );
@@ -450,9 +442,6 @@ class PlayerGenerator {
     final speed = _r.normalInt(mean: 5.5 + boost + profile.speed, sd: 1.5);
     final eye = _r.normalInt(mean: 4.5 + boost, sd: 1.5);
     final arm = _r.normalInt(mean: 5.0 + boost + profile.arm);
-    final lead = positions.contains(DefensePosition.catcher)
-        ? _r.normalInt(mean: 5.0 + boost)
-        : null;
     return Player(
       id: _newId(),
       name: _uniqueName(),
@@ -463,7 +452,6 @@ class PlayerGenerator {
       speed: speed, // 若い分やや走れる
       eye: eye,
       arm: arm,
-      lead: lead,
       bats: _batterHandedness(),
       throws: _r.chance(0.15) ? Handedness.left : Handedness.right,
       fielding: fielding,
@@ -473,7 +461,6 @@ class PlayerGenerator {
         speed: speed,
         eye: eye,
         arm: arm,
-        lead: lead,
         bonus: potentialBonus,
       ),
       potentialFielding:
@@ -534,7 +521,6 @@ class PlayerGenerator {
     int? speed,
     int? eye,
     int? arm,
-    int? lead,
     int? fastball,
     int? control,
     int? stamina,
@@ -555,7 +541,6 @@ class PlayerGenerator {
     put('speed', speed);
     put('eye', eye);
     put('arm', arm);
-    put('lead', lead);
     put('fastball', fastball);
     put('control', control);
     put('stamina', stamina);

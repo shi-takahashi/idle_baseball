@@ -21,7 +21,6 @@ import 'package:idle_baseball/engine/engine.dart';
       speed: target.speed ?? 5,
       eye: 10,
       arm: target.arm ?? 5,
-      lead: target.lead,
       fielding: target.fielding,
       bats: target.bats,
     );

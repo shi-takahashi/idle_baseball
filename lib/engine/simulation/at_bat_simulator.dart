@@ -157,8 +157,10 @@ class AtBatSimulator {
   // 守備力1あたりの補正率（高いほどアウト率が上がる）
   static const double _fieldingModifier = 0.015;
 
-  // 捕手リード1あたりの補正率（高いほどアウト率が上がる、おまけ程度）
-  static const double _leadModifier = 0.005;
+  // 捕手の守備力1あたりのリード（配球）補正。
+  // 旧 `lead` パラメータ（独立・推測不能）を廃止し、捕手の守備力に統合した。
+  // 守備の良い捕手は配球面でも被打率をわずかに下げる、というおまけ程度の効果。
+  static const double _catcherCallModifier = 0.005;
 
   // 基本確率（球速145km、制球力5、ミート力5、長打力5基準）
   // 2026-05-17 リーグ水準補正: K率が NPB 比で高すぎた（~26% → 目標 ~20%）。
@@ -745,7 +747,7 @@ class AtBatSimulator {
     required int meet,
     required int power,
     required int fielding,
-    required int catcherLead,
+    required int catcherFielding,
     required PitchType pitchType,
     required int pitchParam,
     required double fatigue,
@@ -775,9 +777,9 @@ class AtBatSimulator {
     final fieldingDiff = fielding - _baseFielding;
     final fieldingModifierValue = fieldingDiff * _fieldingModifier;
 
-    // 捕手リードによる補正（高いほどアウトが増える、おまけ程度）
-    final leadDiff = catcherLead - 5;
-    final leadModifierValue = leadDiff * _leadModifier;
+    // 捕手の守備力によるリード（配球）補正（高いほどアウトが増える、おまけ程度）
+    final catcherCallDiff = catcherFielding - _baseFielding;
+    final leadModifierValue = catcherCallDiff * _catcherCallModifier;
 
     // 球種固有のベース補正
     final pitchOutModifier = _outModifiers[pitchType] ?? 0.0;
@@ -999,7 +1001,7 @@ class AtBatSimulator {
     int? batterSpeed,
     FieldPosition? fieldPosition,
     int? fielderArm,
-    int? catcherLead,
+    int? catcherFielding,
     PitchType pitchType = PitchType.fastball,
     int? pitchParam,
     double fatigue = 0.0,
@@ -1008,7 +1010,7 @@ class AtBatSimulator {
     bool isFielderForcedPlacement = false,
   }) {
     final fieldingValue = fielding ?? _baseFielding;
-    final leadValue = catcherLead ?? 5;
+    final catcherFieldingValue = catcherFielding ?? _baseFielding;
     final paramValue = pitchParam ?? _basePitchParam;
 
     // 確率を計算
@@ -1018,7 +1020,7 @@ class AtBatSimulator {
       meet: meet,
       power: power,
       fielding: fieldingValue,
-      catcherLead: leadValue,
+      catcherFielding: catcherFieldingValue,
       pitchType: pitchType,
       pitchParam: paramValue,
       fatigue: fatigue,
@@ -1866,7 +1868,7 @@ class AtBatSimulator {
           batterSpeed: batterSpeed,
           fieldPosition: pitch.fieldPosition,
           fielderArm: fielder?.arm,
-          catcherLead: catcher?.lead,
+          catcherFielding: catcher?.getFielding(DefensePosition.catcher),
           pitchType: pitch.pitchType,
           pitchParam: pitchParam,
           fatigue: fatigue,

@@ -49,7 +49,6 @@ void main() {
     eye: 5,
     speed: 5,
     arm: target.arm,
-    lead: target.lead,
     fielding: target.fielding,
     bats: target.bats,
     throws: target.throws,

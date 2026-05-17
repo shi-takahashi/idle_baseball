@@ -54,7 +54,6 @@ class _PlayerEditScreenState extends State<PlayerEditScreen> {
   // 野手能力
   late int _speed;
   late int _arm;
-  late int? _lead; // 捕手のみ
 
   // 守備力（0=守れない、1〜10=値）。常に6ポジション分のキーを持つ。
   late Map<DefensePosition, int> _fielding;
@@ -101,7 +100,6 @@ class _PlayerEditScreenState extends State<PlayerEditScreen> {
     //   (野手 mean 5、投手 mean 3.5)。
     _speed = p.speed ?? (p.isPitcher ? 3 : 5);
     _arm = p.arm ?? 5;
-    _lead = p.lead;
 
     // fielding マップを6ポジション分そろえる
     _fielding = {
@@ -437,7 +435,6 @@ class _PlayerEditScreenState extends State<PlayerEditScreen> {
   // 野手セクション
   // ---------------------------------------------------
   List<Widget> _buildFielderCards() {
-    final canCatch = (_fielding[DefensePosition.catcher] ?? 0) > 0;
     return [
       _Section(
         title: '打撃',
@@ -473,12 +470,6 @@ class _PlayerEditScreenState extends State<PlayerEditScreen> {
             value: _arm,
             onChanged: (v) => setState(() => _arm = v),
           ),
-          if (canCatch)
-            _ToggleSlider(
-              label: 'リード',
-              value: _lead,
-              onChanged: (v) => setState(() => _lead = v),
-            ),
         ],
       ),
       const SizedBox(height: 8),
@@ -492,10 +483,6 @@ class _PlayerEditScreenState extends State<PlayerEditScreen> {
               value: (_fielding[pos] ?? 0) == 0 ? null : _fielding[pos],
               onChanged: (v) => setState(() {
                 _fielding[pos] = v ?? 0;
-                // 捕手から外したらリードもクリアして矛盾防止
-                if (pos == DefensePosition.catcher && (v ?? 0) == 0) {
-                  _lead = null;
-                }
               }),
             ),
         ],
@@ -527,8 +514,6 @@ class _PlayerEditScreenState extends State<PlayerEditScreen> {
       return;
     }
 
-    final canCatch = (_fielding[DefensePosition.catcher] ?? 0) > 0;
-
     final updated = Player(
       id: p.id,
       name: name,
@@ -553,7 +538,6 @@ class _PlayerEditScreenState extends State<PlayerEditScreen> {
       //   復元される。
       speed: _speed,
       arm: _isPitcher ? null : _arm,
-      lead: (!_isPitcher && canCatch) ? _lead : null,
       // 守備力（野手のみ）
       fielding: _isPitcher ? null : Map.unmodifiable(_fielding),
       // 利き手・ロール

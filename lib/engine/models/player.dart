@@ -24,9 +24,6 @@ class Player {
   final int? eye; // 選球眼（1〜10）、高いほど四球が増える
   final int? arm; // 肩の強さ（1〜10）、捕手は盗塁阻止、外野手はタッチアップ阻止、内野手は内野安打阻止
 
-  // 捕手専用能力
-  final int? lead; // リード（1〜10）、捕手のみ、高いほど被打率が下がる（おまけ程度）
-
   // 利き手・打席
   // throws: 投手の利き腕（right/left）、野手やnullはright
   // bats: 打者の打席（right/left/both）、投手やnullはright
@@ -48,7 +45,7 @@ class Player {
 
   // ---- ポテンシャル（隠しパラメータ）----
   // 加齢成長時の上限値。生成時に確定し、UI には表示しない。
-  // - potentials: 1〜10 の能力（meet, power, speed, eye, arm, lead, fastball,
+  // - potentials: 1〜10 の能力（meet, power, speed, eye, arm, fastball,
   //   control, stamina, slider, curve, splitter, changeup）の上限。
   //   キーは Player の同名フィールドの文字列。
   // - potentialFielding: 守備力（ポジションごと）の上限。
@@ -76,7 +73,6 @@ class Player {
     this.speed,
     this.eye,
     this.arm,
-    this.lead,
     this.fielding,
     this.throws,
     this.bats,
@@ -170,7 +166,6 @@ class Player {
       if (speed != null) 'speed': speed,
       if (eye != null) 'eye': eye,
       if (arm != null) 'arm': arm,
-      if (lead != null) 'lead': lead,
       if (fielding != null)
         'fielding': {
           for (final e in fielding!.entries) e.key.name: e.value,
@@ -237,7 +232,6 @@ class Player {
       speed: json['speed'] as int?,
       eye: json['eye'] as int?,
       arm: json['arm'] as int?,
-      lead: json['lead'] as int?,
       fielding: fielding,
       throws: parseHand(json['throws']),
       bats: parseHand(json['bats']),

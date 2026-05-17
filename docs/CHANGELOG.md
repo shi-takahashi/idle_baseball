@@ -22,6 +22,41 @@
 
 ---
 
+## 2026-05-17 捕手リードを廃止し守備力に統合
+
+### 動機
+
+ユーザー指摘 — リードは「被打率にわずかに効く」が、効果が**捕手自身の成績では
+なく投手側の被打率**に散るため、パラメータ非表示の設計では事実上推測不能
+（設計の柱③の footprint 表で唯一の ✕ だった項目）。独立パラメータのまま残すと
+「正体不明の運要素」になる。
+
+### 変更
+
+- `Player.lead` フィールドを廃止（モデル / toJson / fromJson / 生成 / 加齢 /
+  ポテンシャル / 編集 UI / 選手詳細画面 から削除）。旧セーブの `lead` キーは
+  `fromJson` が読み飛ばすだけなので**互換性問題なし**。
+- リード（配球）効果は **捕手の守備力** で駆動するよう変更。
+  `at_bat_simulator` の `catcherLead` 引数 → `catcherFielding` にリネームし、
+  捕手の守備力（`getFielding(catcher)`）を渡す。`_leadModifier` →
+  `_catcherCallModifier`（0.005、おまけ程度の被打率補正）。
+- 「守備の良い捕手は配球面でも被打率をわずかに下げる」となり、捕手の守備力は
+  パスボール（観測可能）も兼ねるので、推測の手がかりと効果の向きが一致する。
+
+### 検証
+
+`test_persist`（Player JSON 往復、全項目一致）/ `test_game` / `test_generate` /
+`test_edit_player` すべて pass。`dart analyze lib bin` エラーなし。
+
+### ファイル
+
+- `lib/engine/models/player.dart` ほか — `lead` フィールド全削除。
+- `lib/engine/simulation/at_bat_simulator.dart` — リード補正を捕手守備力で駆動。
+- `lib/screens/player_detail_screen.dart` / `player_edit_screen.dart` — リード表示・編集を削除。
+- `bin/test_lead.dart` 削除（リード専用テストのため）。
+
+---
+
 ## 2026-05-17 失策数の底上げ（NPB 水準へ）
 
 ### 動機

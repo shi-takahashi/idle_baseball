@@ -210,8 +210,6 @@ class PlayerDetailScreen extends StatelessWidget {
           children: [
             _RatingRow(label: '走力', value: player.speed),
             _RatingRow(label: '肩', value: player.arm),
-            if (player.lead != null)
-              _RatingRow(label: 'リード', value: player.lead),
           ],
         ),
         const SizedBox(height: 8),
