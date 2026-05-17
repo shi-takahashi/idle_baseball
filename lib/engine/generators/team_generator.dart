@@ -61,15 +61,17 @@ class TeamGenerator {
       DefensePosition.outfield, // 中
       DefensePosition.outfield, // 右
     ];
-    // 背番号はランダムに割り当てる。位置で固定（捕手が必ず1番など）にすると
-    // 全チーム同じ並びになり実在感が無いため。主力ほど若い番号・控えほど
-    // 大きい番号、というゆるい傾向だけ役割ごとの範囲で持たせる。
-    final usedNumbers = <int>{};
+    // 背番号は 1〜30 をシャッフルして割り当てる（1チーム30人）。位置で固定
+    // （捕手が必ず1番など）にすると全チーム同じ並びになり実在感が無いため。
+    // 手動編集では 99 番なども可能だが、初期状態は 1〜30 に収める。
+    final numberPool = [for (int i = 1; i <= 30; i++) i]..shuffle(_random);
+    int numberIdx = 0;
+    int nextNumber() => numberPool[numberIdx++];
 
     final starters = <Player>[];
     for (int i = 0; i < 8; i++) {
       starters.add(_playerGen.generateStarterFielder(
-        number: _pickNumber(1, 48, usedNumbers),
+        number: nextNumber(),
         primaryPosition: starterPositions[i],
       ));
     }
@@ -85,8 +87,7 @@ class TeamGenerator {
     // チーム間の cycle phase がズレ、対戦カードに変化が生まれる。
     final rotation = <Player>[
       for (int i = 0; i < 6; i++)
-        _playerGen.generateStartingPitcher(
-            number: _pickNumber(11, 48, usedNumbers)),
+        _playerGen.generateStartingPitcher(number: nextNumber()),
     ];
     rotation.shuffle(_random);
 
@@ -95,57 +96,56 @@ class TeamGenerator {
     // ロールごとに能力ブースト・利き腕・スタミナ下限を調整して生成。
     final bullpen = <Player>[
       _playerGen.generateReliefPitcher(
-        number: _pickNumber(11, 69, usedNumbers),
+        number: nextNumber(),
         reliefRole: ReliefRole.closer,
         abilityBoost: 1.5, // チーム最強級のリリーフ
       ),
       _playerGen.generateReliefPitcher(
-        number: _pickNumber(11, 69, usedNumbers),
+        number: nextNumber(),
         reliefRole: ReliefRole.setup,
         abilityBoost: 1.0,
       ),
       _playerGen.generateReliefPitcher(
-        number: _pickNumber(11, 69, usedNumbers),
+        number: nextNumber(),
         reliefRole: ReliefRole.middle,
         abilityBoost: 0.5,
       ),
       _playerGen.generateReliefPitcher(
-        number: _pickNumber(11, 69, usedNumbers),
+        number: nextNumber(),
         reliefRole: ReliefRole.middle,
         abilityBoost: 0.5,
       ),
       _playerGen.generateReliefPitcher(
-        number: _pickNumber(11, 69, usedNumbers),
+        number: nextNumber(),
         reliefRole: ReliefRole.situational,
         abilityBoost: 0.0,
         forcedThrows: Handedness.left, // ワンポイントは左投手
       ),
       _playerGen.generateReliefPitcher(
-        number: _pickNumber(11, 69, usedNumbers),
+        number: nextNumber(),
         reliefRole: ReliefRole.long,
         abilityBoost: 0.0,
         minStamina: 7, // ロングは長いイニングを投げる必要がある
       ),
       _playerGen.generateReliefPitcher(
-        number: _pickNumber(11, 69, usedNumbers),
+        number: nextNumber(),
         reliefRole: ReliefRole.mopUp,
         abilityBoost: -0.5,
       ),
       _playerGen.generateReliefPitcher(
-        number: _pickNumber(11, 69, usedNumbers),
+        number: nextNumber(),
         reliefRole: ReliefRole.mopUp,
         abilityBoost: -0.5,
       ),
     ];
 
     // ---- 控え野手 8人 ----
-    // 控えは大きめの番号（40〜88）。
     final bench = <Player>[];
 
     // 控え捕手 2人（捕手は専門性が高いので兼任なし）
     for (int i = 0; i < 2; i++) {
       bench.add(_playerGen.generateBenchFielder(
-        number: _pickNumber(40, 88, usedNumbers),
+        number: nextNumber(),
         positions: [DefensePosition.catcher],
       ));
     }
@@ -158,7 +158,7 @@ class TeamGenerator {
     ];
     for (final combo in infieldCombos) {
       bench.add(_playerGen.generateBenchFielder(
-        number: _pickNumber(40, 88, usedNumbers),
+        number: nextNumber(),
         positions: combo,
       ));
     }
@@ -171,14 +171,14 @@ class TeamGenerator {
     ];
     for (final combo in outfieldCombos) {
       bench.add(_playerGen.generateBenchFielder(
-        number: _pickNumber(40, 88, usedNumbers),
+        number: nextNumber(),
         positions: combo,
       ));
     }
 
     // 万能UT 1人（内外野複数ポジション）
     bench.add(_playerGen.generateBenchFielder(
-      number: _pickNumber(40, 88, usedNumbers),
+      number: nextNumber(),
       positions: [
         DefensePosition.second,
         DefensePosition.shortstop,
@@ -196,19 +196,5 @@ class TeamGenerator {
       bench: bench,
       primaryColorValue: color,
     );
-  }
-
-  /// 未使用の背番号を [min]〜[max] からランダムに 1 つ選び、[used] に追加して返す。
-  /// 範囲がすべて埋まっていたら [min] から上方向へ走査してフォールバックする。
-  int _pickNumber(int min, int max, Set<int> used) {
-    for (int attempt = 0; attempt < 200; attempt++) {
-      final n = min + _random.nextInt(max - min + 1);
-      if (used.add(n)) return n;
-    }
-    int n = min;
-    while (!used.add(n)) {
-      n++;
-    }
-    return n;
   }
 }
