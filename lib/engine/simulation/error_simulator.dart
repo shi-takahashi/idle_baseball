@@ -108,9 +108,11 @@ class ErrorSimulator {
   // === 内野エラー関連 ===
   // ゴロエラー基本確率（捕球 + 送球の合算）。
   // 検知時に [pickGroundBallErrorType] で 捕球エラー / 送球エラー に振り分ける。
-  // NPB 水準（1チーム143試合で60〜80失策、リーグ全体で約 0.45 失策/試合）に
-  // 外野フライエラー・クッションエラーを足して合致するよう設定。
-  static const double _baseGroundBallErrorRate = 0.04; // 4%
+  // 2026-05-17: 旧 0.04 では 143試合換算 失策 約55本と NPB（60〜80）下限を
+  // やや下回り、パラメータ非表示の設計で守備力を読みづらかったため引き上げ。
+  // 目標は NPB 下限寄りの ~65 本（外野フライ落球を恒久未実装にしているぶんの
+  // 余白を残す）。
+  static const double _baseGroundBallErrorRate = 0.048; // 4.8%
   // 内野ゴロエラー検知時の「捕球 vs 送球」内訳（NPB の実績に近い 6:4）
   static const double _groundBallFieldingErrorShare = 0.6;
   // 守備力による補正（1ポイントあたり）
