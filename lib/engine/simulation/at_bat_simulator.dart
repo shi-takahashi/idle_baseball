@@ -80,8 +80,30 @@ class AtBatSimulator {
   // 基準球速（この球速で基本確率になる）
   static const int _baseSpeed = 145;
 
-  // 球速1kmあたりの補正率
+  // 球速1kmあたりの線形補正率。球速と伸びは同程度の影響力にしてある
+  // （速球の質は球速と伸びの両方で決まる）。
   static const double _speedModifierPerKm = 0.005;
+
+  // ストレートの非線形「球速空振りボーナス」。
+  // 実効球速 = 実球速 + (伸び - 5) × _fastballRidePerPoint。実効球速が 153km/h を
+  // 超えると打者の反応時間を奪い、空振りが非線形に急増する（95mph 超の現実傾向。
+  // 走力→盗塁と同じ急増型カーブ）。伸びが良いほど低い実球速でこの領域に届く
+  // ＝「球速ガン以上に速く見える」。奪三振にのみ効き、被打率には乗せない。
+  static const int _velocityWhiffThreshold = 153;
+  static const int _fastballRidePerPoint = 2; // 伸び1ptあたりの実効球速底上げ(km/h)
+  // 実効球速が閾値を超えたぶん（over、0〜6 にクランプ）ごとの空振り率ボーナス。
+  // 後ろ寄り（凸）のカーブにして、閾値付近をかすめる投手にはほぼ効かせず、
+  // 真に実効球速の高い上位だけに劇的なボーナスを集中させる（リーグ全体の
+  // K率を膨らませないため）。
+  static const List<double> _velocityWhiffBonusByOver = [
+    0.0, // over 0（実効153以下）
+    0.002, // over 1（実効154）
+    0.008, // over 2（実効155）
+    0.022, // over 3（実効156）
+    0.050, // over 4（実効157）
+    0.095, // over 5（実効158）
+    0.150, // over 6+（実効159以上、頭打ち）
+  ];
 
   // 基準制球力（この制球力で基本確率になる）
   static const int _baseControl = 5;
@@ -510,6 +532,17 @@ class AtBatSimulator {
     final paramValue = pitchParam ?? _basePitchParam;
     final paramScaling = (paramValue - _basePitchParam) * _pitchParamModifier;
 
+    // ストレートの非線形「球速空振りボーナス」（奪三振にのみ効く）。
+    // 実効球速が _velocityWhiffThreshold を超えると非線形に空振りが急増。
+    double velocityWhiffBonus = 0.0;
+    if (pitchType == PitchType.fastball) {
+      final effectiveVelocity =
+          effectiveSpeed + (paramValue - _basePitchParam) * _fastballRidePerPoint;
+      final over =
+          (effectiveVelocity - _velocityWhiffThreshold).clamp(0, 6);
+      velocityWhiffBonus = _velocityWhiffBonusByOver[over];
+    }
+
     // 疲労による補正
     // ボール率増加、空振り率低下
     final fatigueBallIncrease = effectiveFatigue * _fatigueBallModifier;
@@ -523,8 +556,9 @@ class AtBatSimulator {
     // ボール率: 球種固有 + 制球力 + パラメータ補正 + 疲労 + 選球眼 + 長打力警戒 + プラトーン
     final probBall = (_baseProbBall + pitchBallModifier - controlBallModifier - paramScaling * 0.5 + fatigueBallIncrease + eyeBallBonus + powerWalkBonus + platoonBall).clamp(0.20, 0.55);
     final probStrikeLooking = _baseProbStrikeLooking;
-    // 空振り率: 球種固有 + 球速（ストレートのみ）+ パラメータ補正 - ミート力 - 疲労 + プラトーン
-    final probStrikeSwinging = (_baseProbStrikeSwinging + pitchSwingModifier + speedModifier + paramScaling - swingModifier - fatigueSwingDecrease + platoonSwing).clamp(0.03, 0.30);
+    // 空振り率: 球種固有 + 球速（線形）+ 非線形球速ボーナス + パラメータ補正
+    //          - ミート力 - 疲労 + プラトーン
+    final probStrikeSwinging = (_baseProbStrikeSwinging + pitchSwingModifier + speedModifier + velocityWhiffBonus + paramScaling - swingModifier - fatigueSwingDecrease + platoonSwing).clamp(0.03, 0.40);
     final probFoul = _baseProbFoul;
     // インプレー確率は残り（他の結果にならなかった場合）
 
