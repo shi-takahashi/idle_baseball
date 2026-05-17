@@ -161,7 +161,6 @@ class PlayerDetailScreen extends StatelessWidget {
             _SpeedRow(label: '球速', kmh: player.averageSpeed ?? 0),
             _RatingRow(label: '伸び', value: player.fastball),
             _RatingRow(label: '制球', value: player.control),
-            _RatingRow(label: 'スタミナ', value: player.stamina),
           ],
         ),
         const SizedBox(height: 8),

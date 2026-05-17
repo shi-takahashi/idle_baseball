@@ -355,7 +355,7 @@ class TeamRebuilder {
   /// ブルペン投手を能力スコア順にソートし、ロールを再アサインする。
   /// ロール構成は維持: closer 1 / setup 1 / middle 2 / situational 1 / long 1 / mopUp 2
   /// situational（ワンポイント）は左投手を優先、いなければスキップして他のロールに回す。
-  /// long（ロング）は stamina の高い投手を優先。
+  /// long（ロング）は能力順で抑え・セットアッパーに次ぐ投手を充てる。
   void _reorganizeBullpenRoles(Team team) {
     if (team.bullpen.length < 2) return;
 
@@ -376,21 +376,9 @@ class TeamRebuilder {
       final p = remaining.removeAt(0);
       assignments[p] = ReliefRole.setup;
     }
-    // ロング: 残りのうち stamina 最高（10 以下なら採用、極端に低い者がいない時のフォールバック）
-    Player? longCandidate;
-    int longIdx = -1;
-    int bestStamina = -1;
-    for (int i = 0; i < remaining.length; i++) {
-      final s = remaining[i].stamina ?? 5;
-      if (s > bestStamina) {
-        bestStamina = s;
-        longCandidate = remaining[i];
-        longIdx = i;
-      }
-    }
-    if (longCandidate != null && bestStamina >= 6) {
-      assignments[longCandidate] = ReliefRole.long;
-      remaining.removeAt(longIdx);
+    // ロング: 残りの先頭（能力順で次点）を採用
+    if (remaining.isNotEmpty) {
+      assignments[remaining.removeAt(0)] = ReliefRole.long;
     }
     // ワンポイント: 残りの左投手を優先
     Player? situational;
@@ -438,7 +426,6 @@ class TeamRebuilder {
       averageSpeed: p.averageSpeed,
       fastball: p.fastball,
       control: p.control,
-      stamina: p.stamina,
       slider: p.slider,
       curve: p.curve,
       splitter: p.splitter,
@@ -474,7 +461,6 @@ class TeamRebuilder {
         _speedToScale(p.averageSpeed),
         (p.fastball ?? 5).toDouble(),
         (p.control ?? 5).toDouble(),
-        (p.stamina ?? 5).toDouble(),
       ];
       final pitches = <int>[
         if (p.slider != null) p.slider!,
@@ -727,7 +713,6 @@ class TeamRebuilder {
       averageSpeed: p.averageSpeed,
       fastball: p.fastball,
       control: p.control,
-      stamina: p.stamina,
       slider: p.slider,
       curve: p.curve,
       splitter: p.splitter,

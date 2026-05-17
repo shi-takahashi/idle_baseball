@@ -609,12 +609,11 @@ String _abilityLine(Player p) {
       '眼${p.eye ?? "-"}';
 }
 
-/// 投手の能力サマリ: 球速/制球/球質/スタミナ
+/// 投手の能力サマリ: 球速/制球/球質
 String _pitcherAbilityLine(Player p) {
   return '球${p.averageSpeed ?? "-"} '
       '制${p.control ?? "-"} '
-      '質${p.fastball ?? "-"} '
-      'ス${p.stamina ?? "-"}';
+      '質${p.fastball ?? "-"}';
 }
 
 /// 野手が守れるポジションの短縮表示

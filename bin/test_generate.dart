@@ -111,7 +111,6 @@ String _playerSummary(Player p) {
     buf.write(' 球速${p.averageSpeed}km');
     buf.write(' 質${p.fastball}');
     buf.write(' 制${p.control}');
-    buf.write(' 体${p.stamina}');
     final types = <String>[];
     if (p.slider != null) types.add('スラ${p.slider}');
     if (p.curve != null) types.add('カー${p.curve}');

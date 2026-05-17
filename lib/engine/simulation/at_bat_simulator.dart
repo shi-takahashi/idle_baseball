@@ -268,17 +268,12 @@ class AtBatSimulator {
 
   // === 疲労システム ===
 
-  // 基準スタミナ（この値で標準的な疲労カーブ）
-  static const int _baseStamina = 5;
-
-  // 疲労開始球数（スタミナ5で70球から疲労開始）
-  static const int _baseFatigueStartPitches = 70;
-
-  // 完全疲労球数（スタミナ5で100球で完全疲労）
-  static const int _baseFullFatiguePitches = 100;
-
-  // スタミナ1あたりの疲労開始球数補正
-  static const int _staminaPitchModifier = 5;
+  // 疲労カーブ（全投手共通）。2026-05-17: スタミナを能力パラメータとして廃止し、
+  // 投手ごとの差をなくして一律カーブにした。80球から疲労が出始め、140球で完全疲労
+  // （ランプ60球）。100球時点の疲労度は (100-80)/60 ≒ 0.33。「プロは皆100球前後を
+  // 投げられ、引っ張りすぎると打たれる」をこの一律カーブで表現する。
+  static const int _baseFatigueStartPitches = 80;
+  static const int _baseFullFatiguePitches = 140;
 
   // 球種ごとの疲労影響度（0.0〜1.0、高いほど疲労の影響を受けやすい）
   // スプリット: 最大、スライダー: 高、カーブ: 中、チェンジアップ: 低、ストレート: 低
@@ -290,20 +285,23 @@ class AtBatSimulator {
     PitchType.changeup: 0.4,    // ★★☆☆☆ 少しズレる
   };
 
-  // 疲労時の球速低下量（ストレート用、最大値）
-  static const int _fatigueSpeedReduction = 5;
+  // 疲労ペナルティ（完全疲労 fatigue=1.0 時の最大値）。
+  // 引っ張りすぎた投手（球数超過）は球威・制球を失い打たれる。なぜ100球前後で
+  // 交代するのかの根拠になる。全投手共通カーブ（80球開始）に乗る。
+  // 疲労時の球速低下量（ストレート用）
+  static const int _fatigueSpeedReduction = 7;
 
-  // 疲労時のボール率増加（最大値）
-  static const double _fatigueBallModifier = 0.08;
+  // 疲労時のボール率増加
+  static const double _fatigueBallModifier = 0.14;
 
-  // 疲労時の空振り率低下（最大値）
-  static const double _fatigueSwingModifier = 0.05;
+  // 疲労時の空振り率低下
+  static const double _fatigueSwingModifier = 0.08;
 
-  // 疲労時のアウト率低下（最大値、被打率増加）
-  static const double _fatigueOutModifier = 0.08;
+  // 疲労時のアウト率低下（被打率増加）— 防御率へ効く主ペナルティ
+  static const double _fatigueOutModifier = 0.18;
 
-  // 疲労時の被長打率増加（最大値）
-  static const double _fatigueXbhModifier = 0.03;
+  // 疲労時の被長打率増加
+  static const double _fatigueXbhModifier = 0.07;
 
   // === プラトーン（左vs左=打者不利）補正 ===
   // 左投手 vs 左打者 のみ打者に不利な補正を適用
@@ -328,20 +326,11 @@ class AtBatSimulator {
     _errorSimulator = ErrorSimulator(random: _random);
   }
 
-  /// 疲労度を計算（0.0〜1.0）
+  /// 疲労度を計算（0.0〜1.0）。全投手共通カーブ（80球開始・140球完全疲労）。
   /// pitchCount: 現在の投球数
-  /// stamina: スタミナパラメータ（1-10、nullは5）
-  double _calculateFatigue(int pitchCount, int? stamina) {
-    final staminaValue = stamina ?? _baseStamina;
-
-    // スタミナに応じた疲労開始/完全疲労の球数を計算
-    // スタミナ1: 50球から開始、80球で完全疲労
-    // スタミナ5: 70球から開始、100球で完全疲労
-    // スタミナ10: 95球から開始、125球で完全疲労
-    final fatigueStart =
-        _baseFatigueStartPitches + (staminaValue - _baseStamina) * _staminaPitchModifier;
-    final fullFatigue =
-        _baseFullFatiguePitches + (staminaValue - _baseStamina) * _staminaPitchModifier;
+  double _calculateFatigue(int pitchCount) {
+    const fatigueStart = _baseFatigueStartPitches;
+    const fullFatigue = _baseFullFatiguePitches;
 
     if (pitchCount < fatigueStart) {
       return 0.0; // 疲労なし
@@ -1186,8 +1175,6 @@ class AtBatSimulator {
     final avgSpeed = (pitcher.averageSpeed ?? 145) + condition.speedModifier;
     // 投手の制球力（設定されていなければ5）+ 調子補正（1〜10の範囲内）
     final control = ((pitcher.control ?? 5) + condition.controlModifier).clamp(1, 10);
-    // 投手のスタミナ（設定されていなければ5）
-    final stamina = pitcher.stamina;
     // 打者のミート力（設定されていなければ5）+ 調子補正（1〜10の範囲内）
     final meet = ((batter.meet ?? 5) + batterConditionModifier).clamp(1, 10);
     // 打者の長打力（設定されていなければ5）+ 調子補正
@@ -1240,8 +1227,8 @@ class AtBatSimulator {
       final stealAttempts = stealSimulator.simulateSteal(currentRunners, outs + additionalOuts, catcherArm: catcherArm);
 
       // 2. 球種選択と投球
-      // 疲労度を計算（投球数とスタミナに基づく）
-      final fatigue = _calculateFatigue(currentPitchCount, stamina);
+      // 疲労度を計算（投球数に基づく、全投手共通カーブ）
+      final fatigue = _calculateFatigue(currentPitchCount);
       // 直前まで同じ球種を投げた連続数を計算（同球種連続ペナルティ用）
       PitchType? prevPitchType;
       int prevSameStreak = 0;

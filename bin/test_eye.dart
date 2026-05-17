@@ -15,7 +15,6 @@ void main() {
     averageSpeed: 145,
     fastball: 5,
     control: 5,
-    stamina: 5,
     slider: 5,
   );
 

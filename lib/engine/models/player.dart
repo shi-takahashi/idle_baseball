@@ -11,7 +11,6 @@ class Player {
   final int? averageSpeed; // 平均球速（km/h）、野手はnull
   final int? fastball; // ストレートの質（1〜10）、nullは基準値5（キレ、ノビ等）
   final int? control; // 制球力（1〜10）、野手はnull
-  final int? stamina; // スタミナ（1〜10）、nullは基準値5、高いほど疲労しにくい
   final int? slider; // スライダー（1〜10）、nullの場合は投げられない
   final int? curve; // カーブ（1〜10）、nullの場合は投げられない
   final int? splitter; // スプリット（1〜10）、nullの場合は投げられない
@@ -46,7 +45,7 @@ class Player {
   // ---- ポテンシャル（隠しパラメータ）----
   // 加齢成長時の上限値。生成時に確定し、UI には表示しない。
   // - potentials: 1〜10 の能力（meet, power, speed, eye, arm, fastball,
-  //   control, stamina, slider, curve, splitter, changeup）の上限。
+  //   control, slider, curve, splitter, changeup）の上限。
   //   キーは Player の同名フィールドの文字列。
   // - potentialFielding: 守備力（ポジションごと）の上限。
   // - potentialAverageSpeed: 球速（km/h）の上限。
@@ -63,7 +62,6 @@ class Player {
     this.averageSpeed,
     this.fastball,
     this.control,
-    this.stamina,
     this.slider,
     this.curve,
     this.splitter,
@@ -156,7 +154,6 @@ class Player {
       if (averageSpeed != null) 'averageSpeed': averageSpeed,
       if (fastball != null) 'fastball': fastball,
       if (control != null) 'control': control,
-      if (stamina != null) 'stamina': stamina,
       if (slider != null) 'slider': slider,
       if (curve != null) 'curve': curve,
       if (splitter != null) 'splitter': splitter,
@@ -222,7 +219,6 @@ class Player {
       averageSpeed: json['averageSpeed'] as int?,
       fastball: json['fastball'] as int?,
       control: json['control'] as int?,
-      stamina: json['stamina'] as int?,
       slider: json['slider'] as int?,
       curve: json['curve'] as int?,
       splitter: json['splitter'] as int?,

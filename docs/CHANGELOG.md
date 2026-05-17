@@ -5,6 +5,52 @@
 
 ---
 
+## 2026-05-17 スタミナを能力パラメータとして廃止 ＋ 先発の中4日ゲート
+
+### 動機
+
+投手パラメータ検証でスタミナを扱ったが、「防御率」「投球回」「回復力」と役割を
+探しても、観測できる・結果と交絡しない・複雑にならない、を同時に満たす役割が
+見つからなかった。リードと同じく、能力パラメータとしてのスタミナは廃止する。
+
+ただし「昨日先発した投手を手動指定で今日も先発」が無コストでできる穴があった
+ため、能力値ではなく**ローテのルール**として中4日ゲートを追加。
+
+### 変更
+
+**スタミナ廃止:**
+- `Player.stamina` フィールドを廃止（モデル / toJson / fromJson / 生成 / 加齢 /
+  ポテンシャル / 詳細・編集 UI）。旧セーブの `stamina` キーは読み飛ばすだけで
+  互換性問題なし
+- 試合内の疲労は**全投手共通カーブ**に（`_calculateFatigue` から stamina 引数を
+  削除）。80球で疲労が出始め、140球で完全疲労（ランプ60球、100球時点で約0.33）。
+  「なぜ100球前後で交代するか／引っ張りすぎると打たれる」はこの一律カーブで成立
+- 登板間の回復（`_pitcherFreshness`）も全投手一律 17/日
+- 救援生成の `minStamina` 制約・`_abilityScore` の stamina 項・ロング救援の
+  stamina 優先などを除去
+
+**先発の中4日ゲート:**
+- `SeasonController.canStartNextGame(pitcherId)` を新設。最終登板日から
+  `_minDaysBetweenStarts`（中4日＝5日）以上空いているか判定
+- 作戦画面の `_buildStrategyFromForm` で、先発指定がこのゲートを満たさない場合は
+  commit を拒否（赤いエラー）。自動ローテは従来から中4日を守っているので、これで
+  手動指定でも連投が不可能に
+
+### 検証
+
+`dart analyze lib bin` エラーなし。`test_persist`（Player JSON 往復・全項目一致）/
+`test_strategy` / `test_game` / `test_generate` すべて pass。
+
+### ファイル
+
+- `lib/engine/models/player.dart` ほか — `stamina` 全削除。
+- `lib/engine/simulation/at_bat_simulator.dart` — 疲労カーブを全投手共通に。
+- `lib/engine/season/season_controller.dart` — 回復一律化、`canStartNextGame` 新設。
+- `lib/screens/strategy_screen.dart` — 先発の中4日 commit チェック。
+- `bin/test_fatigue.dart` / `bin/measure_pitcher_stamina.dart` 削除。
+
+---
+
 ## 2026-05-17 表示方針の線引き — 構造的属性は見せる（ドキュメントのみ）
 
 パラメータ非表示方針（§コンセプト）の線引きを明確化。コード変更なし。

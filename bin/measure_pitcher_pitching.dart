@@ -4,7 +4,6 @@ import 'package:idle_baseball/engine/engine.dart';
 /// 投手の投球能力の分布を計測する。
 /// - fastball / control / slider / curve / splitter / changeup: 1〜10
 /// - averageSpeed (km/h): 130〜160
-/// - stamina: 1〜10
 void main() {
   final intCats = [
     'fastball',
@@ -13,7 +12,6 @@ void main() {
     'curve',
     'splitter',
     'changeup',
-    'stamina',
   ];
   final intCountsStarter = <String, Map<int, int>>{
     for (final c in intCats) c: {for (int v = 1; v <= 10; v++) v: 0},
@@ -39,7 +37,6 @@ void main() {
         final curve = get(p.curve);
         final splitter = get(p.splitter);
         final changeup = get(p.changeup);
-        final stamina = get(p.stamina);
 
         if (fastball != null) intC['fastball']![fastball] = intC['fastball']![fastball]! + 1;
         if (control != null) intC['control']![control] = intC['control']![control]! + 1;
@@ -47,7 +44,6 @@ void main() {
         if (curve != null) intC['curve']![curve] = intC['curve']![curve]! + 1;
         if (splitter != null) intC['splitter']![splitter] = intC['splitter']![splitter]! + 1;
         if (changeup != null) intC['changeup']![changeup] = intC['changeup']![changeup]! + 1;
-        if (stamina != null) intC['stamina']![stamina] = intC['stamina']![stamina]! + 1;
 
         if (p.averageSpeed != null) {
           speedB[p.averageSpeed!] = (speedB[p.averageSpeed!] ?? 0) + 1;

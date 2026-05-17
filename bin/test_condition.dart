@@ -15,7 +15,6 @@ void main() {
     averageSpeed: 145,
     fastball: 6,
     control: 5,
-    stamina: 5,
     slider: 6,
     curve: 5,
   );
@@ -64,7 +63,6 @@ void main() {
         number: 18,
         averageSpeed: 145,
         control: 5,
-        stamina: 5,
       ),
     ],
   );

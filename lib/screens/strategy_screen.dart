@@ -705,6 +705,15 @@ class StrategyScreenState extends State<StrategyScreen> {
     final alignment = <FieldPosition, Player>{
       for (int i = 0; i < 9; i++) _slots[i].position!: lineup[i],
     };
+    // 先発投手の中4日チェック（手動指定でも連投を許さない）
+    final startingPitcher = alignment[FieldPosition.pitcher]!;
+    if (!widget.controller.canStartNextGame(startingPitcher.id)) {
+      return (
+        strategy: null,
+        error: '${startingPitcher.name} は登板間隔（中4日）が不足しています。'
+            '別の投手を先発に指定してください',
+      );
+    }
     return (
       strategy: NextGameStrategy(lineup: lineup, alignment: alignment),
       error: null,

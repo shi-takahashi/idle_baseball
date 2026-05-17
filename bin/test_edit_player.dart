@@ -98,7 +98,6 @@ void main() {
     averageSpeed: 160,
     fastball: 10,
     control: 10,
-    stamina: 10,
     slider: 10,
     curve: 10,
     splitter: 10,

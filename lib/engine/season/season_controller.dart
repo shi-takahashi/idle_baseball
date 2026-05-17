@@ -86,7 +86,7 @@ class SeasonController {
     }
   }
 
-  // ---- 投手スタミナ（試合間） ----
+  // ---- 投手の登板疲労（試合間） ----
   // 各先発投手のコンディション（0-100）。試合で消費・1日経過で回復する。
   // pitcher.id をキーに保持。
   final Map<String, int> _pitcherFreshness = {};
@@ -772,19 +772,19 @@ class SeasonController {
     commitOffseason();
   }
 
-  // ---- 投手スタミナ管理 ----
+  // ---- 投手の登板疲労管理 ----
 
-  /// 1日分の回復を全投手（SP + RP）に適用
-  /// 回復量は素 stamina パラメータで決まる:
-  /// stamina 1 → 15/日, stamina 5 → 17/日, stamina 10 → 20/日
+  /// 1日分の回復を全投手（SP + RP）に適用。
+  /// 回復量は全投手一律 17/日（スタミナを能力パラメータとして廃止したため）。
+  static const int _freshnessRecoveryPerDay = 17;
+
   void _recoverPitcherFreshness() {
     for (final team in teams) {
       for (final p in [...team.startingRotation, ...team.bullpen]) {
         final current = _pitcherFreshness[p.id] ?? 100;
         if (current >= 100) continue;
-        final stamina = p.stamina ?? 5;
-        final recovery = (14 + stamina * 0.6).round();
-        _pitcherFreshness[p.id] = (current + recovery).clamp(0, 100);
+        _pitcherFreshness[p.id] =
+            (current + _freshnessRecoveryPerDay).clamp(0, 100);
       }
     }
   }
@@ -935,7 +935,6 @@ class SeasonController {
 
   /// 先発候補の「エース度」を [0, 1] で返す。
   /// 球速・制球・ストレートの質・変化球の最高値の平均を使う簡易版。
-  /// 既存の stamina パラメータは別途回復速度に使っているので、ここには含めない。
   double _aceScore(Player p) {
     final speed = ((p.averageSpeed ?? 145) - 130) / 25;
     final speedNorm = speed.clamp(0.0, 1.0);
@@ -1059,7 +1058,7 @@ class SeasonController {
       _batterConditions.stateOf(playerId);
 
   /// 投手のコンディション（0〜100、100 = 完全フレッシュ）。
-  /// 試合の球数で消費し、1 日経過で `stamina` 依存の量だけ回復する。
+  /// 試合の球数で消費し、1 日経過で全投手一律の量だけ回復する。
   /// 作戦画面で「連投できそうか」の判断材料として表示する。
   /// 未登録の投手は 100 を返す（開幕直後の挙動と一致）。
   int pitcherFreshness(String pitcherId) =>
@@ -1068,6 +1067,16 @@ class SeasonController {
   /// 投手の最終登板日参照（UI 用）
   int? pitcherLastStartDay(String pitcherId) =>
       _pitcherLastStartDay[pitcherId];
+
+  /// 次の自チーム試合（currentDay+1）で、この投手が先発するのに必要な
+  /// 中4日（_minDaysBetweenStarts 日）の登板間隔を満たしているか。
+  /// 自動ローテだけでなく、手動の作戦指定でも連投（昨日の先発を今日も先発）を
+  /// 防ぐためのチェック。
+  bool canStartNextGame(String pitcherId) {
+    final last = _pitcherLastStartDay[pitcherId];
+    if (last == null) return true; // 未登板
+    return ((_currentDay + 1) - last) >= _minDaysBetweenStarts;
+  }
 
   // ---- 永続化 ----
   // フォーマットバージョン。スキーマ変更時に古いセーブを弾くために使う。

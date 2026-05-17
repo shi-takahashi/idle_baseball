@@ -90,13 +90,11 @@ class PlayerGenerator {
   /// - [reliefRole]: 救援ロール（指定すれば Player.reliefRole にセットされる）
   /// - [abilityBoost]: 能力値の平均オフセット（+1.0 でエース級、-1.0 で控え級）
   /// - [forcedThrows]: 利き腕を強制（例: situational lefty）
-  /// - [minStamina]: スタミナの下限（例: ロングリリーフ）
   Player generateReliefPitcher({
     required int number,
     ReliefRole? reliefRole,
     double abilityBoost = 0.0,
     Handedness? forcedThrows,
-    int? minStamina,
   }) {
     return _generatePitcher(
       number: number,
@@ -104,7 +102,6 @@ class PlayerGenerator {
       reliefRole: reliefRole,
       abilityBoost: abilityBoost,
       forcedThrows: forcedThrows,
-      minStamina: minStamina,
     );
   }
 
@@ -114,7 +111,6 @@ class PlayerGenerator {
     ReliefRole? reliefRole,
     double abilityBoost = 0.0,
     Handedness? forcedThrows,
-    int? minStamina,
     int? ageOverride,
     RookieType? rookieType,
   }) {
@@ -126,14 +122,6 @@ class PlayerGenerator {
     final speedMean = 147.0 + abilityBoost * 2.0;
     final avgSpeed =
         (speedMean + _r.nextGaussian() * 3.0).round().clamp(139, 156);
-
-    // スタミナ: 先発は高め、救援は低め
-    // minStamina が指定された場合は下限として作用
-    final staminaMean = isStarter ? 7.0 : 4.0;
-    int stamina = _r.normalInt(mean: staminaMean, sd: 1.5);
-    if (minStamina != null && stamina < minStamina) {
-      stamina = minStamina;
-    }
 
     // 球種: ストレート + 2〜4球種ランダム（合計 3〜5 種類）
     // ストレートに加えて 1 球種だけだと「現代プロ野球にいないレベル」になるため、
@@ -187,7 +175,6 @@ class PlayerGenerator {
       averageSpeed: avgSpeed,
       fastball: fastball,
       control: control,
-      stamina: stamina,
       slider: slider,
       curve: curve,
       splitter: splitter,
@@ -210,7 +197,6 @@ class PlayerGenerator {
         eye: eye,
         fastball: fastball,
         control: control,
-        stamina: stamina,
         slider: slider,
         curve: curve,
         splitter: splitter,
@@ -523,7 +509,6 @@ class PlayerGenerator {
     int? arm,
     int? fastball,
     int? control,
-    int? stamina,
     int? slider,
     int? curve,
     int? splitter,
@@ -543,7 +528,6 @@ class PlayerGenerator {
     put('arm', arm);
     put('fastball', fastball);
     put('control', control);
-    put('stamina', stamina);
     put('slider', slider);
     put('curve', curve);
     put('splitter', splitter);

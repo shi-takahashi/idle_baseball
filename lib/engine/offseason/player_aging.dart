@@ -64,7 +64,6 @@ class PlayerAging {
       averageSpeed: adjustSpeed(p.averageSpeed),
       fastball: adjust('fastball', p.fastball),
       control: adjust('control', p.control),
-      stamina: adjust('stamina', p.stamina),
       slider: adjust('slider', p.slider),
       curve: adjust('curve', p.curve),
       splitter: adjust('splitter', p.splitter),

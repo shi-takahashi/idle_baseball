@@ -93,7 +93,7 @@ class TeamGenerator {
 
     // ---- 救援投手 8人（ロール別構成） ----
     //   抑え 1 / セットアッパー 1 / 中継ぎ 2 / ワンポイント 1 / ロング 1 / 敗戦処理 2
-    // ロールごとに能力ブースト・利き腕・スタミナ下限を調整して生成。
+    // ロールごとに能力ブースト・利き腕を調整して生成。
     final bullpen = <Player>[
       _playerGen.generateReliefPitcher(
         number: nextNumber(),
@@ -125,7 +125,6 @@ class TeamGenerator {
         number: nextNumber(),
         reliefRole: ReliefRole.long,
         abilityBoost: 0.0,
-        minStamina: 7, // ロングは長いイニングを投げる必要がある
       ),
       _playerGen.generateReliefPitcher(
         number: nextNumber(),

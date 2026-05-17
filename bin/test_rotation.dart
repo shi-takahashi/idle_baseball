@@ -59,7 +59,7 @@ void main() {
       final days = startsByPitcher[sp.id] ?? const <int>[];
       final ace = aceScore(sp);
       if (days.isEmpty) {
-        print('  ${sp.name} (ace=${ace.toStringAsFixed(2)}, stamina ${sp.stamina ?? "-"}) - 登板なし');
+        print('  ${sp.name} (ace=${ace.toStringAsFixed(2)}) - 登板なし');
         continue;
       }
       final gaps = <int>[];
@@ -71,7 +71,7 @@ void main() {
         totalGaps++;
       }
       final gapStr = gaps.isEmpty ? '-' : gaps.map((g) => '中${g - 1}日').join(', ');
-      print('  ${sp.name} (ace=${ace.toStringAsFixed(2)}, stamina ${sp.stamina ?? "-"}) '
+      print('  ${sp.name} (ace=${ace.toStringAsFixed(2)}) '
           '${days.length}登板 間隔=[$gapStr]');
     }
     print('');
@@ -95,7 +95,7 @@ void main() {
     for (final p in team.bullpen) {
       final stats = controller.pitcherStats[p.id];
       if (stats == null) continue;
-      print('  ${p.name} (stamina ${p.stamina ?? "-"}) '
+      print('  ${p.name} '
           'games=${stats.games} '
           'IP=${stats.inningsPitchedDisplay} '
           '${stats.wins}勝${stats.losses}敗 '
