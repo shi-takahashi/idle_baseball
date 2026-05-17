@@ -22,6 +22,46 @@
 
 ---
 
+## 2026-05-17 ワイルドピッチ・パスボールの頻度を NPB 水準へ
+
+### 動機
+
+ユーザー指摘 — WP/PB を試合でほぼ見たことがない。`measure_battery_errors.dart`
+（新規）で計測したところ、143試合換算で **WP 10.7本（NPB 40〜60）/ PB 3.1本
+（NPB 5〜15）** と、基本確率が低すぎた（実装はされていた）。
+
+### 変更
+
+`error_simulator.dart` の基本確率と補正係数を引き上げ:
+
+| 定数 | 旧 | 新 |
+|------|----|----|
+| `_baseWildPitchRate` | 0.003 | 0.017 |
+| `_controlWildPitchModifier` | 0.0006 | 0.0010 |
+| `_basePassedBallRate` | 0.001 | 0.003 |
+| `_catcherFieldingPassedBallModifier` | 0.0002 | 0.0004 |
+| WP 確率クランプ上限 | 0.015 | 0.025 |
+| PB 確率クランプ上限 | 0.005 | 0.010 |
+
+制球力（WP）・捕手守備力（PB）の補正係数も少し強め、「制球の悪い投手は暴投が
+多い／守備の下手な捕手は捕逸が多い」が試合で読み取れるようにした。
+
+### 検証（`measure_battery_errors.dart`、6シーズン×150試合）
+
+| 指標 | 修正前 | 修正後 | NPB |
+|------|--------|--------|-----|
+| WP（143換算） | 10.7 | **44.2** | 40〜60 |
+| PB（143換算） | 3.1 | **7.5** | 5〜15 |
+
+`test_game` / `test_persist` も pass。
+
+### ファイル
+
+- `lib/engine/simulation/error_simulator.dart` — WP/PB の基本確率・補正・クランプ。
+- `bin/measure_battery_errors.dart`（新規）— WP/PB の発生頻度を計測。
+
+---
+
 ## 2026-05-17 内野安打の左右差を修正（左打者を明確に優位に）
 
 ### 動機

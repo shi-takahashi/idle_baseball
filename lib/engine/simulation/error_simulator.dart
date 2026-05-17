@@ -83,10 +83,13 @@ class ErrorSimulator {
   final Random _random;
 
   // === ワイルドピッチ/パスボール関連 ===
-  // ワイルドピッチ基本確率（1投球あたり）
-  static const double _baseWildPitchRate = 0.003; // 0.3%
+  // ワイルドピッチ基本確率（1投球あたり、ボール球＋走者ありの投球で判定）。
+  // 2026-05-17: 旧 0.003 では 143試合換算 WP 約11本と NPB（40〜60）比で
+  // 少なすぎ「試合でほぼ見ない」状態だったため引き上げ（0.014→計測 37.5本、
+  // さらに 0.017 で約45本に調整）。
+  static const double _baseWildPitchRate = 0.017; // 1.7%
   // 制球力による補正（1ポイントあたり）
-  static const double _controlWildPitchModifier = 0.0006; // 制球力1で+0.24%、10で-0.18%
+  static const double _controlWildPitchModifier = 0.0010; // 制球力1で+0.4%、10で-0.5%
   // 変化球によるワイルドピッチ増加率
   static final Map<PitchType, double> _pitchTypeWildPitchModifier = {
     PitchType.fastball: 0.0,
@@ -96,10 +99,11 @@ class ErrorSimulator {
     PitchType.changeup: 0.001,  // +0.1%
   };
 
-  // パスボール基本確率（1投球あたり）
-  static const double _basePassedBallRate = 0.001; // 0.1%
+  // パスボール基本確率（1投球あたり、ボール球＋走者ありの投球で判定）。
+  // 2026-05-17: WP と同様、旧 0.001 では少なすぎたため引き上げ（NPB 5〜15）。
+  static const double _basePassedBallRate = 0.003; // 0.3%
   // 捕手守備力による補正（1ポイントあたり）
-  static const double _catcherFieldingPassedBallModifier = 0.0002;
+  static const double _catcherFieldingPassedBallModifier = 0.0004;
 
   // === 内野エラー関連 ===
   // ゴロエラー基本確率（捕球 + 送球の合算）。
@@ -153,7 +157,7 @@ class ErrorSimulator {
     final controlModifier = controlDiff * _controlWildPitchModifier;
     final pitchModifier = _pitchTypeWildPitchModifier[pitchType] ?? 0.0;
 
-    final probability = (_baseWildPitchRate - controlModifier + pitchModifier).clamp(0.001, 0.015);
+    final probability = (_baseWildPitchRate - controlModifier + pitchModifier).clamp(0.001, 0.025);
     return _random.nextDouble() < probability;
   }
 
@@ -167,7 +171,7 @@ class ErrorSimulator {
     final fieldingModifier = fieldingDiff * _catcherFieldingPassedBallModifier;
     final pitchModifier = (_pitchTypeWildPitchModifier[pitchType] ?? 0.0) * 0.5; // ワイルドピッチより影響小
 
-    var probability = (_basePassedBallRate - fieldingModifier + pitchModifier).clamp(0.0002, 0.005);
+    var probability = (_basePassedBallRate - fieldingModifier + pitchModifier).clamp(0.0002, 0.010);
     if (isForcedPlacement) probability *= _forcedPlacementErrorMultiplier;
     return _random.nextDouble() < probability;
   }

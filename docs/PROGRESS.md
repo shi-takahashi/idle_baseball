@@ -752,6 +752,9 @@ bin/                                    # 動作確認用スクリプト（dart 
 ├── measure_eye_walk.dart                # 選球眼ごとの四球率・打率を計測（パラメータ影響度の検証）
 ├── measure_speed.dart                   # 走力ごとの盗塁・三塁打・内野安打を計測（パラメータ影響度の検証）
 ├── measure_handedness.dart              # 打者の左右別の内野安打・打撃成績を計測
+├── measure_fielding.dart                # 守備力ごとのアウト率・安打率・失策率を制御計測
+├── measure_arm.dart                     # 肩ごとの盗塁阻止・内野安打・タッチアップを制御計測
+├── measure_battery_errors.dart          # ワイルドピッチ・パスボールの発生頻度を計測
 ├── test_edit_with_strategy.dart         # 作戦保存状態での選手編集が試合に反映されるかを検証
 └── （その他、機能ごとの検証スクリプト）
 
