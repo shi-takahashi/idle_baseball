@@ -130,18 +130,20 @@ class AtBatSimulator {
   // 体感できない（randomness が parameter を上回って見える）という指摘を受け、
   // 上に凸の非線形カーブへ変更。下位（1〜4）は本塁打をほぼ出さず、
   // 上位（8〜10）を強く引き離す。
-  // 6シーズン×150試合の計測で 規定打席到達者の平均 HR が概ね次の水準になるよう調整:
-  //   power4≈6 / power5≈12 / power7≈25 / power8≈31 / power9≈39 / power10≈48
-  // （リーグ全体の HR/SLG が NPB 水準を超えない範囲で、上下を最大限引き離す）
+  // 2026-05-17 改訂: リーグ全体の SLG/HR が NPB 比で高かったため、長打力9≒40本は
+  // 維持したまま中位（power4〜8）を圧縮した。これでリーグ合計が下がり、かつ
+  // 上位との差がさらに開いて推測しやすくなる（設計の柱②）。
+  // 計測で 規定打席到達者の平均 HR が概ね次の水準になるよう調整:
+  //   power4≈5 / power5≈9 / power6≈15 / power7≈21 / power8≈30 / power9≈40 / power10≈49
   static const Map<int, double> _powerHomeRunBase = {
     1: 0.0015,
     2: 0.0025,
     3: 0.0042,
-    4: 0.0085,
-    5: 0.0210,
-    6: 0.0390,
-    7: 0.0590,
-    8: 0.0840,
+    4: 0.0070,
+    5: 0.0174,
+    6: 0.0324,
+    7: 0.0490,
+    8: 0.0770,
     9: 0.1080,
     10: 0.1250,
   };
@@ -156,14 +158,19 @@ class AtBatSimulator {
   static const double _leadModifier = 0.005;
 
   // 基本確率（球速145km、制球力5、ミート力5、長打力5基準）
-  static const double _baseProbBall = 0.35;
-  static const double _baseProbStrikeLooking = 0.15;
-  static const double _baseProbStrikeSwinging = 0.10;
-  static const double _baseProbFoul = 0.20;
-  // インプレー確率は残り
+  // 2026-05-17 リーグ水準補正: K率が NPB 比で高すぎた（~26% → 目標 ~20%）。
+  // 見逃し/空振りストライクを下げてインプレー率を上げ、三振を減らす。
+  // ボールも下げて四球が増えすぎないように合わせる。
+  static const double _baseProbBall = 0.34;
+  static const double _baseProbStrikeLooking = 0.14;
+  static const double _baseProbStrikeSwinging = 0.085;
+  static const double _baseProbFoul = 0.195;
+  // インプレー確率は残り（= 1 - 上記4つ = 0.24。旧 0.20 から引き上げ）
 
   // インプレー時の結果確率（球速145km、制球力5基準）
-  static const double _baseProbOut = 0.70;
+  // インプレー率を上げたぶん打率が上振れるので probOut を引き上げて
+  // リーグ打率を NPB 水準（~.250）へ寄せる。
+  static const double _baseProbOut = 0.755;
   static const double _baseProbSingle = 0.20;
   // 二塁打を引き上げ・三塁打を引き下げ（2026-05-16 微調整）。
   // 旧 0.05 / 0.01 では 143試合換算 二塁打189・三塁打48 で、三塁打が NPB の

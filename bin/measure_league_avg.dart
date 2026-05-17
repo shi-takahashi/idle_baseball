@@ -3,19 +3,25 @@ import 'package:idle_baseball/engine/engine.dart';
 
 /// リーグ全体の打率・出塁率・長打率・OPS・K率・BB率を計測。
 /// NPB 目安: 打率 .250 / OBP .320 / SLG .380 / OPS .700 / K率 ~20% / BB率 ~8%
+///
+/// SLG / HR は 1 試合あたりの揺れが大きいため、6 シーズン × 150 試合の
+/// 大きめサンプルで計測してノイズを抑える。
 void main() {
-  const numSeasons = 3;
+  const numSeasons = 6;
+  const gamesPerTeam = 150;
 
   int totalAB = 0, totalH = 0, totalHR = 0, total2B = 0, total3B = 0;
   int totalBB = 0, totalHBP = 0, totalK = 0, totalPA = 0;
 
   for (int s = 0; s < numSeasons; s++) {
     final teams = TeamGenerator(random: Random(700 + s)).generateLeague();
-    final schedule = const ScheduleGenerator().generate(teams);
+    final schedule =
+        ScheduleGenerator().generateForGamesPerTeam(teams, gamesPerTeam);
     final controller = SeasonController(
       teams: teams,
       schedule: schedule,
       myTeamId: teams.first.id,
+      gamesPerTeam: gamesPerTeam,
       random: Random(700 + s),
     );
     controller.advanceAll();
