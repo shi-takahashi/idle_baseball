@@ -61,10 +61,15 @@ class TeamGenerator {
       DefensePosition.outfield, // 中
       DefensePosition.outfield, // 右
     ];
+    // 背番号はランダムに割り当てる。位置で固定（捕手が必ず1番など）にすると
+    // 全チーム同じ並びになり実在感が無いため。主力ほど若い番号・控えほど
+    // 大きい番号、というゆるい傾向だけ役割ごとの範囲で持たせる。
+    final usedNumbers = <int>{};
+
     final starters = <Player>[];
     for (int i = 0; i < 8; i++) {
       starters.add(_playerGen.generateStarterFielder(
-        number: i + 1,
+        number: _pickNumber(1, 48, usedNumbers),
         primaryPosition: starterPositions[i],
       ));
     }
@@ -80,7 +85,8 @@ class TeamGenerator {
     // チーム間の cycle phase がズレ、対戦カードに変化が生まれる。
     final rotation = <Player>[
       for (int i = 0; i < 6; i++)
-        _playerGen.generateStartingPitcher(number: 11 + i),
+        _playerGen.generateStartingPitcher(
+            number: _pickNumber(11, 48, usedNumbers)),
     ];
     rotation.shuffle(_random);
 
@@ -89,57 +95,57 @@ class TeamGenerator {
     // ロールごとに能力ブースト・利き腕・スタミナ下限を調整して生成。
     final bullpen = <Player>[
       _playerGen.generateReliefPitcher(
-        number: 21,
+        number: _pickNumber(11, 69, usedNumbers),
         reliefRole: ReliefRole.closer,
         abilityBoost: 1.5, // チーム最強級のリリーフ
       ),
       _playerGen.generateReliefPitcher(
-        number: 22,
+        number: _pickNumber(11, 69, usedNumbers),
         reliefRole: ReliefRole.setup,
         abilityBoost: 1.0,
       ),
       _playerGen.generateReliefPitcher(
-        number: 23,
+        number: _pickNumber(11, 69, usedNumbers),
         reliefRole: ReliefRole.middle,
         abilityBoost: 0.5,
       ),
       _playerGen.generateReliefPitcher(
-        number: 24,
+        number: _pickNumber(11, 69, usedNumbers),
         reliefRole: ReliefRole.middle,
         abilityBoost: 0.5,
       ),
       _playerGen.generateReliefPitcher(
-        number: 25,
+        number: _pickNumber(11, 69, usedNumbers),
         reliefRole: ReliefRole.situational,
         abilityBoost: 0.0,
         forcedThrows: Handedness.left, // ワンポイントは左投手
       ),
       _playerGen.generateReliefPitcher(
-        number: 26,
+        number: _pickNumber(11, 69, usedNumbers),
         reliefRole: ReliefRole.long,
         abilityBoost: 0.0,
         minStamina: 7, // ロングは長いイニングを投げる必要がある
       ),
       _playerGen.generateReliefPitcher(
-        number: 27,
+        number: _pickNumber(11, 69, usedNumbers),
         reliefRole: ReliefRole.mopUp,
         abilityBoost: -0.5,
       ),
       _playerGen.generateReliefPitcher(
-        number: 28,
+        number: _pickNumber(11, 69, usedNumbers),
         reliefRole: ReliefRole.mopUp,
         abilityBoost: -0.5,
       ),
     ];
 
     // ---- 控え野手 8人 ----
+    // 控えは大きめの番号（40〜88）。
     final bench = <Player>[];
-    int benchNumber = 30;
 
     // 控え捕手 2人（捕手は専門性が高いので兼任なし）
     for (int i = 0; i < 2; i++) {
       bench.add(_playerGen.generateBenchFielder(
-        number: benchNumber++,
+        number: _pickNumber(40, 88, usedNumbers),
         positions: [DefensePosition.catcher],
       ));
     }
@@ -152,7 +158,7 @@ class TeamGenerator {
     ];
     for (final combo in infieldCombos) {
       bench.add(_playerGen.generateBenchFielder(
-        number: benchNumber++,
+        number: _pickNumber(40, 88, usedNumbers),
         positions: combo,
       ));
     }
@@ -165,14 +171,14 @@ class TeamGenerator {
     ];
     for (final combo in outfieldCombos) {
       bench.add(_playerGen.generateBenchFielder(
-        number: benchNumber++,
+        number: _pickNumber(40, 88, usedNumbers),
         positions: combo,
       ));
     }
 
     // 万能UT 1人（内外野複数ポジション）
     bench.add(_playerGen.generateBenchFielder(
-      number: benchNumber++,
+      number: _pickNumber(40, 88, usedNumbers),
       positions: [
         DefensePosition.second,
         DefensePosition.shortstop,
@@ -190,5 +196,19 @@ class TeamGenerator {
       bench: bench,
       primaryColorValue: color,
     );
+  }
+
+  /// 未使用の背番号を [min]〜[max] からランダムに 1 つ選び、[used] に追加して返す。
+  /// 範囲がすべて埋まっていたら [min] から上方向へ走査してフォールバックする。
+  int _pickNumber(int min, int max, Set<int> used) {
+    for (int attempt = 0; attempt < 200; attempt++) {
+      final n = min + _random.nextInt(max - min + 1);
+      if (used.add(n)) return n;
+    }
+    int n = min;
+    while (!used.add(n)) {
+      n++;
+    }
+    return n;
   }
 }
