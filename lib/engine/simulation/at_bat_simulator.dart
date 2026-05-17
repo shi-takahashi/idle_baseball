@@ -121,8 +121,11 @@ class AtBatSimulator {
 
   // 長打力1あたりの補正率
   static const double _powerDoubleModifier = 0.005; // 二塁打確率補正
-  static const double _powerTripleModifier = 0.002; // 三塁打確率補正
   static const double _powerSingleModifier = 0.003; // 単打確率補正（打球速度で少し増）
+
+  // 三塁打は長打力ではなく走力で決まる（俊足の指標。鈍足の長距離砲は三塁打に
+  // ならず本塁打/二塁打になる）。走力1あたりの三塁打確率補正。
+  static const double _speedTripleModifier = 0.0020;
 
   // 長打力ごとの本塁打基本確率（インプレー時・正規化前・球種/疲労補正前）
   //
@@ -176,7 +179,8 @@ class AtBatSimulator {
   // 旧 0.05 / 0.01 では 143試合換算 二塁打189・三塁打48 で、三塁打が NPB の
   // 約2倍・二塁打:三塁打が 3.9:1（NPB ~10:1）と乖離していた。
   static const double _baseProbDouble = 0.058;
-  static const double _baseProbTriple = 0.004;
+  // 三塁打は走力5基準の基本値。走力で ±_speedTripleModifier される。
+  static const double _baseProbTriple = 0.0050;
   // 本塁打確率は残り
 
   // 基準球種パラメータ（この値で基本効果）
@@ -738,6 +742,7 @@ class AtBatSimulator {
     required PitchType pitchType,
     required int pitchParam,
     required double fatigue,
+    int batterSpeed = 5,
     bool isPlatoonDisadvantage = false,
     BattedBallType? battedBallType,
     FieldPosition? fieldPosition,
@@ -781,8 +786,10 @@ class AtBatSimulator {
     // 長打力による補正（高いほど長打が増える）
     final powerDiff = power - _basePower;
     final doubleModifier = powerDiff * _powerDoubleModifier;
-    final tripleModifier = powerDiff * _powerTripleModifier;
     final singleModifier = powerDiff * _powerSingleModifier;
+
+    // 三塁打は走力ベース（速い打者ほど三塁を陥れる）。
+    final tripleModifier = (batterSpeed - 5) * _speedTripleModifier;
 
     // 本塁打は長打力ごとの非線形テーブルで基本確率を決める。
     final powerHomeRunBase = _powerHomeRunBase[power.clamp(1, 10)]!;
@@ -832,9 +839,10 @@ class AtBatSimulator {
         (powerHomeRunBase +
                 (pitchXbhModifier + fatigueXbhIncrease) * xbhPowerFactor)
             .clamp(0.0005, 0.24);
+    // 三塁打は走力が主役。球種・疲労の影響は弱め（×0.15）にして走力シグナルを残す。
     final probTriple =
-        (_baseProbTriple + tripleModifier + pitchXbhModifier * 0.3 + fatigueXbhIncrease * 0.3)
-            .clamp(0.0025, 0.025);
+        (_baseProbTriple + tripleModifier + pitchXbhModifier * 0.15 + fatigueXbhIncrease * 0.15)
+            .clamp(0.0008, 0.025);
     final probDouble =
         (_baseProbDouble + doubleModifier + pitchXbhModifier * 0.5 + fatigueXbhIncrease * 0.5)
             .clamp(0.02, 0.15);
@@ -1007,6 +1015,7 @@ class AtBatSimulator {
       pitchType: pitchType,
       pitchParam: paramValue,
       fatigue: fatigue,
+      batterSpeed: batterSpeed ?? 5,
       isPlatoonDisadvantage: isPlatoonDisadvantage,
       battedBallType: battedBallType,
       fieldPosition: fieldPosition,
