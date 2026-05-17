@@ -110,7 +110,10 @@ class AtBatSimulator {
 
   // 制球力1あたりの補正率
   static const double _controlBallModifier = 0.015; // ボール確率補正
-  static const double _controlHitModifier = 0.01; // 被打率補正（アウト率への影響）
+  // 被打率補正（アウト率への影響＝甘い球）。2026-05-17: 制球を投手の最重要
+  // ファクターにするため 0.01 → 0.025 に強化。制球が悪い投手は四球だけでなく
+  // 甘い球で打たれて防御率が悪化し、球速・伸び（ストレートの質）を上回る影響を持つ。
+  static const double _controlHitModifier = 0.025;
 
   // 死球（HBP）関連。
   // NPB 目安: 1試合 1チームあたり 0.5 件前後（143 試合で 70〜80 件）。
