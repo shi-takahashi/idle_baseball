@@ -85,23 +85,32 @@ class ErrorSimulator {
   // === ワイルドピッチ/パスボール関連 ===
   // ワイルドピッチ基本確率（1投球あたり、ボール球＋走者ありの投球で判定）。
   // 2026-05-17: 旧 0.003 では 143試合換算 WP 約11本と NPB（40〜60）比で
-  // 少なすぎ「試合でほぼ見ない」状態だったため引き上げ（0.014→計測 37.5本、
-  // さらに 0.017 で約45本に調整）。
-  static const double _baseWildPitchRate = 0.017; // 1.7%
+  // 少なすぎ「試合でほぼ見ない」状態だったため引き上げ。
+  // 2026-05-18: 球種差を強めた（下記）ぶん、リーグ全体の WP 水準を保つため
+  // ベースを 0.017→0.015 に再センタ（球種補正の平均増加と相殺）。
+  static const double _baseWildPitchRate = 0.015; // 1.5%
   // 制球力による補正（1ポイントあたり）
   static const double _controlWildPitchModifier = 0.0010; // 制球力1で+0.4%、10で-0.5%
-  // 変化球によるワイルドピッチ増加率
+  // 球種によるワイルドピッチ増加率。
+  // 2026-05-18: 旧実装は球種差が ±0.2% と小さく、ベース＋制球力の変動に
+  // 埋もれて「スプリットは暴投しやすい」が成績に出ていなかった。落差の大きい
+  // 球（スプリット・カーブ）ほど捕手の前でワンバウンドしやすい、という個性が
+  // イニング詳細・成績で観測できるよう球種差を約4.5倍に拡大した。
   static final Map<PitchType, double> _pitchTypeWildPitchModifier = {
-    PitchType.fastball: 0.0,
-    PitchType.slider: 0.001,    // +0.1%
-    PitchType.curveball: 0.0015,    // +0.15%
-    PitchType.splitter: 0.002,  // +0.2%（落ちる球は暴投しやすい）
-    PitchType.changeup: 0.001,  // +0.1%
+    PitchType.fastball: 0.0,      // 基準（最も逸らしにくい）
+    PitchType.shoot: 0.001,       // +0.1%（ツーシーム系。ほぼ逸らさない）
+    PitchType.cutter: 0.001,      // +0.1%
+    PitchType.slider: 0.002,      // +0.2%
+    PitchType.changeup: 0.003,    // +0.3%
+    PitchType.sinker: 0.006,      // +0.6%（沈む球）
+    PitchType.curveball: 0.006,   // +0.6%（大きく曲がり落ちる）
+    PitchType.splitter: 0.009,    // +0.9%（鋭く落ちる＝最も暴投・捕逸しやすい）
   };
 
   // パスボール基本確率（1投球あたり、ボール球＋走者ありの投球で判定）。
   // 2026-05-17: WP と同様、旧 0.001 では少なすぎたため引き上げ（NPB 5〜15）。
-  static const double _basePassedBallRate = 0.003; // 0.3%
+  // 2026-05-18: 球種差拡大に伴い、リーグ PB 水準を保つためベースを再センタ。
+  static const double _basePassedBallRate = 0.002; // 0.2%
   // 捕手守備力による補正（1ポイントあたり）
   static const double _catcherFieldingPassedBallModifier = 0.0004;
 

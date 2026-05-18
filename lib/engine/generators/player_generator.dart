@@ -123,20 +123,40 @@ class PlayerGenerator {
     final avgSpeed =
         (speedMean + _r.nextGaussian() * 3.0).round().clamp(139, 156);
 
-    // 球種: ストレート + 2〜4球種ランダム（合計 3〜5 種類）
-    // ストレートに加えて 1 球種だけだと「現代プロ野球にいないレベル」になるため、
-    // 最低でも 2 つの変化球を持たせる。
-    //   合計 3 種類 (extra 2): 50%
-    //   合計 4 種類 (extra 3): 40%
-    //   合計 5 種類 (extra 4): 10%
-    final extraRoll = _r.random.nextDouble();
-    final extraCount = extraRoll < 0.5 ? 2 : (extraRoll < 0.9 ? 3 : 4);
-    final extraTypes = _r.pickMany(
-      const ['slider', 'curve', 'splitter', 'changeup'],
-      extraCount,
-    );
-    int? slider, curve, splitter, changeup;
-    for (final t in extraTypes) {
+    // 球種: ストレート + 変化球。各変化球を独立確率で抽選する。保有確率は
+    // NPB 2016 の「投じた投手の割合」（images/breaking-ball.png）に準拠。
+    // 「どれだけ投げるか」は別要素（at_bat_simulator の _pitchTypeUsageWeight）で
+    // 表現するため、ここは「誰が持つか」だけを決める。
+    // 例外: シュート/シンカーは画像（49.8% / 12.6%）だとシンカー保有者が少なすぎ
+    // 投球割合を 5% 弱まで上げられないため、ツーシームの分類が曖昧なことも踏まえ
+    // 両者を対称に 33% へ均した。変化球を全く持たない投手はいないため最低 2 種類を
+    // 保証し（合計ストレート込み 3 種類）、現実的な上限として変化球は最大 5 種類。
+    const breakingProbs = <String, double>{
+      'slider': 0.88,
+      'curve': 0.70,
+      'splitter': 0.58,
+      'changeup': 0.39,
+      'shoot': 0.33,
+      'cutter': 0.27,
+      'sinker': 0.33,
+    };
+    final chosen = <String>[];
+    for (final e in breakingProbs.entries) {
+      if (_r.chance(e.value)) chosen.add(e.key);
+    }
+    // 最低 2 種類保証（不足ぶんは保有率の高い球種から順に補う）
+    while (chosen.length < 2) {
+      chosen.add(breakingProbs.keys.firstWhere((k) => !chosen.contains(k)));
+    }
+    // 最大 5 種類（超過ぶんはランダムに外す）
+    while (chosen.length > 5) {
+      chosen.removeAt(_r.random.nextInt(chosen.length));
+    }
+    // 変化球の質は全球種共通で平均 5（abilityBoost で底上げ）。「どれだけ投げるか」は
+    // 質ではなく球種別の使用頻度重み（at_bat_simulator の _pitchTypeUsageWeight）で
+    // 表現する。質＝被打率・空振り、使用頻度＝投球割合、と役割を分離している。
+    int? slider, curve, splitter, changeup, shoot, cutter, sinker;
+    for (final t in chosen) {
       final v = _r.normalInt(mean: 5.0 + abilityBoost);
       switch (t) {
         case 'slider':
@@ -150,6 +170,15 @@ class PlayerGenerator {
           break;
         case 'changeup':
           changeup = v;
+          break;
+        case 'shoot':
+          shoot = v;
+          break;
+        case 'cutter':
+          cutter = v;
+          break;
+        case 'sinker':
+          sinker = v;
           break;
       }
     }
@@ -179,6 +208,9 @@ class PlayerGenerator {
       curve: curve,
       splitter: splitter,
       changeup: changeup,
+      shoot: shoot,
+      cutter: cutter,
+      sinker: sinker,
       throws: throws,
       // 投手の打撃能力（DH非採用なので打席に立つ。野手より低め）
       // 個別に設定されているので、後でバランス調整しやすい
@@ -201,6 +233,9 @@ class PlayerGenerator {
         curve: curve,
         splitter: splitter,
         changeup: changeup,
+        shoot: shoot,
+        cutter: cutter,
+        sinker: sinker,
         bonus: potentialBonus,
       ),
       potentialAverageSpeed:
@@ -513,6 +548,9 @@ class PlayerGenerator {
     int? curve,
     int? splitter,
     int? changeup,
+    int? shoot,
+    int? cutter,
+    int? sinker,
     double bonus = 0.0,
   }) {
     final map = <String, int>{};
@@ -532,6 +570,9 @@ class PlayerGenerator {
     put('curve', curve);
     put('splitter', splitter);
     put('changeup', changeup);
+    put('shoot', shoot);
+    put('cutter', cutter);
+    put('sinker', sinker);
     return map;
   }
 

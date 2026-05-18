@@ -193,14 +193,19 @@ class AtBatSimulator {
   // ボールも下げて四球が増えすぎないように合わせる。
   static const double _baseProbBall = 0.34;
   static const double _baseProbStrikeLooking = 0.14;
-  static const double _baseProbStrikeSwinging = 0.085;
+  // 2026-05-18: 変化球の配球比率を上げた（ストレート 50%→45%）ぶん、変化球の
+  // 空振り寄与でリーグ K 率が上振れたため、空振りベースを 0.085→0.073 に再センタ。
+  // 同日さらにシュート/カット/シンカーを追加し K 率が再び上振れたため 0.073→0.069。
+  static const double _baseProbStrikeSwinging = 0.069;
   static const double _baseProbFoul = 0.195;
   // インプレー確率は残り（= 1 - 上記4つ = 0.24。旧 0.20 から引き上げ）
 
   // インプレー時の結果確率（球速145km、制球力5基準）
   // インプレー率を上げたぶん打率が上振れるので probOut を引き上げて
   // リーグ打率を NPB 水準（~.250）へ寄せる。
-  static const double _baseProbOut = 0.755;
+  // 2026-05-18: シュート/カット/シンカー追加と配球リワークでリーグ水準が動いた
+  // ため、リーグ打率を NPB へ戻すべく 0.740→0.718 に再センタ。
+  static const double _baseProbOut = 0.718;
   static const double _baseProbSingle = 0.20;
   // 二塁打を引き上げ・三塁打を引き下げ（2026-05-16 微調整）。
   // 旧 0.05 / 0.01 では 143試合換算 二塁打189・三塁打48 で、三塁打が NPB の
@@ -213,8 +218,98 @@ class AtBatSimulator {
   // 基準球種パラメータ（この値で基本効果）
   static const int _basePitchParam = 5;
 
-  // パラメータ1あたりの補正率（球種の効果をスケール）
+  // パラメータ1あたりの補正率（球種の効果をスケール）。
+  // ストレート（伸び）の質スケーリングに使用（線形）。
   static const double _pitchParamModifier = 0.01;
+
+  // 変化球の質（スライダー/カーブ/スプリット/チェンジアップ）の確率補正テーブル。
+  //
+  // 旧実装は線形 (param-5)*_pitchParamModifier（±0.04〜0.05）だったが、効果が
+  // 小さいうえ各変化球は配球の 15〜20% しか投げられないため、シーズン成績では
+  // ノイズに完全に埋もれていた（8シーズン計測で防御率スプレッド ~0.34、ビン値も
+  // 非単調）。変化球の質が「観測できる能力」になっていなかった（設計の柱③）。
+  //
+  // 線形小刻み補正をやめ、長打力→本塁打や走力→盗塁と同じく非線形テーブルで
+  // 上下を引き離す（[[feedback_parameter_influence]]）。上に凸で、下位（1〜3）の
+  // 「曲がらない変化球」を強く突き放し、上位（8〜10）の決め球を引き上げる。
+  // ストレート（伸び）はここを通さず従来どおり線形のまま（既に footprint 健全）。
+  static const Map<int, double> _breakingQualityTable = {
+    1: -0.16,
+    2: -0.125,
+    3: -0.085,
+    4: -0.040,
+    5: 0.0,
+    6: 0.040,
+    7: 0.085,
+    8: 0.130,
+    9: 0.175,
+    10: 0.205,
+  };
+
+  // 変化球の配球重みテーブル（質パラメータ → 投球選択の重み）。
+  //
+  // 2026-05-18: ストレートを投げすぎる傾向があったため、ストレートの基本重みを
+  // 下げて変化球を増やす。あわせて「得意な球（質の高い変化球）ほど多く投げる」
+  // よう、重みを質パラメータに対し非線形（上に凸）でスケールさせる。質9〜10 の
+  // 決め球はストレート並み〜それ以上の頻度で投げられる。
+  static const Map<int, double> _breakingSelectionWeight = {
+    1: 0.30,
+    2: 0.36,
+    3: 0.43,
+    4: 0.51,
+    5: 0.60,
+    6: 0.71,
+    7: 0.84,
+    8: 0.99,
+    9: 1.15,
+    10: 1.30,
+  };
+
+  // 球種ごとの使用頻度の重み（配球選択での球種別の倍率）。
+  //
+  // 2026-05-18: 同じ質でも球種によって「投げやすさ」が違う（スライダーは多投され、
+  // カーブは見せ球で少なめ）。質（被打率・空振り）と投球割合を 1 パラメータに
+  // 同居させると無理が出るため、投球割合を独立要素として分離した。値は NPB 2016 の
+  // 「投球割合 ÷ 投手割合」（その球種を持つ投手が、どれだけその球種を投げるか）の
+  // 比に概ね比例。配球重み = _breakingSelectionWeight[質] × この倍率。
+  static const Map<PitchType, double> _pitchTypeUsageWeight = {
+    PitchType.slider: 1.05,
+    PitchType.cutter: 0.92,
+    PitchType.sinker: 0.75,
+    PitchType.shoot: 0.86,
+    PitchType.splitter: 0.71,
+    PitchType.changeup: 0.63,
+    PitchType.curveball: 0.47,
+  };
+
+  // 持ち球数ボーナス。球種が多い投手は打者が待ち球を絞れず、わずかに有利になる。
+  // 基準 4.5 球種。質ほど重要ではない「隠し味」程度の小さな補正に留める
+  // （3球種↔6球種で防御率にして ~0.4 程度の差）。
+  static const double _baseArsenalSize = 4.5;
+  static const double _arsenalSwingBonus = 0.004; // 1球種あたりの空振り率補正
+  static const double _arsenalOutBonus = 0.002;   // 1球種あたりのアウト率補正
+
+  /// 球種パラメータ（質）の確率補正値。
+  /// ストレート（伸び）は線形、変化球は非線形テーブル（footprint 強化）。
+  static double _pitchParamScaling(PitchType pitchType, int paramValue) {
+    if (pitchType == PitchType.fastball) {
+      return (paramValue - _basePitchParam) * _pitchParamModifier;
+    }
+    return _breakingQualityTable[paramValue.clamp(1, 10)] ?? 0.0;
+  }
+
+  /// 投手の持ち球数（ストレート + 投げられる変化球の種類数）。3〜8 の範囲。
+  static int _arsenalSize(Player pitcher) {
+    var n = 1; // ストレートは必ず投げる
+    if (pitcher.slider != null) n++;
+    if (pitcher.curve != null) n++;
+    if (pitcher.splitter != null) n++;
+    if (pitcher.changeup != null) n++;
+    if (pitcher.shoot != null) n++;
+    if (pitcher.cutter != null) n++;
+    if (pitcher.sinker != null) n++;
+    return n;
+  }
 
   // 球種ごとの特性定義
   // 球速低下量（km/h）
@@ -224,6 +319,9 @@ class AtBatSimulator {
     PitchType.curveball: 25, // -20〜-30の中央
     PitchType.splitter: 10,  // -5〜-15の中央
     PitchType.changeup: 15,  // -10〜-20の中央
+    PitchType.shoot: 5,      // ツーシーム系。ストレートとほぼ同球速
+    PitchType.cutter: 7,     // ストレートよりやや遅い
+    PitchType.sinker: 14,    // 沈む遅球
   };
 
   // ボール率補正（正=ボール増）
@@ -234,6 +332,9 @@ class AtBatSimulator {
     PitchType.curveball: 0.02,  // やや高
     PitchType.splitter: 0.05,   // 高（抜けやすい）
     PitchType.changeup: 0.0,    // 中
+    PitchType.shoot: 0.0,       // 中（ツーシームは比較的制球しやすい）
+    PitchType.cutter: -0.01,    // やや低（制球の良い球）
+    PitchType.sinker: 0.03,     // 高（沈む球で抜けやすい）
   };
 
   // 三振率補正（正=空振り増）
@@ -244,6 +345,9 @@ class AtBatSimulator {
     PitchType.curveball: 0.01,  // 中
     PitchType.splitter: 0.05,   // 最高（決め球）
     PitchType.changeup: 0.02,   // 中〜高
+    PitchType.shoot: -0.015,    // 最低（空振りは取れない。ゴロで打たせる球）
+    PitchType.cutter: 0.02,     // 中〜高
+    PitchType.sinker: 0.025,    // 高め
   };
 
   // アウト率補正（正=アウト増=被打率低）
@@ -254,6 +358,9 @@ class AtBatSimulator {
     PitchType.curveball: 0.0,   // 被打率中
     PitchType.splitter: 0.03,   // 被打率低
     PitchType.changeup: 0.02,   // 被打率低
+    PitchType.shoot: -0.02,     // 被打率やや高（コンタクトされやすい）
+    PitchType.cutter: 0.0,      // 被打率中
+    PitchType.sinker: 0.0,      // 被打率中（ゴロ傾向で打ち取る）
   };
 
   // 被長打率補正（正=長打増=打者有利）
@@ -264,6 +371,9 @@ class AtBatSimulator {
     PitchType.curveball: 0.01,  // 被長打率やや高
     PitchType.splitter: -0.02,  // 被長打率低
     PitchType.changeup: -0.02,  // 被長打率低（タイミング崩れる）
+    PitchType.shoot: -0.02,     // 被長打率低（ゴロ中心で柵越えしにくい）
+    PitchType.cutter: -0.01,    // 被長打率低〜中（詰まらせる）
+    PitchType.sinker: -0.025,   // 被長打率低（ゴロ中心）
   };
 
   // === 疲労システム ===
@@ -283,6 +393,9 @@ class AtBatSimulator {
     PitchType.curveball: 0.6,   // ★★★☆☆ 浮く
     PitchType.splitter: 1.0,    // ★★★★★ 落ちない＆被弾
     PitchType.changeup: 0.4,    // ★★☆☆☆ 少しズレる
+    PitchType.shoot: 0.4,       // ★★☆☆☆ ストレート系
+    PitchType.cutter: 0.5,      // ★★★☆☆ 曲がりが甘くなる
+    PitchType.sinker: 0.6,      // ★★★☆☆ 沈まなくなる
   };
 
   // 疲労ペナルティ（完全疲労 fatigue=1.0 時の最大値）。
@@ -353,8 +466,8 @@ class AtBatSimulator {
   }
 
   /// 投げる球種を選択
-  /// 速球派: ストレート60%程度、変化球各20%程度
-  /// 技巧派: ストレート40%程度、変化球各20%程度
+  /// ストレートは球速・質で重みが変動、変化球は質パラメータで重みが変動する。
+  /// 得意な球（質の高い変化球・速くて質の高いストレート）ほど多く投げる。
   /// 球種選択の確率は調子に影響されない（習慣的なもの）
   ///
   /// 同球種連続ペナルティ:
@@ -378,24 +491,30 @@ class AtBatSimulator {
     // nullの球種は重み0（投げない）
     final weights = <PitchType, double>{};
 
-    // ストレートは基本重み1.8 + 球速と質で補正
+    // ストレートは基本重み 1.4 + 球速と質で補正。
+    // 2026-05-18: ストレートを投げすぎる傾向があったため基本重みを一度 1.8→1.2 に
+    // 下げた。その後シュート/カット/シンカーを追加して持ち球が増えストレートが
+    // 40% まで押し出されたため、NPB 水準（~46%）へ戻すべく 1.2→1.4 に再調整。
+    // 球の速い・質の高い投手はストレートを多めに投げる。
     final speedBonus = ((avgSpeed - 140) / 30.0).clamp(-0.3, 0.5);  // -0.3〜+0.5
     final qualityBonus = (fastballQuality - 5) * 0.1;               // -0.4〜+0.5
-    weights[PitchType.fastball] = (1.8 + speedBonus + qualityBonus).clamp(1.2, 2.5);
+    weights[PitchType.fastball] = (1.35 + speedBonus + qualityBonus).clamp(0.9, 2.1);
 
-    // 変化球はパラメータ値を重みに使用（0.5〜1.2）
-    if (pitcher.slider != null) {
-      weights[PitchType.slider] = (pitcher.slider! / 10.0 + 0.2).clamp(0.5, 1.2);
+    // 変化球の配球重み = 質テーブル（得意な球ほど多投）× 球種別の使用頻度倍率
+    // （スライダーは多投・カーブは見せ球、など球種固有の投げやすさ）。
+    void setBreaking(PitchType type, int? param) {
+      if (param == null) return;
+      weights[type] = _breakingSelectionWeight[param.clamp(1, 10)]! *
+          (_pitchTypeUsageWeight[type] ?? 1.0);
     }
-    if (pitcher.curve != null) {
-      weights[PitchType.curveball] = (pitcher.curve! / 10.0 + 0.2).clamp(0.5, 1.2);
-    }
-    if (pitcher.splitter != null) {
-      weights[PitchType.splitter] = (pitcher.splitter! / 10.0 + 0.2).clamp(0.5, 1.2);
-    }
-    if (pitcher.changeup != null) {
-      weights[PitchType.changeup] = (pitcher.changeup! / 10.0 + 0.2).clamp(0.5, 1.2);
-    }
+
+    setBreaking(PitchType.slider, pitcher.slider);
+    setBreaking(PitchType.curveball, pitcher.curve);
+    setBreaking(PitchType.splitter, pitcher.splitter);
+    setBreaking(PitchType.changeup, pitcher.changeup);
+    setBreaking(PitchType.shoot, pitcher.shoot);
+    setBreaking(PitchType.cutter, pitcher.cutter);
+    setBreaking(PitchType.sinker, pitcher.sinker);
 
     // 同球種連続ペナルティ: 直前の球種だけ重みを縮小
     if (prevPitchType != null &&
@@ -470,7 +589,7 @@ class AtBatSimulator {
   /// fatigue: 基本疲労度（0.0〜1.0、デフォルト0）
   /// isPlatoonDisadvantage: 利き手同士マッチアップで打者不利なら true
   /// batterSide: 打者の実効打席（打球方向バイアス用）
-  PitchResult simulatePitch(int balls, int strikes, int speed, int control, int meet, PitchType pitchType, int? pitchParam, {int eye = 5, int power = 5, double fatigue = 0.0, bool isPlatoonDisadvantage = false, Handedness batterSide = Handedness.right}) {
+  PitchResult simulatePitch(int balls, int strikes, int speed, int control, int meet, PitchType pitchType, int? pitchParam, {int eye = 5, int power = 5, double fatigue = 0.0, bool isPlatoonDisadvantage = false, Handedness batterSide = Handedness.right, int arsenalSize = 4}) {
     // 死球チェック（独立試行、最優先）。
     // 制球が悪い投手ほど発生しやすい。発生率は1球あたり 0.05〜1.0% の範囲に収まる。
     final probHbp = (_baseProbHitByPitch +
@@ -519,10 +638,10 @@ class AtBatSimulator {
     final pitchBallModifier = _ballModifiers[pitchType] ?? 0.0;
     final pitchSwingModifier = _swingModifiers[pitchType] ?? 0.0;
 
-    // パラメータによるスケーリング（パラメータ5で基準、1-10で±4%）
-    // ストレートの場合はfastballパラメータ、変化球はそれぞれのパラメータ
+    // パラメータによるスケーリング。ストレートはfastballパラメータ（伸び）、
+    // 変化球はそれぞれの質パラメータ。ストレートは線形・変化球は非線形テーブル。
     final paramValue = pitchParam ?? _basePitchParam;
-    final paramScaling = (paramValue - _basePitchParam) * _pitchParamModifier;
+    final paramScaling = _pitchParamScaling(pitchType, paramValue);
 
     // ストレートの非線形「球速空振りボーナス」（奪三振にのみ効く）。
     // 実効球速が _velocityWhiffThreshold を超えると非線形に空振りが急増。
@@ -550,7 +669,9 @@ class AtBatSimulator {
     final probStrikeLooking = _baseProbStrikeLooking;
     // 空振り率: 球種固有 + 球速（線形）+ 非線形球速ボーナス + パラメータ補正
     //          - ミート力 - 疲労 + プラトーン
-    final probStrikeSwinging = (_baseProbStrikeSwinging + pitchSwingModifier + speedModifier + velocityWhiffBonus + paramScaling - swingModifier - fatigueSwingDecrease + platoonSwing).clamp(0.03, 0.40);
+    // 持ち球数ボーナス（球種が多いほど打者が待ち球を絞れず空振り増）
+    final arsenalSwing = (arsenalSize - _baseArsenalSize) * _arsenalSwingBonus;
+    final probStrikeSwinging = (_baseProbStrikeSwinging + pitchSwingModifier + speedModifier + velocityWhiffBonus + paramScaling - swingModifier - fatigueSwingDecrease + platoonSwing + arsenalSwing).clamp(0.03, 0.40);
     final probFoul = _baseProbFoul;
     // インプレー確率は残り（他の結果にならなかった場合）
 
@@ -582,21 +703,40 @@ class AtBatSimulator {
     }
 
     // インプレー
-    final battedBallType = _randomBattedBallType();
+    final battedBallType = _randomBattedBallType(pitchType);
     final fieldPosition = _randomFieldPosition(battedBallType, batterSide);
     return PitchResult(type: PitchResultType.inPlay, pitchType: pitchType, battedBallType: battedBallType, fieldPosition: fieldPosition, speed: speed);
   }
 
-  /// 打球の種類をランダムに決定
+  /// 球種ごとのゴロ率（インプレー打球のうちゴロになる割合）。
   ///
-  /// 分布: ゴロ 50% / フライ 38% / ライナー 12%
-  /// （NPB 実測 ゴロ ~46% / フライ ~33% / ライナー ~21% に対し、
-  /// シミュレーターでは内野ライナーが体感的に多く感じられたため、
-  /// ライナーをやや抑え目にしてゴロに振り替えている）
-  BattedBallType _randomBattedBallType() {
+  /// NPB 2016 実測のゴロ率（ストレート 38% 〜 シンカー 63%）を、シミュレーターの
+  /// リーグ平均ゴロ率が従来水準（約 50%）を保つよう一律 +約4.5pt して移植した。
+  /// シュート・シンカーは「空振りは取れないがゴロを打たせる」球で、走者ありでは
+  /// 併殺を奪いやすい。逆にストレートはフライ・ライナーが出やすく一発を食う。
+  static const Map<PitchType, double> _groundBallShare = {
+    PitchType.fastball: 0.43,
+    PitchType.slider: 0.50,
+    PitchType.curveball: 0.555,
+    PitchType.splitter: 0.635,
+    PitchType.changeup: 0.535,
+    PitchType.shoot: 0.65,
+    PitchType.cutter: 0.545,
+    PitchType.sinker: 0.675,
+  };
+
+  /// 打球の種類を球種ごとのゴロ傾向に応じてランダムに決定する。
+  ///
+  /// ゴロ率は球種依存（[_groundBallShare]）。残り（フライ＋ライナー）は従来の
+  /// フライ : ライナー ≒ 76 : 24 の比率で配分する。内野ライナー過多を避けるため
+  /// シミュレーターは現実よりゴロ寄り（リーグ平均ゴロ ~50%）に調整している。
+  BattedBallType _randomBattedBallType(PitchType pitchType) {
+    final ground = _groundBallShare[pitchType] ?? 0.50;
     final roll = _random.nextDouble();
-    if (roll < 0.50) return BattedBallType.groundBall;
-    if (roll < 0.88) return BattedBallType.flyBall;
+    if (roll < ground) return BattedBallType.groundBall;
+    // 非ゴロぶんをフライ 76% / ライナー 24% に配分
+    final flyCut = ground + (1.0 - ground) * 0.76;
+    if (roll < flyCut) return BattedBallType.flyBall;
     return BattedBallType.lineDrive;
   }
 
@@ -781,6 +921,7 @@ class AtBatSimulator {
     bool isPlatoonDisadvantage = false,
     BattedBallType? battedBallType,
     FieldPosition? fieldPosition,
+    int arsenalSize = 4,
   }) {
     // 球種に応じた実効疲労度を計算
     final effectiveFatigue = _getEffectiveFatigue(fatigue, pitchType);
@@ -811,8 +952,8 @@ class AtBatSimulator {
     final pitchOutModifier = _outModifiers[pitchType] ?? 0.0;
     final pitchXbhModifier = _xbhModifiers[pitchType] ?? 0.0;
 
-    // パラメータによるスケーリング（パラメータ5で基準、1-10で±4%）
-    final paramScaling = (pitchParam - _basePitchParam) * _pitchParamModifier;
+    // パラメータによるスケーリング（ストレートは線形・変化球は非線形テーブル）
+    final paramScaling = _pitchParamScaling(pitchType, pitchParam);
 
     // 疲労による補正（アウト率低下、被長打率増加）
     final fatigueOutDecrease = effectiveFatigue * _fatigueOutModifier;
@@ -842,7 +983,10 @@ class AtBatSimulator {
     // プラトーン補正（同じ手=投手有利）
     final platoonOut = isPlatoonDisadvantage ? _platoonOutModifier : 0.0;
 
-    // アウト率: 球種固有 + 球速（ストレートのみ）+ パラメータ + 制球力 + 守備力 + リード - 疲労 + ミート + プラトーン
+    // 持ち球数ボーナス（球種が多いほど打者が絞れず打ち損じ＝アウト増）
+    final arsenalOut = (arsenalSize - _baseArsenalSize) * _arsenalOutBonus;
+
+    // アウト率: 球種固有 + 球速（ストレートのみ）+ パラメータ + 制球力 + 守備力 + リード - 疲労 + ミート + プラトーン + 持ち球数
     final outModifier = pitchOutModifier +
         speedModifier +
         paramScaling +
@@ -851,7 +995,8 @@ class AtBatSimulator {
         leadModifierValue -
         fatigueOutDecrease +
         meetOutAdjustment +
-        platoonOut;
+        platoonOut +
+        arsenalOut;
     var probOut = (_baseProbOut + outModifier).clamp(0.45, 0.85);
 
     // 打球タイプ × 方向によるアウト率の上書き補正
@@ -1034,6 +1179,7 @@ class AtBatSimulator {
     bool isPlatoonDisadvantage = false,
     bool isLeftBatter = false,
     bool isFielderForcedPlacement = false,
+    int arsenalSize = 4,
   }) {
     final fieldingValue = fielding ?? _baseFielding;
     final catcherFieldingValue = catcherFielding ?? _baseFielding;
@@ -1050,6 +1196,7 @@ class AtBatSimulator {
       pitchType: pitchType,
       pitchParam: paramValue,
       fatigue: fatigue,
+      arsenalSize: arsenalSize,
       batterSpeed: batterSpeed ?? 5,
       isPlatoonDisadvantage: isPlatoonDisadvantage,
       battedBallType: battedBallType,
@@ -1149,6 +1296,18 @@ class AtBatSimulator {
         baseParam = pitcher.changeup;
         modifier = condition.changeupModifier;
         break;
+      case PitchType.shoot:
+        baseParam = pitcher.shoot;
+        modifier = condition.shootModifier;
+        break;
+      case PitchType.cutter:
+        baseParam = pitcher.cutter;
+        modifier = condition.cutterModifier;
+        break;
+      case PitchType.sinker:
+        baseParam = pitcher.sinker;
+        modifier = condition.sinkerModifier;
+        break;
     }
 
     if (baseParam == null) return null;
@@ -1175,6 +1334,8 @@ class AtBatSimulator {
     final avgSpeed = (pitcher.averageSpeed ?? 145) + condition.speedModifier;
     // 投手の制球力（設定されていなければ5）+ 調子補正（1〜10の範囲内）
     final control = ((pitcher.control ?? 5) + condition.controlModifier).clamp(1, 10);
+    // 投手の持ち球数（球種が多いほど打者が待ち球を絞れず、わずかに有利）
+    final arsenalSize = _arsenalSize(pitcher);
     // 打者のミート力（設定されていなければ5）+ 調子補正（1〜10の範囲内）
     final meet = ((batter.meet ?? 5) + batterConditionModifier).clamp(1, 10);
     // 打者の長打力（設定されていなければ5）+ 調子補正
@@ -1263,6 +1424,7 @@ class AtBatSimulator {
         fatigue: fatigue,
         isPlatoonDisadvantage: isPlatoonDisadvantage,
         batterSide: batterSide,
+        arsenalSize: arsenalSize,
       );
       currentPitchCount++; // 投球数を増加
 
@@ -1412,6 +1574,7 @@ class AtBatSimulator {
         fatigue: fatigue,
         isPlatoonDisadvantage: isPlatoonDisadvantage,
         isLeftBatter: isLeftBatter,
+        arsenalSize: arsenalSize,
       );
 
       if (atBatEndCheck.isEnded) {
@@ -1853,6 +2016,7 @@ class AtBatSimulator {
     double fatigue = 0.0,
     bool isPlatoonDisadvantage = false,
     bool isLeftBatter = false,
+    int arsenalSize = 4,
   }) {
     switch (pitch.type) {
       case PitchResultType.ball:
@@ -1899,6 +2063,7 @@ class AtBatSimulator {
           isPlatoonDisadvantage: isPlatoonDisadvantage,
           isLeftBatter: isLeftBatter,
           isFielderForcedPlacement: isFielderForced,
+          arsenalSize: arsenalSize,
         );
         return AtBatEndCheckResult(
           result: inPlayResult.result,

@@ -19,7 +19,13 @@
       "Bash(grep -iv \"//.*$\")",
       "Bash(grep *)",
       "Bash(sed -n '14,22p;63,70p' bin/test_eye.dart)",
-      "Bash(sed -n '14,22p;63,70p' bin/test_condition.dart)"
+      "Bash(sed -n '14,22p;63,70p' bin/test_condition.dart)",
+      "Bash(新設\\\\|得意な球ほど多投\" docs/CHANGELOG.md | head)",
+      "Read(//private/tmp/**)",
+      "Bash(cp /Users/takahashi-sh/Project/idle_baseball/images/breaking-ball.png bb.png)",
+      "Bash(sips -z 1610 1252 bb.png --out bb_big.png)",
+      "Bash(sips -c 805 1252 --cropOffset 0 0 bb_big.png --out bb_top.png)",
+      "Bash(sips -c 805 1252 --cropOffset 805 0 bb_big.png --out bb_bot.png)"
     ]
   }
 }

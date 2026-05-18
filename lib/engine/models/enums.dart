@@ -143,6 +143,9 @@ enum PitchType {
   curveball, // カーブ
   splitter, // スプリット（フォーク系）
   changeup, // チェンジアップ
+  shoot, // シュート（ツーシーム系。空振りは取れないがゴロを打たせる）
+  cutter, // カットボール
+  sinker, // シンカー（最もゴロを打たせる）
 }
 
 extension PitchTypeExtension on PitchType {
@@ -159,6 +162,12 @@ extension PitchTypeExtension on PitchType {
         return 'スプリット';
       case PitchType.changeup:
         return 'チェンジアップ';
+      case PitchType.shoot:
+        return 'シュート';
+      case PitchType.cutter:
+        return 'カットボール';
+      case PitchType.sinker:
+        return 'シンカー';
     }
   }
 
@@ -175,6 +184,12 @@ extension PitchTypeExtension on PitchType {
         return 'スプ';
       case PitchType.changeup:
         return 'チェ';
+      case PitchType.shoot:
+        return 'シュ';
+      case PitchType.cutter:
+        return 'カッ';
+      case PitchType.sinker:
+        return 'シン';
     }
   }
 }

@@ -44,6 +44,9 @@ class _PlayerEditScreenState extends State<PlayerEditScreen> {
   late int? _curve;
   late int? _splitter;
   late int? _changeup;
+  late int? _shoot;
+  late int? _cutter;
+  late int? _sinker;
 
   // 打撃（投手は参考、野手は本能力）
   late int _meet;
@@ -90,6 +93,9 @@ class _PlayerEditScreenState extends State<PlayerEditScreen> {
     _curve = p.curve;
     _splitter = p.splitter;
     _changeup = p.changeup;
+    _shoot = p.shoot;
+    _cutter = p.cutter;
+    _sinker = p.sinker;
 
     _meet = p.meet ?? 1;
     _power = p.power ?? 1;
@@ -393,6 +399,21 @@ class _PlayerEditScreenState extends State<PlayerEditScreen> {
             value: _changeup,
             onChanged: (v) => setState(() => _changeup = v),
           ),
+          _ToggleSlider(
+            label: 'シュート',
+            value: _shoot,
+            onChanged: (v) => setState(() => _shoot = v),
+          ),
+          _ToggleSlider(
+            label: 'カットボール',
+            value: _cutter,
+            onChanged: (v) => setState(() => _cutter = v),
+          ),
+          _ToggleSlider(
+            label: 'シンカー',
+            value: _sinker,
+            onChanged: (v) => setState(() => _sinker = v),
+          ),
         ],
       ),
       const SizedBox(height: 8),
@@ -520,6 +541,9 @@ class _PlayerEditScreenState extends State<PlayerEditScreen> {
       curve: _isPitcher ? _curve : null,
       splitter: _isPitcher ? _splitter : null,
       changeup: _isPitcher ? _changeup : null,
+      shoot: _isPitcher ? _shoot : null,
+      cutter: _isPitcher ? _cutter : null,
+      sinker: _isPitcher ? _sinker : null,
       // 打撃（投手も野手も持つ）
       meet: _meet,
       power: _power,

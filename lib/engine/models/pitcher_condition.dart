@@ -10,6 +10,9 @@ class PitcherCondition {
   final int curveModifier;     // カーブ補正（-2〜+2）
   final int splitterModifier;  // スプリット補正（-2〜+2）
   final int changeupModifier;  // チェンジアップ補正（-2〜+2）
+  final int shootModifier;     // シュート補正（-2〜+2）
+  final int cutterModifier;    // カットボール補正（-2〜+2）
+  final int sinkerModifier;    // シンカー補正（-2〜+2）
 
   const PitcherCondition({
     this.speedModifier = 0,
@@ -19,6 +22,9 @@ class PitcherCondition {
     this.curveModifier = 0,
     this.splitterModifier = 0,
     this.changeupModifier = 0,
+    this.shootModifier = 0,
+    this.cutterModifier = 0,
+    this.sinkerModifier = 0,
   });
 
   /// ランダムに調子を生成（各パラメータ独立に-2〜+2）
@@ -31,6 +37,9 @@ class PitcherCondition {
       curveModifier: random.nextInt(5) - 2,
       splitterModifier: random.nextInt(5) - 2,
       changeupModifier: random.nextInt(5) - 2,
+      shootModifier: random.nextInt(5) - 2,
+      cutterModifier: random.nextInt(5) - 2,
+      sinkerModifier: random.nextInt(5) - 2,
     );
   }
 
@@ -43,6 +52,9 @@ class PitcherCondition {
     curveModifier: 2,
     splitterModifier: 2,
     changeupModifier: 2,
+    shootModifier: 2,
+    cutterModifier: 2,
+    sinkerModifier: 2,
   );
 
   /// 絶不調（全パラメータ-2）
@@ -54,6 +66,9 @@ class PitcherCondition {
     curveModifier: -2,
     splitterModifier: -2,
     changeupModifier: -2,
+    shootModifier: -2,
+    cutterModifier: -2,
+    sinkerModifier: -2,
   );
 
   /// 普通（全パラメータ±0）
@@ -62,6 +77,7 @@ class PitcherCondition {
   @override
   String toString() {
     return 'PitcherCondition(速$speedModifier, 直$fastballModifier, 制$controlModifier, '
-        'ス$sliderModifier, カ$curveModifier, フ$splitterModifier, チ$changeupModifier)';
+        'ス$sliderModifier, カ$curveModifier, フ$splitterModifier, チ$changeupModifier, '
+        'シュ$shootModifier, カッ$cutterModifier, シン$sinkerModifier)';
   }
 }
