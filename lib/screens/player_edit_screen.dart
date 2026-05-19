@@ -84,7 +84,10 @@ class _PlayerEditScreenState extends State<PlayerEditScreen> {
 
     _bats = p.effectiveBatsBase;
     _throws = p.effectiveThrows;
-    _pitcherRole = p.pitcherRole;
+    // 投手は必ずロールを持つ扱いにする（旧データ・CPU 生成で null の先発投手は
+    // 「先発」ロールに正規化）。起用ドロップダウンの value が必ず項目と一致するよう。
+    _pitcherRole =
+        p.pitcherRole ?? (p.isPitcher ? PitcherRole.starter : null);
 
     _control = p.control ?? 5;
     _fastball = p.fastball ?? 5;
@@ -311,20 +314,9 @@ class _PlayerEditScreenState extends State<PlayerEditScreen> {
               value: _pitcherRole,
               isDense: true,
               onChanged: (v) => setState(() => _pitcherRole = v),
-              items: const [
-                DropdownMenuItem(value: null, child: Text('先発')),
-                DropdownMenuItem(
-                    value: PitcherRole.closer, child: Text('抑え')),
-                DropdownMenuItem(
-                    value: PitcherRole.setup, child: Text('セットアッパー')),
-                DropdownMenuItem(
-                    value: PitcherRole.middle, child: Text('中継ぎ')),
-                DropdownMenuItem(
-                    value: PitcherRole.situational, child: Text('ワンポイント')),
-                DropdownMenuItem(
-                    value: PitcherRole.long, child: Text('ロング')),
-                DropdownMenuItem(
-                    value: PitcherRole.mopUp, child: Text('敗戦処理')),
+              items: [
+                for (final r in PitcherRole.values)
+                  DropdownMenuItem(value: r, child: Text(r.displayName)),
               ],
             ),
           ),

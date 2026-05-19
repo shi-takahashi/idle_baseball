@@ -162,24 +162,19 @@ class _PlayerRow extends StatelessWidget {
                 ),
               ),
             ),
-            // ポジション / 役割
-            SizedBox(
-              width: 56,
-              child: Text(
-                subtitle,
-                style: const TextStyle(fontSize: 12),
-                overflow: TextOverflow.ellipsis,
-              ),
+            // 名前（背番号のすぐ右）
+            Text(
+              player.name,
+              style: const TextStyle(fontSize: 14),
             ),
-            // 名前
-            Expanded(
-              child: Text(
-                player.name,
-                style: const TextStyle(fontSize: 14),
-                overflow: TextOverflow.ellipsis,
-              ),
+            const SizedBox(width: 12),
+            // ポジション / 役割（名前のすぐ右に続けて表示）
+            Text(
+              subtitle,
+              style: const TextStyle(fontSize: 12, color: Colors.black54),
             ),
-            // 利き
+            // 余白は右側に寄せ、利き手・矢印は右端に
+            const Spacer(),
             Text(
               _handednessLabel(player),
               style: TextStyle(

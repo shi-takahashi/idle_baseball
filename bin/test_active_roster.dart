@@ -69,29 +69,28 @@ void main() {
   check('スタメン選定は背番号順で中立（控えより若い番号がスタメン入り）',
       selectionOk);
 
-  // --- 1b. 開幕時、自チームの救援は全員「中継ぎ」（能力バレ防止）---
+  // --- 1b. 開幕時の投手ロール: 背番号若い6人が「先発」、残り12人が「中継ぎ」---
+  final allPitchersAtStart = <Player>[
+    ...team.startingRotation,
+    ...team.bullpen,
+  ]..sort((a, b) => a.number.compareTo(b.number));
   check(
-    '開幕時 自チーム救援は全員中継ぎ',
-    team.bullpen.every((p) => p.pitcherRole == PitcherRole.middle),
+    '開幕時 背番号若い6人が「先発」役割',
+    allPitchersAtStart.take(6).every((p) => p.pitcherRole == PitcherRole.starter),
+  );
+  check(
+    '開幕時 残り12人が「中継ぎ」役割',
+    allPitchersAtStart.skip(6).every((p) => p.pitcherRole == PitcherRole.middle),
   );
   // setPitcherRole で永続的に役割を変更できる
-  final aReliever = team.bullpen.first;
+  final aReliever = allPitchersAtStart.last; // 背番号最大＝中継ぎ役割
   c.setPitcherRole(aReliever.id, PitcherRole.closer);
   check(
     'setPitcherRole で抑えに変更が反映される',
-    c.myTeam.bullpen
-            .firstWhere((p) => p.id == aReliever.id)
-            .pitcherRole ==
-        PitcherRole.closer,
+    c.findPlayerById(aReliever.id)?.pitcherRole == PitcherRole.closer,
   );
   // 元に戻しておく（以降のテストに影響させない）
   c.setPitcherRole(aReliever.id, PitcherRole.middle);
-
-  // --- 1c. 開幕時、先発ローテ6人は「先発」役割 ---
-  check(
-    '開幕時 自チーム先発ローテは全員「先発」役割',
-    team.startingRotation.every((p) => p.pitcherRole == PitcherRole.starter),
-  );
 
   // --- 2. ベンチ入り選定が中立（背番号順）か ---
   final allFielders = <Player>[
@@ -115,14 +114,19 @@ void main() {
   check('Day1 先発は全18投手で背番号最小', allPitchers.first.id == spId);
   final activeBullpenIds =
       suggested.activeBullpen.map((p) => p.id).toSet();
+  // 初期提案のベンチ入り救援は「先発ロールを除く中継ぎ等から背番号下位8人」。
   final expectedBullpenIds = [
     for (final p in allPitchers)
-      if (p.id != spId) p,
+      if (p.id != spId && p.pitcherRole != PitcherRole.starter) p,
   ].take(8).map((p) => p.id).toSet();
   check(
-    'ベンチ入り救援は背番号順で中立（先発を除く背番号下位8人）',
+    'ベンチ入り救援は先発を除外して背番号順で8人',
     activeBullpenIds.length == expectedBullpenIds.length &&
         activeBullpenIds.containsAll(expectedBullpenIds),
+  );
+  check(
+    'ベンチ入り救援に先発ロールの投手は含まれない',
+    suggested.activeBullpen.every((p) => p.pitcherRole != PitcherRole.starter),
   );
 
   // --- 3. 作戦をセットしてシーズン完走 ---

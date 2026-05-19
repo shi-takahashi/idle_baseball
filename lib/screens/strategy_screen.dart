@@ -47,7 +47,7 @@ class StrategyScreenState extends State<StrategyScreen>
 
   /// 「スタメン」「ベンチ入り」の 2 タブ。
   late final TabController _tabController =
-      TabController(length: 2, vsync: this);
+      TabController(length: 3, vsync: this);
 
   /// 1〜9 番のスロット。投手は通常 [8]（9 番）だがどこでも置ける。
   late List<_Slot> _slots = List.generate(9, (_) => _Slot(id: _newSlotId()));
@@ -187,9 +187,11 @@ class StrategyScreenState extends State<StrategyScreen>
                         TabBar(
                           controller: _tabController,
                           labelColor: Theme.of(context).colorScheme.primary,
+                          labelPadding: EdgeInsets.zero,
                           tabs: const [
                             Tab(text: 'スタメン'),
-                            Tab(text: 'ベンチ入り'),
+                            Tab(text: 'ベンチ入り野手'),
+                            Tab(text: 'ベンチ入り投手'),
                           ],
                         ),
                         Expanded(
@@ -197,7 +199,8 @@ class StrategyScreenState extends State<StrategyScreen>
                             controller: _tabController,
                             children: [
                               _buildStarterTab(),
-                              _buildBenchTab(),
+                              _buildBenchFieldersTab(),
+                              _buildBenchPitchersTab(),
                             ],
                           ),
                         ),
@@ -330,16 +333,31 @@ class StrategyScreenState extends State<StrategyScreen>
   }
 
   // ---------------------------------------------------
-  // タブ 2: ベンチ入り（当日ベンチ入り26人のうち、控え野手9人 + 救援8人を選ぶ）
+  // タブ 2: ベンチ入り野手（控え野手9人を選ぶ）
   // ---------------------------------------------------
-  Widget _buildBenchTab() {
+  Widget _buildBenchFieldersTab() {
     return SingleChildScrollView(
       padding: const EdgeInsets.all(12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           _buildBenchFieldersCard(),
-          const SizedBox(height: 8),
+          const SizedBox(height: 4),
+          _buildEditNote(),
+        ],
+      ),
+    );
+  }
+
+  // ---------------------------------------------------
+  // タブ 3: ベンチ入り投手（救援8人を選ぶ）
+  // ---------------------------------------------------
+  Widget _buildBenchPitchersTab() {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
           _buildBullpenCard(),
           const SizedBox(height: 4),
           _buildEditNote(),
@@ -487,34 +505,45 @@ class StrategyScreenState extends State<StrategyScreen>
       padding: const EdgeInsets.symmetric(vertical: 5),
       child: Row(
         children: [
-          // ベンチ入りトグル（チェックボックス + 名前・成績）
-          Icon(
-            active ? Icons.check_box : Icons.check_box_outline_blank,
-            size: 20,
-            color: active ? primary : Colors.grey,
-          ),
-          const SizedBox(width: 10),
+          // ベンチ入りトグル: チェックボックスと名前・成績をまとめて1つの
+          // タップ領域にする（チェックボックスをタップしても切り替わるように）。
           Expanded(
             child: InkWell(
               onTap: () => _toggleActive(_activeBullpenIds, p.id),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+              child: Row(
                 children: [
-                  Text(
-                    p.name,
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: active ? null : Colors.grey.shade600,
-                    ),
+                  Icon(
+                    active
+                        ? Icons.check_box
+                        : Icons.check_box_outline_blank,
+                    size: 20,
+                    color: active ? primary : Colors.grey,
                   ),
-                  Text(
-                    '${_handednessLabel(p)}  '
-                    '${_pitcherStatsCompact(widget.controller, p)}'
-                    '   体力 $fr%',
-                    style: TextStyle(
-                      fontSize: 11,
-                      color: Colors.grey.shade600,
-                      fontFeatures: const [FontFeature.tabularFigures()],
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          p.name,
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: active ? null : Colors.grey.shade600,
+                          ),
+                        ),
+                        Text(
+                          '${_handednessLabel(p)}  '
+                          '${_pitcherStatsCompact(widget.controller, p)}'
+                          '   体力 $fr%',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: Colors.grey.shade600,
+                            fontFeatures: const [
+                              FontFeature.tabularFigures()
+                            ],
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ],
@@ -735,6 +764,14 @@ class StrategyScreenState extends State<StrategyScreen>
       typeMismatch = isPitcherPos != slot.player!.isPitcher;
     }
 
+    // 野手が「守れない（適性のない）守備位置」に就いているか。
+    // スワップ等で適性のない位置に置かれることがあるので、警告表示する。
+    bool cantField = false;
+    if (slot.player != null && slot.position != null && !slot.player!.isPitcher) {
+      final dp = slot.position!.defensePosition;
+      cantField = dp != null && !slot.player!.canPlay(dp);
+    }
+
     // 名前と成績を 1 行で並べる（縦スペース節約）
     final p = slot.player;
     final statsLine = p == null
@@ -816,28 +853,41 @@ class StrategyScreenState extends State<StrategyScreen>
               ),
             ),
           ),
-          // 守備位置は shortName (1文字: 投/捕/一/二/三/遊/左/中/右) で表示
-          // ピッカー側は full name 表示なので、選択時に分かりにくくはならない。
+          // 守備位置は shortName (1文字: 投/捕/一/二/三/遊/左/中/右) で表示。
+          // 適性のない位置（cantField）はオレンジ + 警告アイコンで知らせる。
           SizedBox(
-            width: 36,
+            width: 50,
             child: InkWell(
               onTap: slot.player == null ? null : () => _pickPosition(index),
               child: Container(
                 padding: const EdgeInsets.symmetric(vertical: 8),
                 alignment: Alignment.center,
-                child: Text(
-                  slot.position?.shortName ?? '-',
-                  style: TextStyle(
-                    fontSize: 13,
-                    color: slot.position == null
-                        ? Colors.grey
-                        : (isPosDup || typeMismatch)
-                            ? Colors.red
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (cantField) ...[
+                      Icon(Icons.warning_amber_rounded,
+                          size: 13, color: Colors.orange.shade800),
+                      const SizedBox(width: 2),
+                    ],
+                    Text(
+                      slot.position?.shortName ?? '-',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: cantField ? FontWeight.bold : null,
+                        color: slot.position == null
+                            ? Colors.grey
+                            : (isPosDup || typeMismatch)
+                                ? Colors.red
+                                : cantField
+                                    ? Colors.orange.shade800
+                                    : null,
+                        decoration: (isPosDup || typeMismatch)
+                            ? TextDecoration.underline
                             : null,
-                    decoration: (isPosDup || typeMismatch)
-                        ? TextDecoration.underline
-                        : null,
-                  ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),
@@ -882,6 +932,19 @@ class StrategyScreenState extends State<StrategyScreen>
       return a.number.compareTo(b.number);
     });
 
+    // 各選手が打順にどう絡んでいるか（この打順 / 他の打順＝スタメン / 控え）。
+    _LineupStatus statusOf(Player p) {
+      if (_slots[slotIndex].player?.id == p.id) {
+        return _LineupStatus.current;
+      }
+      for (int i = 0; i < _slots.length; i++) {
+        if (i != slotIndex && _slots[i].player?.id == p.id) {
+          return _LineupStatus.otherSlot;
+        }
+      }
+      return _LineupStatus.available;
+    }
+
     final picked = await showModalBottomSheet<Player>(
       context: context,
       builder: (ctx) {
@@ -890,13 +953,11 @@ class StrategyScreenState extends State<StrategyScreen>
             shrinkWrap: true,
             children: [
               if (slotPos != null)
-                _SectionHeader(
-                  '${slotPos.displayName} を守れる選手を緑色 + 上位表示',
-                ),
+                _SectionHeader('緑＝${slotPos.displayName}を守れる選手'),
               for (final p in all)
                 _PlayerTile(
                   player: p,
-                  selected: _slots[slotIndex].player?.id == p.id,
+                  lineupStatus: statusOf(p),
                   compatible: isCompatible(p),
                   slotPosition: slotPos,
                   controller: widget.controller,
@@ -909,19 +970,33 @@ class StrategyScreenState extends State<StrategyScreen>
     );
     if (picked == null) return;
     setState(() {
-      // 同じ選手が他のスロットにいたらクリア
+      // picked が既にスタメン（別の打順スロット）にいるか探す。
+      int otherIndex = -1;
       for (int i = 0; i < _slots.length; i++) {
         if (i != slotIndex && _slots[i].player?.id == picked.id) {
-          _slots[i] = _slots[i].copyWith(clearPlayer: true);
+          otherIndex = i;
+          break;
         }
       }
-      // 新しい選手のタイプ（投手 / 野手）に合わせて守備位置を自動補正
-      _slots[slotIndex] = _slots[slotIndex].copyWith(
-        player: picked,
-        position: _adjustPositionFor(picked, _slots[slotIndex].position),
-      );
-      // 守備位置の自動補正で別スロットと衝突したらそっちもクリア
-      _resolvePositionConflict(slotIndex);
+      if (otherIndex >= 0) {
+        // スタメン同士の選択 → 長押しドラッグと同じく、選手・守備位置ごと
+        // スロットを丸ごとスワップする。
+        final tmp = _slots[slotIndex];
+        _slots[slotIndex] = _slots[otherIndex];
+        _slots[otherIndex] = tmp;
+      } else {
+        // ベンチ選手の選択 → 守備位置は維持したまま選手だけ差し替える。
+        // （投手↔野手のタイプ不一致・位置未設定のときだけ _adjustPositionFor が補正）
+        final oldPos = _slots[slotIndex].position;
+        final newPos = _adjustPositionFor(picked, oldPos);
+        _slots[slotIndex] = _slots[slotIndex].copyWith(
+          player: picked,
+          position: newPos,
+          clearPosition: newPos == null,
+        );
+        // 守備位置が別スロットと衝突したら、旧位置を相手に渡してスワップ
+        _swapDisplacedPosition(slotIndex, newPos, oldPos);
+      }
       // スタメンが変わると控え野手プールも変わる。ベンチ入りが定員割れしたら補充。
       _healActiveBench();
     });
@@ -952,18 +1027,29 @@ class StrategyScreenState extends State<StrategyScreen>
     );
     if (picked == null) return;
     setState(() {
+      final oldPos = _slots[slotIndex].position;
       _slots[slotIndex] = _slots[slotIndex].copyWith(position: picked);
-      _resolvePositionConflict(slotIndex);
+      // 元々 picked を守っていたスロットに、このスロットの旧位置を渡す（スワップ）。
+      _swapDisplacedPosition(slotIndex, picked, oldPos);
     });
     // ※ 確定は「試合開始」「早送り」時にまとめて行うのでここでは保存しない。
   }
 
-  void _resolvePositionConflict(int slotIndex) {
-    final pos = _slots[slotIndex].position;
-    if (pos == null) return;
+  /// [slotIndex] の守備位置が [newPos] に変わったとき、同じ [newPos] を持って
+  /// いた他スロットに、このスロットの**元の守備位置** [oldPos] を渡す（スワップ）。
+  /// 守備位置を空白のまま放置せず、自動で入れ替えてユーザーの手間を減らす。
+  /// 入れ替えた相手がそのポジションを守れるとは限らないが、それは
+  /// [_buildSlotRow] が「適性なし」を色 + 警告アイコンで示すので、ユーザーは
+  /// 気になる場合だけ追加で直せばよい。
+  void _swapDisplacedPosition(
+      int slotIndex, FieldPosition? newPos, FieldPosition? oldPos) {
+    if (newPos == null) return;
     for (int i = 0; i < _slots.length; i++) {
-      if (i != slotIndex && _slots[i].position == pos) {
-        _slots[i] = _slots[i].copyWith(clearPosition: true);
+      if (i == slotIndex) continue;
+      if (_slots[i].position == newPos) {
+        _slots[i] = oldPos == null
+            ? _slots[i].copyWith(clearPosition: true)
+            : _slots[i].copyWith(position: oldPos);
       }
     }
   }
@@ -979,19 +1065,22 @@ class StrategyScreenState extends State<StrategyScreen>
     return p.canPlay(dp);
   }
 
-  /// 選んだ選手のタイプ（投手/野手）と現在の守備位置が整合しなければ
-  /// 自動で良いポジションに置き換える
+  /// 選手を入れ替えたときの守備位置を決める。
+  ///
+  /// **守備位置はできるだけ維持する**。野手が既に野手位置に就いているなら、
+  /// その位置を守れなくてもそのまま維持する（勝手に別位置へ動かさない。
+  /// 適性がない場合は [_buildSlotRow] が「非適性」を色で示すので、ユーザーが
+  /// 必要なときだけ直せばよい）。位置を補正するのは「選手タイプと位置タイプが
+  /// 食い違う場合」（投手↔野手）と「位置未設定」のときだけ。
   FieldPosition? _adjustPositionFor(Player p, FieldPosition? current) {
     if (p.isPitcher) {
-      return FieldPosition.pitcher;
+      return FieldPosition.pitcher; // 投手は必ず投手位置
     }
-    // 野手 → 投手位置に置こうとしていれば外す
-    if (current == FieldPosition.pitcher) current = null;
-    if (current != null) {
-      final defPos = current.defensePosition;
-      if (defPos != null && p.canPlay(defPos)) return current;
+    // 野手で、既に野手位置が設定されているならそのまま維持（守備適性は問わない）。
+    if (current != null && current != FieldPosition.pitcher) {
+      return current;
     }
-    // 主ポジション（守備力が最も高い & 守れる位置）を探す
+    // 位置未設定 or 投手位置に野手が来た → 守れる主ポジションを割り当てる。
     int bestVal = -1;
     DefensePosition? best;
     for (final dp in DefensePosition.values) {
@@ -1002,7 +1091,7 @@ class StrategyScreenState extends State<StrategyScreen>
         best = dp;
       }
     }
-    if (best == null) return current;
+    if (best == null) return null; // 守れる位置が無い → 未設定（ユーザーが選ぶ）
     return _toFieldPosition(best);
   }
 
@@ -1225,9 +1314,18 @@ class _SectionHeader extends StatelessWidget {
   }
 }
 
+/// 選手ピッカー内で、その選手が打順（スタメン）にどう絡んでいるか。
+enum _LineupStatus {
+  current, // 編集中の打順スロットに今いる選手
+  otherSlot, // 別の打順スロットにいる（＝既にスタメン）
+  available, // 打順に入っていない（＝控え）
+}
+
 class _PlayerTile extends StatelessWidget {
   final Player player;
-  final bool selected;
+
+  /// この選手が打順（スタメン）にどう絡んでいるか。タグで表示する。
+  final _LineupStatus lineupStatus;
   final VoidCallback onTap;
 
   /// シーズン成績・コンディションを引くために渡す。
@@ -1243,12 +1341,41 @@ class _PlayerTile extends StatelessWidget {
 
   const _PlayerTile({
     required this.player,
-    required this.selected,
+    required this.lineupStatus,
     required this.onTap,
     required this.controller,
     this.compatible = false,
     this.slotPosition,
   });
+
+  /// 打順絡みを示すタグ（この打順 / スタメン / 控え）。
+  Widget _buildStatusChip() {
+    final String label;
+    final Color color;
+    switch (lineupStatus) {
+      case _LineupStatus.current:
+        label = '現在';
+        color = Colors.green.shade600;
+      case _LineupStatus.otherSlot:
+        label = 'スタメン';
+        color = Colors.indigo.shade400;
+      case _LineupStatus.available:
+        label = '控え';
+        color = Colors.grey.shade500;
+    }
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: color,
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Text(
+        label,
+        style: const TextStyle(
+            fontSize: 10, color: Colors.white, fontWeight: FontWeight.bold),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1292,7 +1419,7 @@ class _PlayerTile extends StatelessWidget {
       color: compatible ? Colors.green.shade50 : null,
       child: ListTile(
         dense: true,
-        selected: selected,
+        // 打順絡みはタグで示すので、selected による文字色の微妙な変化は使わない。
         leading: compatible
             ? Icon(Icons.check_circle,
                 size: 20, color: Colors.green.shade600)
@@ -1300,11 +1427,21 @@ class _PlayerTile extends StatelessWidget {
                 ? const Icon(Icons.sports_baseball,
                     size: 18, color: Colors.deepPurple)
                 : const Icon(Icons.person, size: 18, color: Colors.grey)),
-        title: Text(
-          player.name,
-          style: TextStyle(
-            fontWeight: compatible ? FontWeight.bold : FontWeight.normal,
-          ),
+        title: Row(
+          children: [
+            Flexible(
+              child: Text(
+                player.name,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontWeight:
+                      compatible ? FontWeight.bold : FontWeight.normal,
+                ),
+              ),
+            ),
+            const SizedBox(width: 6),
+            _buildStatusChip(),
+          ],
         ),
         subtitle: Text(
           subtitle,
@@ -1318,7 +1455,7 @@ class _PlayerTile extends StatelessWidget {
 }
 
 /// 利き手の表示ラベル。
-/// 野手は打席（右 / 左 / 両手）、投手は利き腕（右 / 左）。
+/// 野手は打席（右 / 左 / 両）、投手は利き腕（右 / 左）。
 String _handednessLabel(Player p) {
   if (p.isPitcher) {
     return p.effectiveThrows == Handedness.left ? '左' : '右';
@@ -1327,7 +1464,7 @@ String _handednessLabel(Player p) {
     case Handedness.left:
       return '左';
     case Handedness.both:
-      return '両手';
+      return '両';
     case Handedness.right:
       return '右';
   }
@@ -1396,32 +1533,46 @@ class _PositionTile extends StatelessWidget {
     final isPitcherPos = position == FieldPosition.pitcher;
     final isPlayerPitcher = player.isPitcher;
     final compatible = isPitcherPos == isPlayerPitcher;
+    // 野手位置で、その守備位置を守れるか（守備適性があるか）。
+    final canField =
+        compatible && !isPitcherPos && player.canPlay(position.defensePosition!);
 
     String trailingText;
     if (!compatible) {
       trailingText = isPitcherPos ? '※ 野手は不可' : '※ 投手は不可';
     } else if (isPitcherPos) {
       trailingText = '球速 ${player.averageSpeed ?? '-'}';
+    } else if (canField) {
+      trailingText = '守備力 ${player.getFielding(position.defensePosition!)}';
     } else {
-      final dp = position.defensePosition!;
-      trailingText = '守備力 ${player.getFielding(dp)}'
-          '${player.canPlay(dp) ? '' : ' (非適性)'}';
+      // 守れない位置は守備力 0 で表す（守れるが下手な「守備力 1」と区別する）。
+      // 配置自体は可能だが強制配置のペナルティがかかる。
+      trailingText = '守備力 0（適性なし）';
+    }
+
+    // アイコン: 守れる=緑チェック / 守れない=オレンジ警告（チェックにしない。
+    // チェックだと「守れる」と誤解されるため）/ 投手位置OK=紫チェック /
+    // 選手タイプ不一致=グレー禁止。
+    final IconData iconData;
+    final Color iconColor;
+    if (!compatible) {
+      iconData = Icons.block;
+      iconColor = Colors.grey;
+    } else if (isPitcherPos) {
+      iconData = Icons.check_circle;
+      iconColor = Colors.deepPurple;
+    } else if (canField) {
+      iconData = Icons.check_circle;
+      iconColor = Colors.green;
+    } else {
+      iconData = Icons.warning_amber_rounded;
+      iconColor = Colors.orange;
     }
 
     return ListTile(
       dense: true,
       enabled: compatible,
-      leading: Icon(
-        compatible ? Icons.check_circle : Icons.block,
-        size: 18,
-        color: compatible
-            ? (isPitcherPos
-                ? Colors.deepPurple
-                : (player.canPlay(position.defensePosition!)
-                    ? Colors.green
-                    : Colors.orange))
-            : Colors.grey,
-      ),
+      leading: Icon(iconData, size: 18, color: iconColor),
       title: Text(position.displayName),
       trailing: Text(
         trailingText,

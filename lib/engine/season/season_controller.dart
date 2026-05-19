@@ -222,20 +222,18 @@ class SeasonController {
       random: random,
     );
     // 自チームの投手ロールは推測ゲームの一部としてユーザーが試合結果から決める。
-    // 開幕時は能力で抑え等が割り当てられた状態にせず、中立な初期ロール
-    // （生成時の先発6人→「先発」、救援12人→「中継ぎ」）で始める。
-    // 先発/中継ぎの区分も以降ユーザーが自由に変えられる（先発・ベンチ入りとも
+    // 開幕時は能力で抑え等が割り当てられた状態にせず、中立な初期ロールで始める:
+    // 全18投手を背番号順に並べ、若い6人→「先発」、残り12人→「中継ぎ」。
+    // 先発/中継ぎの区分は以降ユーザーが自由に変えられる（先発・ベンチ入りとも
     // 全18投手から選択）。CPU 5 球団は TeamGenerator のロールのまま
     // （対戦相手の偵察は推測ゲームの一部）。
     final my = controller.myTeam;
-    for (final p in [...my.startingRotation]) {
-      if (p.pitcherRole != PitcherRole.starter) {
-        controller.updatePlayer(p.withPitcherRole(PitcherRole.starter));
-      }
-    }
-    for (final p in [...my.bullpen]) {
-      if (p.pitcherRole != PitcherRole.middle) {
-        controller.updatePlayer(p.withPitcherRole(PitcherRole.middle));
+    final pitchers = <Player>[...my.startingRotation, ...my.bullpen]
+      ..sort((a, b) => a.number.compareTo(b.number));
+    for (int i = 0; i < pitchers.length; i++) {
+      final role = i < 6 ? PitcherRole.starter : PitcherRole.middle;
+      if (pitchers[i].pitcherRole != role) {
+        controller.updatePlayer(pitchers[i].withPitcherRole(role));
       }
     }
     return controller;
@@ -295,7 +293,7 @@ class SeasonController {
   /// （SPEC §コンセプト）。ユーザーが作戦画面で観察に基づき組み替える。
   ///
   /// - 先発: 全18投手から、登板間隔（中5日）の空いた最も背番号の若い投手
-  /// - ベンチ入り救援: 先発を除く投手から背番号順で8人
+  /// - ベンチ入り救援: 先発ロールの投手を除き、中継ぎ等のロールから背番号順で8人
   /// - 打順・守備: 背番号順の中立編成（[_withGameLineup] neutralOrder）
   ///
   /// シーズン終了済み・自チームの選手が9人未満の異常時には null を返す。
@@ -312,10 +310,11 @@ class SeasonController {
       (p) => canStartNextGame(p.id),
       orElse: () => allPitchers.first,
     );
-    // ベンチ入り救援: 先発を除く投手から背番号順で8人。
+    // ベンチ入り救援: 先発ロールの投手は初期提案から外す（ローテ予定の投手が
+    // 救援要員に埋まるのを避ける）。中継ぎ等のロールから背番号順で8人。
     final activeBullpen = [
       for (final p in allPitchers)
-        if (p.id != sp.id) p,
+        if (p.id != sp.id && p.pitcherRole != PitcherRole.starter) p,
     ].take(_activeBullpenSize).toList();
     // 野手側は中立選定 + 中立打順。
     final active = _selectActiveRoster(team, neutral: true);
