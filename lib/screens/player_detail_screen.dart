@@ -86,9 +86,9 @@ class PlayerDetailScreen extends StatelessWidget {
     final tags = <String>[];
     tags.add('${player.age}歳');
     if (player.isPitcher) {
-      tags.add(player.reliefRole == null ? '先発' : '救援');
-      if (player.reliefRole != null) {
-        tags.add(player.reliefRole!.displayName);
+      tags.add(player.pitcherRole == null ? '先発' : '救援');
+      if (player.pitcherRole != null) {
+        tags.add(player.pitcherRole!.displayName);
       }
       tags.add('${player.effectiveThrows.displayName}投');
       tags.add('${player.effectiveBatsBase.displayName}打');

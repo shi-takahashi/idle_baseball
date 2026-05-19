@@ -7,7 +7,8 @@ import 'offseason_plan.dart';
 
 /// オフシーズンの CPU チーム再構築。
 ///
-/// 1チームあたり野手 2 名 + 投手 2 名を引退させ、同数の新人を加入させる。
+/// 1チームあたり野手 3 名 + 投手 3 名を引退させ、同数の新人を加入させる
+/// （40 人ロスター化に合わせ 2/2 → 3/3。ROSTER_EXPANSION_PLAN.md フェーズC）。
 /// 引退判定は **年齢 25 歳超 + 能力低下** をスコア化し、高スコア順に選ぶ。
 /// 野手は「各守備位置を最低 2 人が守れる」制約を満たす範囲で引退者を決める。
 /// 投手は引退後にブルペンのロール（抑え/セットアッパー/中継ぎ等）を能力順に再アサインする。
@@ -16,8 +17,8 @@ import 'offseason_plan.dart';
 ///   - [buildOffseasonPlan]: 候補一覧を生成
 ///   - [applyUserSelection]: 選択結果をチームに反映 + スタメン再編成
 class TeamRebuilder {
-  static const int retireFieldersPerTeam = 2;
-  static const int retirePitchersPerTeam = 2;
+  static const int retireFieldersPerTeam = 3;
+  static const int retirePitchersPerTeam = 3;
 
   /// 引退候補に入る最低年齢（これ未満は能力が低くても引退しない）
   static const int minRetirementAge = 26;
@@ -339,7 +340,7 @@ class TeamRebuilder {
       final rookie = playerGen.generateRookiePitcher(
         number: retiredPlayer.number,
         isStarter: wasStarter,
-        reliefRole: wasStarter ? null : retiredPlayer.reliefRole,
+        pitcherRole: wasStarter ? null : retiredPlayer.pitcherRole,
         type: _pickCpuRookieType(),
       );
       _replacePlayerInTeam(team, retiredPlayer, rookie);
@@ -353,93 +354,47 @@ class TeamRebuilder {
   // ---------------------------------------------------
 
   /// ブルペン投手を能力スコア順にソートし、ロールを再アサインする。
-  /// ロール構成は維持: closer 1 / setup 1 / middle 2 / situational 1 / long 1 / mopUp 2
+  /// 12 人ブルペンのロール構成: closer 1 / setup 2 / long 2 / situational 1 /
+  /// middle 4 / mopUp 残り（標準12人なら2）。TeamGenerator の生成構成に揃える。
   /// situational（ワンポイント）は左投手を優先、いなければスキップして他のロールに回す。
-  /// long（ロング）は能力順で抑え・セットアッパーに次ぐ投手を充てる。
+  /// 能力上位から closer → setup → long の順に充て、中継ぎは残りの上位から埋める。
+  /// ブルペンが12人未満（旧データ・テスト）の場合は枠が埋まらないだけで破綻しない。
   void _reorganizeBullpenRoles(Team team) {
     if (team.bullpen.length < 2) return;
 
-    final pitchers = [...team.bullpen];
-    pitchers.sort((a, b) => _abilityScore(b).compareTo(_abilityScore(a)));
+    final remaining = [...team.bullpen]
+      ..sort((a, b) => _abilityScore(b).compareTo(_abilityScore(a)));
+    final assignments = <Player, PitcherRole>{};
 
-    // ロールの新規割り当てをコンピュート
-    final assignments = <Player, ReliefRole>{};
-    final remaining = [...pitchers];
-
-    // 能力 1位 = 抑え
-    if (remaining.isNotEmpty) {
-      final p = remaining.removeAt(0);
-      assignments[p] = ReliefRole.closer;
-    }
-    // 2位 = セットアッパー
-    if (remaining.isNotEmpty) {
-      final p = remaining.removeAt(0);
-      assignments[p] = ReliefRole.setup;
-    }
-    // ロング: 残りの先頭（能力順で次点）を採用
-    if (remaining.isNotEmpty) {
-      assignments[remaining.removeAt(0)] = ReliefRole.long;
-    }
-    // ワンポイント: 残りの左投手を優先
-    Player? situational;
-    int sitIdx = -1;
-    for (int i = 0; i < remaining.length; i++) {
-      if (remaining[i].effectiveThrows == Handedness.left) {
-        situational = remaining[i];
-        sitIdx = i;
-        break;
+    // 能力上位から quota 人ぶん role を割り当てるヘルパ。
+    void assignTop(PitcherRole role, int quota) {
+      for (int i = 0; i < quota && remaining.isNotEmpty; i++) {
+        assignments[remaining.removeAt(0)] = role;
       }
     }
-    if (situational != null) {
-      assignments[situational] = ReliefRole.situational;
-      remaining.removeAt(sitIdx);
+
+    assignTop(PitcherRole.closer, 1); // 1位 = 抑え
+    assignTop(PitcherRole.setup, 2); // 2〜3位 = セットアッパー
+    assignTop(PitcherRole.long, 2); // 次点2人 = ロング
+    // ワンポイント: 残りの左投手を優先（いなければ枠を空けたまま中継ぎに回す）
+    final sitIdx =
+        remaining.indexWhere((p) => p.effectiveThrows == Handedness.left);
+    if (sitIdx >= 0) {
+      assignments[remaining.removeAt(sitIdx)] = PitcherRole.situational;
     }
-    // 中継ぎを 2 人（残りの上位）
-    int middleAssigned = 0;
-    while (remaining.isNotEmpty && middleAssigned < 2) {
-      final p = remaining.removeAt(0);
-      assignments[p] = ReliefRole.middle;
-      middleAssigned++;
-    }
+    assignTop(PitcherRole.middle, 4); // 中継ぎ4人（残りの上位）
     // 残り全員 = 敗戦処理
     for (final p in remaining) {
-      assignments[p] = ReliefRole.mopUp;
+      assignments[p] = PitcherRole.mopUp;
     }
 
-    // ロール変更が発生する場合のみ Player を差し替え（id 維持、reliefRole のみ変える）
+    // ロール変更が発生する場合のみ Player を差し替え（id 維持、pitcherRole のみ変える）
     for (final entry in assignments.entries) {
       final p = entry.key;
       final newRole = entry.value;
-      if (p.reliefRole == newRole) continue;
-      final updated = _withReliefRole(p, newRole);
-      _replacePlayerInTeam(team, p, updated);
+      if (p.pitcherRole == newRole) continue;
+      _replacePlayerInTeam(team, p, p.withPitcherRole(newRole));
     }
-  }
-
-  /// 同一 id・同一能力で reliefRole だけを差し替えた Player を返す。
-  Player _withReliefRole(Player p, ReliefRole role) {
-    return Player(
-      id: p.id,
-      name: p.name,
-      number: p.number,
-      age: p.age,
-      averageSpeed: p.averageSpeed,
-      fastball: p.fastball,
-      control: p.control,
-      slider: p.slider,
-      curve: p.curve,
-      splitter: p.splitter,
-      changeup: p.changeup,
-      meet: p.meet,
-      power: p.power,
-      speed: p.speed,
-      eye: p.eye,
-      arm: p.arm,
-      fielding: p.fielding,
-      throws: p.throws,
-      bats: p.bats,
-      reliefRole: role,
-    );
   }
 
   // ---------------------------------------------------
@@ -559,8 +514,8 @@ class TeamRebuilder {
     );
 
     // 新人は背番号未確定のままプール生成（commit 時に引退者の番号を引き継ぐ）。
-    // 先発寄り（reliefRole = null）に生成し、救援に振られる場合は
-    // [applyUserSelection] で reliefRole を上書きする。
+    // 先発寄り（pitcherRole = null）に生成し、救援に振られる場合は
+    // [applyUserSelection] で pitcherRole を上書きする。
     final rookieFielders = <RookieCandidate>[
       for (final type in RookieType.values)
         for (int i = 0; i < rookieCandidatesPerType; i++)
@@ -686,25 +641,32 @@ class TeamRebuilder {
       final rookie = findRookiePitcher(selection.takePitcherIds[i]);
       final wasStarter =
           team.startingRotation.any((p) => p.id == retired.id);
+      // 自チームの投手ロールはユーザーが推測ゲームの中で決めるもの。
+      // 引退者のロールを新人に継承させると「引退した抑えの後継＝抑え」と
+      // 能力に頼らず役割が決まってしまうので、新人は中立なロール（先発枠の
+      // 後継＝先発、救援枠の後継＝中継ぎ）で加入する。既存投手のロールも
+      // ここでは触らない（_reorganizeBullpenRoles は呼ばない）。
       Player replacement = _withNumberAndRole(
         rookie,
         retired.number,
-        wasStarter ? null : (retired.reliefRole ?? ReliefRole.middle),
+        wasStarter ? PitcherRole.starter : PitcherRole.middle,
       );
       _replacePlayerInTeam(team, retired, replacement);
     }
 
+    // スタメン野手は再編するが、救援ロールはユーザー設定を維持するため
+    // _reorganizeBullpenRoles は呼ばない（CPU チームのみ rebuildCpuTeams で再編）。
     _rebalanceStarters(team, previousStarterIds);
-    _reorganizeBullpenRoles(team);
   }
 
   /// id・能力はそのまま、背番号だけを差し替えた Player を返す。
   Player _withNumber(Player p, int number) {
-    return _withNumberAndRole(p, number, p.reliefRole);
+    return _withNumberAndRole(p, number, p.pitcherRole);
   }
 
   /// id・能力はそのまま、背番号とリリーフロールを差し替えた Player を返す。
-  Player _withNumberAndRole(Player p, int number, ReliefRole? role) {
+  /// 球種（shoot/cutter/sinker 含む全種）・ポテンシャルもすべて維持する。
+  Player _withNumberAndRole(Player p, int number, PitcherRole? role) {
     return Player(
       id: p.id,
       name: p.name,
@@ -717,6 +679,9 @@ class TeamRebuilder {
       curve: p.curve,
       splitter: p.splitter,
       changeup: p.changeup,
+      shoot: p.shoot,
+      cutter: p.cutter,
+      sinker: p.sinker,
       meet: p.meet,
       power: p.power,
       speed: p.speed,
@@ -725,7 +690,10 @@ class TeamRebuilder {
       fielding: p.fielding,
       throws: p.throws,
       bats: p.bats,
-      reliefRole: role,
+      pitcherRole: role,
+      potentials: p.potentials,
+      potentialFielding: p.potentialFielding,
+      potentialAverageSpeed: p.potentialAverageSpeed,
     );
   }
 }

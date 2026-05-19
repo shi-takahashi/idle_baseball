@@ -420,7 +420,7 @@ class _RetirePitcherTile extends StatelessWidget {
     final stats = _pitcherAbilityLine(player);
     final role = isStarter
         ? '先発'
-        : (player.reliefRole?.displayName ?? '救援');
+        : (player.pitcherRole?.displayName ?? '救援');
     return _CandidateTile(
       selected: selected,
       onTap: onToggle,

@@ -79,7 +79,7 @@ class PlayerAging {
       fielding: adjustFielding(p.fielding),
       throws: p.throws,
       bats: p.bats,
-      reliefRole: p.reliefRole,
+      pitcherRole: p.pitcherRole,
       // potential は加齢で変動しない（生まれもっての素質として固定）
       potentials: p.potentials,
       potentialFielding: p.potentialFielding,

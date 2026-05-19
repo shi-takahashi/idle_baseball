@@ -5,6 +5,309 @@
 
 ---
 
+## 2026-05-19 先発/中継ぎをユーザーが自由に決める（投手ロール制）
+
+### 動機
+
+ユーザー指摘 — 先発と中継ぎが生成時に固定され、相互転換できなかった。誰を先発に
+し誰を救援にするかもプレイヤーが決められるべき。あわせて「先発」を投手ロールの
+一種として扱い、ベンチ入りタブで指定できるようにする。
+
+### 変更
+
+**① `ReliefRole` → `PitcherRole` にリネーム + `starter`（先発）を追加** — 救援
+専用の enum ではなく投手全体のロールになったため改名。`Player.reliefRole` →
+`pitcherRole`。displayName「先発」。
+
+**② 先発ロール＝リリーフ最低優先** — `_selectReliever` で、先発ロールの投手は
+先発以外の救援が1人でも残っていれば候補から除外。先発以外が全員出尽くした
+最後の砦としてのみリリーフ登板する。
+
+**③ 先発・ベンチ入り救援とも全18投手から選択** — 作戦画面スタメンタブの投手
+スロットのピッカーを全18投手（先発ローテ + 救援）に。ベンチ入りタブの救援
+セクションも全18投手（当日先発を除く）から8人選ぶ。先発/中継ぎの生成時区分は
+自チームでは実質無くなり、毎試合ユーザーが自由に割り当てる。
+
+**④ 開幕時の投手ロール** — `newSeason` で自チームの先発ローテ6人→「先発」、
+救援12人→「中継ぎ」の中立な初期ロールに（`updatePlayer` で全リスト同期）。
+オフシーズンの新人も先発枠の後継→「先発」/ 救援枠→「中継ぎ」。
+
+**⑤ 登板間隔ゲートを最終登板日ベースに** — `canStartNextGame` を、先発登板日
+ではなく**最終登板日（先発・救援問わず）**ベースに変更（`_pitcherLastAppearanceDay`
+を新設・永続化）。これにより「ベンチ入りさせ救援で投げ続けている投手は中5日が
+空かず先発候補に挙がらない／ベンチ入りから外して休ませれば先発にできる」が成立。
+試合後の先発自動差し替え（`_pickNextStarter`）も全18投手の中立選出に。
+
+### 検証
+
+`dart analyze lib bin` エラーなし。test_ 全39 pass（`test_sacfly` のみ既存issue）。
+`test_active_roster` を新モデルに更新（先発は全18で背番号最小、ベンチ入り救援は
+背番号順、ベンチ入り救援固定の投手はシーズン通して先発0、開幕ロール検証）。
+`measure_league_avg`（6シーズン）: 打率.251 / OPS.712 / K率19.8% — NPB レンジ内。
+
+### ファイル
+
+- `lib/engine/models/enums.dart` / `player.dart`
+- `lib/engine/season/season_controller.dart`
+- `lib/engine/simulation/pitcher_change_strategy.dart`
+- `lib/engine/offseason/team_rebuilder.dart` / `lib/screens/strategy_screen.dart`
+- ほか `ReliefRole`→`PitcherRole` リネームで15ファイル
+
+---
+
+## 2026-05-19 UI 小改修（体力表示・選手一覧タブ化・利き手表示）
+
+ロスター40人化に伴う UI まわりの細かい改善。いずれもエンジン非依存、
+`dart analyze` クリーン。
+
+- **投手の「調子」→「体力」** — 作戦画面で `pitcherFreshness`（登板疲労の回復度、
+  0〜100）を「調子」と表示していたのを「体力」に統一（隠しパラメータの好不調
+  ＝投手コンディションと紛らわしいため）。ベンチ入りタブ救援行・先発スロット
+  ピッカーの2箇所。
+- **選手一覧をタブ化** — `player_list_screen` を「先発ローテ/救援/スタメン野手/
+  控え野手」の4セクションから「投手/野手」の2タブ＋各タブ背番号順に。40人で
+  スクロールが長くなるため。左タブ＝野手（デフォルト）、右＝投手。
+- **作戦画面に利き手表示** — 打順行・ベンチ入り行・選手ピッカーに、野手は打席
+  （右/左/両手）、投手は利き腕（右/左）を表示。
+
+### ファイル
+
+- `lib/screens/strategy_screen.dart` / `player_list_screen.dart`
+
+---
+
+## 2026-05-19 自チームの初期打順を中立（背番号順）に（パラメータ非表示の徹底）
+
+### 動機
+
+救援ロールに続く能力バレの指摘 — 作戦画面の初期打順を `LineupPlanner` が
+「伝統的日本式」で能力から自動算出していた（4番＝最強長打、1番＝俊足…）。試合
+データの無い開幕時は純粋な能力ランキングそのもので、作戦画面を開くだけで全打者の
+能力序列が分かってしまう。SPEC §コンセプトが明確に警告する「数値に応じた打順を
+組んだ時点で最適解が確定し、すぐ飽きる」状態を、エンジンが無料で提供していた。
+
+### 変更
+
+**① `LineupPlanner` に中立モード `neutralOrder` を追加** — true のとき:
+- **スタメン8人の選定**を能力でなく背番号ベースに（`_selectFieldersNeutral`）。
+  野手全体（主力8＋控え）から各守備位置を守れる「最も背番号の若い選手」を
+  割り当てる。希少な位置（捕手など）から先に埋める。従来は生成時に決まった
+  スタメン枠 `players[0..7]` をそのまま使っており、低い背番号の控えがいても
+  スタメンに入らなかった（＝エンジンが「誰が主力か」を提示していた）。
+- **打順**を能力順でなく背番号順（8野手）＋投手9番に。
+- 能力差によるベンチ入れ替え（Phase 2）はしない。
+守備適性は選定で常に満たされる（守備適性は SPEC §2.0 で可視と決定済みなので
+リークにならない）。
+
+**② 自チームの編成は中立、CPU は従来どおり** — `suggestedStrategyForMyTeam`
+（作戦画面の初期提示）と `_buildAutoGameTeam`（自チーム）は `neutralOrder: true`。
+CPU 5 球団は従来どおり能力ベースの伝統的日本式打順。ユーザーは中立打順を土台に、
+試合結果を観察して打順を組み替える。一度組んだ打順は作戦として永続する。
+
+**③ 当日ベンチ入り選定も自チームは中立に** — `_selectActiveRoster` /
+`_selectActiveBench` / `_selectActiveBullpen` / `_pickActive` に `neutral` 引数を
+追加。自チームは控え野手9人・救援8人を**背番号順**で選定（従来は能力上位＝
+「どれが上位選手か」のヒントだった）。控え捕手2人の確保は守備適性ベースなので維持。
+CPU は従来どおり能力上位＋ランダム揺らぎ。
+
+### 検証
+
+`dart analyze lib bin` エラーなし。test_ 全39 pass。`test_active_roster` に
+「提案打順は背番号昇順（中立）」「投手は9番」「ベンチ入り救援は背番号順で中立」を追加。
+`measure_league_avg`（6シーズン）: 打率.252 / OPS.717 / K率19.7% — NPB レンジ内を維持
+（打順は得点の連鎖に影響するがリーグの率指標はほぼ不変）。
+
+### ファイル
+
+- `lib/engine/season/lineup_planner.dart` / `season_controller.dart`
+- `bin/test_active_roster.dart` / `docs/SPEC.md`
+
+---
+
+## 2026-05-19 救援ロールをユーザー指定制に（パラメータ非表示の徹底）
+
+### 動機
+
+ロスター拡張フェーズBのレビューで指摘 — 救援のロール（抑え/セットアッパー等）が
+生成時に**能力で自動割り当て**されていた（一番強い投手が抑え）。これは
+「パラメータ非表示・試合結果から能力を推測」という本作のコンセプト（SPEC §コンセプト /
+§2.0）に対する**能力バレ**そのもの。SPEC §2.0 も「ロールはユーザーが設定する」と
+明記している。自チームの救援ロールはユーザーが推測ゲームの中で決めるものにする。
+
+### 変更
+
+**① 開幕時、自チームの救援は全員「中継ぎ」** — `SeasonController.newSeason` で
+自チーム（CPU 5 球団は対象外）の救援ロールを全員 `middle` に初期化。能力のばらつきは
+生成時のまま残るが、ロール表示からは強い投手が分からない。CPU はそのまま
+（対戦相手の抑えを偵察するのは推測ゲームの一部、リークではない）。
+
+**② 救援ロールをユーザーが指定** — 作戦画面ベンチ入りタブの救援行に役割チップを
+追加。タップで 抑え/セットアッパー/中継ぎ/ワンポイント/ロング/敗戦処理 を選択。
+`SeasonController.setReliefRole` で**永続変更**（次の試合だけの編成とは別レイヤー。
+書き換えるまで＝「前日と同じ」が自動成立）。
+
+**③ オフシーズンで自チームの救援ロールを自動再編しない** — `applyUserSelection`
+（自チーム用）から `_reorganizeBullpenRoles` 呼び出しを削除。引退救援の後継新人も
+ロール継承をやめ常に `middle` で加入（「引退した抑えの後継＝抑え」も能力に頼らない
+役割固定になるため）。CPU 用 `rebuildCpuTeams` は従来どおり能力順で再編。
+
+**④ Player クローン時のフィールド脱落バグ修正** — `Player.withReliefRole` を新設し、
+全フィールド（球種 shoot/cutter/sinker・ポテンシャル含む）を維持。これに合わせ
+`TeamRebuilder._withReliefRole` を廃止・`_withNumberAndRole` も全フィールド維持に修正
+（従来はロール再編・新人加入で 3 球種とポテンシャルが脱落していた既存バグ）。
+
+### 検証
+
+`dart analyze lib bin` エラーなし。test_ 全39 pass。`test_active_roster` に
+「開幕時 自チーム救援は全員中継ぎ」「setReliefRole で変更が永続反映」を追加。
+`measure_league_avg`（6シーズン）の打撃指標は不変（打率.251 / OPS.714 / K率19.8%）。
+
+### ファイル
+
+- `lib/engine/models/player.dart` / `lib/engine/season/season_controller.dart`
+- `lib/engine/offseason/team_rebuilder.dart` / `lib/screens/strategy_screen.dart`
+- `bin/test_active_roster.dart`
+
+---
+
+## 2026-05-19 ロスター拡張 フェーズC（オフシーズン調整）
+
+### 動機
+
+ROSTER_EXPANSION_PLAN.md フェーズC。40人ロスター化に合わせ、オフシーズンの
+引退・新人の人数とブルペンロール再編を40人前提に調整する。
+
+### 変更
+
+**① 引退・新人を 2/2 → 3/3 に** — `TeamRebuilder.retireFieldersPerTeam` /
+`retirePitchersPerTeam` を 2→3。1チームあたり野手3名+投手3名が引退し同数の新人が
+加入。`buildOffseasonPlan` の推奨人数・`OffseasonScreen` はこの定数駆動なので
+自動追従（画面側の変更不要）。
+
+**② `_reorganizeBullpenRoles` を12人ブルペン対応に** — 旧8人想定の
+`closer1/setup1/middle2/situational1/long1/mopUp2` だと12人化後に敗戦処理が6人に
+なる歪な配分だった。能力上位から `closer1 → setup2 → long2 → situational(左腕優先)
+→ middle4 → mopUp残り` の順に割り当てる方式に変更。TeamGenerator の生成構成
+（setup2/middle4/long2/mopUp2）と一致。
+
+**③ `_withReliefRole` のフィールド欠落バグ修正** — ロール再アサインで Player を
+再構築する際、シュート/カットボール/シンカー（2026-05-18 追加の3球種）と
+ポテンシャル（potentials/potentialFielding/potentialAverageSpeed）がコピーされず
+脱落していた。オフシーズンを跨ぐと救援投手の球種が消える既存バグ。全フィールドを
+維持するよう修正。
+
+### 検証
+
+`dart analyze lib bin` エラーなし。test_ 全39ファイル pass（`test_sacfly` のみ
+既存issueで FAIL、ロスター拡張と無関係）。`test_rebuild` のアサーションを
+3/3・12人ロール構成に更新。`measure_league_avg`（6シーズン、3/3churn込み）:
+打率.251 / OPS.714 / K率19.8% — NPB レンジ内を維持。
+
+### ファイル
+
+- `lib/engine/offseason/team_rebuilder.dart` / `bin/test_rebuild.dart`
+
+---
+
+## 2026-05-19 ロスター拡張 フェーズB（ベンチ入り指定UI）
+
+### 動機
+
+ROSTER_EXPANSION_PLAN.md フェーズB。フェーズAで「当日ベンチ入り26人」を自動選定
+できるようにした基盤の上に、自チームのベンチ入りをユーザーが指定する UI を載せる。
+
+### 変更
+
+**① `NextGameStrategy` を当日ベンチ入りまで含む完全な編成に拡張** — 従来の
+打順 `lineup` / 守備 `alignment` に加え、当日ベンチ入りの控え野手 `activeBench`
+（通常9人）と救援 `activeBullpen`（通常8人）を保持。両者が空のとき（旧セーブ等）は
+エンジンが自動選定にフォールバック。`toJson`/`fromJson`・バリデーション対応。
+
+**② SeasonController の自チーム編成をユーザー指定優先に** — `_applyMyStrategy` が
+`strategy.activeBench`/`activeBullpen` をそのまま当日26人に採用（オート版と違い
+`_selectActiveRoster` は通さない）。`suggestedStrategyForMyTeam` は打順だけの
+レコードではなく、当日ベンチ入りも埋めた完全な `NextGameStrategy` を返すよう変更。
+
+**③ 作戦画面をタブ化** — `StrategyScreen` に「スタメン / ベンチ入り」の2タブ。
+スタメンタブは従来の打順9人ドラッグ編集。ベンチ入りタブは「控え野手」（スタメン
+9人を外れた野手プール14人から9人をトグル選択）と「救援投手」（救援12人から8人を
+トグル選択、ロール・調子を表示）。定員に対する選択数を `9/9` のように色付き表示し、
+過不足は確定時にエラー。スタメン編集で控え野手プールが変わったら定員割れぶんを
+能力上位から自動補充。「元に戻す」はベンチ入り選択も巻き戻す。
+
+**④ 中5日チェックの文言修正** — 先発手動指定の登板間隔エラーを「中4日」→「中5日」。
+
+先発の選択は従来どおりスタメンタブの投手スロットのピッカー（先発ローテ6人を表示、
+確定時に `canStartNextGame` で中5日を検証）でカバーする。
+
+### 検証
+
+`dart analyze lib bin` エラーなし。test_ 全39ファイル pass（`test_sacfly` のみ FAIL
+だがフェーズA着手前から失敗している既存issue、ロスター拡張とは無関係）。新規
+`test_active_roster.dart`: 提案が打順9・控え野手9・救援8 を埋めること、ベンチ入りから
+外した控え野手5人・救援4人がシーズン通して出場0 になることを確認。
+
+### 残（フェーズC）
+
+- 引退・新人 2/2→3/3、`TeamRebuilder._reorganizeBullpenRoles` を12人ロスター対応に
+- 救援ロールの編集 UI（現状はベンチ入り選択のみ。ロール変更は選手編集画面で）は別途検討
+
+### ファイル
+
+- `lib/engine/season/next_game_strategy.dart` / `season_controller.dart`
+- `lib/screens/strategy_screen.dart` / `bin/test_active_roster.dart`（新規）
+
+---
+
+## 2026-05-19 ロスター拡張 フェーズA（40人化 + 当日ベンチ入り26人 + CPU自動運用）
+
+### 動機
+
+ROSTER_EXPANSION_PLAN.md フェーズA。「一度ローテを決めると先発投手の選択権が
+ない」課題の解決に向けた基盤づくり。1チームを 30人 → 40人 に拡張し、各試合に
+出るのは「当日ベンチ入り26人」に絞る仕組みを新設した。
+
+### 変更
+
+**① Team モデル — `roster` getter を追加** — 構造（players/startingRotation/
+bullpen/bench の4フィールド）は変えず、人数だけ拡張。`roster` は4フィールドから
+40人プール全体を導出する getter（永続化は従来どおり ID 4 リストのまま）。
+
+**② TeamGenerator を40人生成に** — 投手18（先発6 + 救援12）/ 野手22（主力8 +
+控え14）。救援12のロール内訳は 抑え1/セットアッパー2/中継4/ワンポイント1/
+ロング2/敗戦処理2。控え14は 控え捕手2/内野UT4/外野UT8。背番号プールを 1〜30
+→ 1〜40。
+
+**③ 当日ベンチ入り26人の選定（新規）** — `SeasonController._selectActiveRoster`。
+40人 → 当日26人（投手9 = 当日先発1 + 救援8 / 野手17 = 主力8 + 控え9）。控え野手
+14→9（控え捕手は最大2人を優先確保）、救援12→8（抑えを優先確保）、残りは能力上位。
+能力下位の控えは 1チーム1日あたり12%でアクティブ↔非アクティブが入れ替わる
+（CPU運用の自然な揺らぎ）。`advanceDay` で先発選出・編成の手前に挟むので、
+下流の `_selectStarter`/`_withGameLineup`/`LineupPlanner`/シミュレーターは無改修。
+
+**④ 中4日 → 中5日** — `_minDaysBetweenStarts` 5→6。先発6人ロスターを6日周期で
+回す前提。
+
+### 検証
+
+`dart analyze lib bin` エラーなし。test_ 全39ファイル pass（test_persist が
+40人ロスターの JSON 往復一致を確認、test_rotation で各チーム救援12人・うち約4人が
+当日非アクティブで0登板を確認）。`measure_league_avg`（6シーズン）: 打率.253 /
+出塁率.317 / OPS.718 / K率19.6% / BB率7.6% — すべて NPB レンジ内を維持。
+
+### 残（フェーズB/C）
+
+- フェーズB: ベンチ入り指定UI、先発を全プールから選択（StrategyScreen 拡張）
+- フェーズC: 引退・新人 2/2→3/3、`TeamRebuilder._reorganizeBullpenRoles` を
+  12人ロスター対応に（現状オフシーズン後は 敗戦処理6 など歪なロール配分になる）
+
+### ファイル
+
+- `lib/engine/models/team.dart` / `lib/engine/generators/team_generator.dart`
+- `lib/engine/season/season_controller.dart`
+
+---
+
 ## 2026-05-18 球種を3種類追加（シュート/カット/シンカー）＋ 球種別ゴロ傾向
 
 ### 動機

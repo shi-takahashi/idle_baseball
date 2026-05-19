@@ -92,11 +92,11 @@ void main() {
       .map((id) =>
           plan.retireCandidatePitchers.firstWhere((p) => p.id == id).number)
       .toList();
-  final retiredPitcherReliefRoles = {
+  final retiredPitcherPitcherRoles = {
     for (final id in retiredPitcherIds)
       id: plan.retireCandidatePitchers
           .firstWhere((p) => p.id == id)
-          .reliefRole,
+          .pitcherRole,
   };
 
   final selection = OffseasonSelection.recommended(plan);
@@ -151,7 +151,7 @@ void main() {
     final wasStarter = retiredPitcherWasStarter[retiredPitcherIds[i]]!;
     final expectedRole = wasStarter
         ? null
-        : (retiredPitcherReliefRoles[retiredPitcherIds[i]]);
+        : (retiredPitcherPitcherRoles[retiredPitcherIds[i]]);
     final type = plan.rookiePitcherTypeOf(rookieId);
     final rookie =
         allMyPlayers.firstWhere((p) => p.id == rookieId, orElse: () {

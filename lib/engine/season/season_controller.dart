@@ -91,14 +91,20 @@ class SeasonController {
   // pitcher.id をキーに保持。
   final Map<String, int> _pitcherFreshness = {};
 
-  // 各投手の最終登板日。中4日縛りの判定に使う。
-  // 未登板は -100 とみなす（実装上は entry なしで処理）。
+  // 各投手の最終「先発」登板日。CPU のローテ周期判定（_selectStarter）に使う。
+  // 未登板は entry なしで処理。
   final Map<String, int> _pitcherLastStartDay = {};
+
+  // 各投手の最終「登板」日（先発・救援問わず）。先発指定の登板間隔ゲート
+  // （canStartNextGame）に使う。救援で投げ続けている投手は間隔が空かず先発に
+  // できない／ベンチ入りから外して休ませた投手は先発にできる、を成立させる。
+  final Map<String, int> _pitcherLastAppearanceDay = {};
 
   // 完投 1試合 ≒ 120球で full depletion (-100)
   static const double _completeGamePitches = 120;
-  // 中4日（5日空ける）以上空いていない投手は原則先発しない
-  static const int _minDaysBetweenStarts = 5;
+  // 中5日（6日空ける）以上空いていない投手は原則先発しない。
+  // 先発6人ロスターを 6 日周期で回す前提（ROSTER_EXPANSION_PLAN.md）。
+  static const int _minDaysBetweenStarts = 6;
   // 先発として「フル回復」とみなす閾値
   // ここを 100 にすることで「完全回復するまで先発させない」運用にし、
   // 投球数（=消耗の重さ）次第で次の登板までの間隔が変わる → 各チームの
@@ -110,6 +116,17 @@ class SeasonController {
   // - 2イニング登板（~30球）→ 1日休み必要
   // - 3イニング以上 → 2日以上休み必要
   static const int _relieverReadyThreshold = 80;
+
+  // ---- 当日ベンチ入り（40人ロスター → 26人）----
+  // 各チームは 40 人ロスター（投手18 / 野手22）を持つが、1 試合に出られるのは
+  // 当日ベンチ入りした 26 人だけ。内訳は 投手9（当日先発1 + 救援8）/ 野手17
+  // （主力8 + 控え9）。主力野手8と先発ローテ6は常時候補で、ここで絞るのは
+  // 控え野手と救援。
+  static const int _activeBenchSize = 9; // 当日ベンチ入りする控え野手の人数
+  static const int _activeBullpenSize = 8; // 当日ベンチ入りする救援投手の人数
+  // CPU 運用の自然な揺らぎ: 控え野手・救援それぞれで、1 チーム 1 日あたり
+  // 「能力下位アクティブ ↔ 非アクティブ」が 1 組入れ替わる確率。
+  static const double _activeRosterSwapChance = 0.12;
 
   /// 先発選出時のローテ揺らぎ用 RNG。
   /// 完全に決定論的に「最終登板日が古い順」で選ぶと 100% 中5日に固定されるため、
@@ -196,7 +213,7 @@ class SeasonController {
     final teams = TeamGenerator(random: random).generateLeague();
     final schedule = const ScheduleGenerator()
         .generateForGamesPerTeam(teams, gamesPerTeam);
-    return SeasonController(
+    final controller = SeasonController(
       teams: teams,
       schedule: schedule,
       myTeamId: myTeamId,
@@ -204,6 +221,24 @@ class SeasonController {
       offseasonProgressionEnabled: offseasonProgressionEnabled,
       random: random,
     );
+    // 自チームの投手ロールは推測ゲームの一部としてユーザーが試合結果から決める。
+    // 開幕時は能力で抑え等が割り当てられた状態にせず、中立な初期ロール
+    // （生成時の先発6人→「先発」、救援12人→「中継ぎ」）で始める。
+    // 先発/中継ぎの区分も以降ユーザーが自由に変えられる（先発・ベンチ入りとも
+    // 全18投手から選択）。CPU 5 球団は TeamGenerator のロールのまま
+    // （対戦相手の偵察は推測ゲームの一部）。
+    final my = controller.myTeam;
+    for (final p in [...my.startingRotation]) {
+      if (p.pitcherRole != PitcherRole.starter) {
+        controller.updatePlayer(p.withPitcherRole(PitcherRole.starter));
+      }
+    }
+    for (final p in [...my.bullpen]) {
+      if (p.pitcherRole != PitcherRole.middle) {
+        controller.updatePlayer(p.withPitcherRole(PitcherRole.middle));
+      }
+    }
+    return controller;
   }
 
   // ---- 状態の参照 ----
@@ -251,29 +286,45 @@ class SeasonController {
     _notify();
   }
 
-  /// 自チームの「次の試合のオート編成」をシミュレートして返す（state は変えない）。
-  /// 作戦画面の初期表示用。
-  /// 投手はオートでは 9 番固定だが、ユーザーが作戦画面で他の打順に動かすことは可能
-  /// （[NextGameStrategy] は投手位置を縛らない）。
-  /// 投手は「コンディション高い順 → 背番号順」のシンプルなルールで選出する
-  /// ([_pickFreshestStarter])。
-  /// シーズン終了済み・自チームに試合がない日には null を返す。
-  ({
-    List<Player> lineup,
-    Map<FieldPosition, Player> alignment,
-  })? suggestedStrategyForMyTeam() {
+  /// 自チームの「次の試合のオート編成」を [NextGameStrategy] として返す
+  /// （state は変えない）。作戦画面の初期表示・編集の土台に使う。
+  ///
+  /// 打順・守備配置に加え、当日ベンチ入り（控え野手 [NextGameStrategy.activeBench] /
+  /// 救援 [NextGameStrategy.activeBullpen]）も埋めた完全な編成を返す。
+  /// すべて中立（能力序列を出さない）— 推測ゲームの最適解バレを避けるため
+  /// （SPEC §コンセプト）。ユーザーが作戦画面で観察に基づき組み替える。
+  ///
+  /// - 先発: 全18投手から、登板間隔（中5日）の空いた最も背番号の若い投手
+  /// - ベンチ入り救援: 先発を除く投手から背番号順で8人
+  /// - 打順・守備: 背番号順の中立編成（[_withGameLineup] neutralOrder）
+  ///
+  /// シーズン終了済み・自チームの選手が9人未満の異常時には null を返す。
+  NextGameStrategy? suggestedStrategyForMyTeam() {
     if (isSeasonOver) return null;
     final team = teams.firstWhere((t) => t.id == myTeamId);
     if (team.players.length < 9) return null;
-    final sp = _pickFreshestStarter(team);
-    final result = LineupPlanner(
-      team: team,
-      forms: _recentForms,
-      todaysPitcher: sp,
-    ).buildLineup();
-    return (
-      lineup: result.lineup,
-      alignment: result.alignment,
+    // 先発: 全18投手（先発ローテ + 救援）から、登板間隔の空いた背番号最小の投手。
+    final allPitchers = <Player>[
+      ...team.startingRotation,
+      ...team.bullpen,
+    ]..sort((a, b) => a.number.compareTo(b.number));
+    final sp = allPitchers.firstWhere(
+      (p) => canStartNextGame(p.id),
+      orElse: () => allPitchers.first,
+    );
+    // ベンチ入り救援: 先発を除く投手から背番号順で8人。
+    final activeBullpen = [
+      for (final p in allPitchers)
+        if (p.id != sp.id) p,
+    ].take(_activeBullpenSize).toList();
+    // 野手側は中立選定 + 中立打順。
+    final active = _selectActiveRoster(team, neutral: true);
+    final game = _withGameLineup(active, sp, neutralOrder: true);
+    return NextGameStrategy(
+      lineup: game.players,
+      alignment: game.defenseAlignment!,
+      activeBench: game.bench,
+      activeBullpen: activeBullpen,
     );
   }
 
@@ -344,20 +395,33 @@ class SeasonController {
     _notify();
   }
 
+  /// 救援投手のロールを変更する（永続）。作戦画面のベンチ入りタブから呼ぶ。
+  ///
+  /// 自チームの救援ロールは「試合結果から能力を推測して起用を決める」推測ゲームの
+  /// 一部なので、エンジンは自動で割り当てない（開幕時は全員中継ぎ）。ユーザーが
+  /// ここで決めたロールは書き換えるまで保持され、オフシーズンでも自動再編しない。
+  void setPitcherRole(String pitcherId, PitcherRole role) {
+    final p = findPlayerById(pitcherId);
+    if (p == null || !p.isPitcher || p.pitcherRole == role) return;
+    updatePlayer(p.withPitcherRole(role));
+  }
+
   /// [strategy] 内の同 id の Player を [updated] に差し替えた新しい
   /// [NextGameStrategy] を返す。該当選手がいなければ [strategy] をそのまま返す。
   NextGameStrategy _replacePlayerInStrategy(
       NextGameStrategy strategy, Player updated) {
-    final inLineup = strategy.lineup.any((p) => p.id == updated.id);
-    if (!inLineup) return strategy;
+    Player swap(Player p) => p.id == updated.id ? updated : p;
+    final inStrategy = strategy.lineup.any((p) => p.id == updated.id) ||
+        strategy.activeBench.any((p) => p.id == updated.id) ||
+        strategy.activeBullpen.any((p) => p.id == updated.id);
+    if (!inStrategy) return strategy;
     return NextGameStrategy(
-      lineup: [
-        for (final p in strategy.lineup) p.id == updated.id ? updated : p,
-      ],
+      lineup: [for (final p in strategy.lineup) swap(p)],
       alignment: {
-        for (final e in strategy.alignment.entries)
-          e.key: e.value.id == updated.id ? updated : e.value,
+        for (final e in strategy.alignment.entries) e.key: swap(e.value),
       },
+      activeBench: [for (final p in strategy.activeBench) swap(p)],
+      activeBullpen: [for (final p in strategy.activeBullpen) swap(p)],
     );
   }
 
@@ -543,19 +607,14 @@ class SeasonController {
       final useStrategyForAway =
           sg.awayTeam.id == myTeamId && _myStrategy != null;
 
-      final homeSP = useStrategyForHome
-          ? _myStrategy!.startingPitcher
-          : _selectStarter(sg.homeTeam);
-      final awaySP = useStrategyForAway
-          ? _myStrategy!.startingPitcher
-          : _selectStarter(sg.awayTeam);
-
+      // 自チームに作戦指定があればそれを採用（先発・ベンチ入りもユーザー指定）。
+      // オートの場合は 40 人ロスター → 当日ベンチ入り 26 人に絞って自動編成。
       final homeForGame = useStrategyForHome
           ? _applyMyStrategy(sg.homeTeam, _myStrategy!)
-          : _withGameLineup(sg.homeTeam, homeSP);
+          : _buildAutoGameTeam(sg.homeTeam);
       final awayForGame = useStrategyForAway
           ? _applyMyStrategy(sg.awayTeam, _myStrategy!)
-          : _withGameLineup(sg.awayTeam, awaySP);
+          : _buildAutoGameTeam(sg.awayTeam);
 
       final result = _gameSimulator.simulate(
         homeForGame,
@@ -579,12 +638,10 @@ class SeasonController {
     // 試合終了後、strategy が残っていれば「次の試合用」の SP に差し替えておく。
     // 今日の試合で使った SP は疲労しているので、明日のために自動で別の候補を入れておく
     // （これがないと、翌日の作戦画面で今日の疲労 SP がそのまま表示される）。
-    // 自動選出ルール: 先発ローテの中で「疲労度が小さい（コンディション高い）順」、
-    //                同値なら背番号順。シンプル・予測可能で連投も自然に回避できる。
     // ユーザーが明日の作戦画面で別 SP を選ぶことも自由にできる。
     if (_myStrategy != null && !isSeasonOver) {
       final myTeam = teams.firstWhere((t) => t.id == myTeamId);
-      final tomorrowsSP = _pickFreshestStarter(myTeam);
+      final tomorrowsSP = _pickNextStarter(myTeam, _myStrategy!);
       _myStrategy =
           _withSPReplacedInStrategy(_myStrategy!, tomorrowsSP);
     }
@@ -593,28 +650,32 @@ class SeasonController {
     return results;
   }
 
-  /// 先発ローテの中で「コンディション高い順 → エース順 → 背番号低い順」で先頭を返す。
-  /// 自チームの作戦自動編成で使う。シーズン序盤は全員 100 で揃うので
-  /// 開幕戦はエース、その後はコンディション差で自然に回るようになる。
-  Player _pickFreshestStarter(Team team) {
-    final rotation = team.startingRotation;
-    if (rotation.isEmpty) return team.pitcher;
-    final sorted = rotation.toList()
-      ..sort((a, b) {
-        final fa = _pitcherFreshness[a.id] ?? 100;
-        final fb = _pitcherFreshness[b.id] ?? 100;
-        final c = fb.compareTo(fa); // freshness 高い順
-        if (c != 0) return c;
-        final cs = _aceScore(b).compareTo(_aceScore(a)); // エース順
-        if (cs != 0) return cs;
-        return a.number.compareTo(b.number); // 同値なら背番号低い順
-      });
-    return sorted.first;
+  /// 次の試合用の先発を中立に選ぶ（試合後の SP 自動差し替え用）。
+  /// 全18投手のうち「ベンチ入り救援に入れておらず、登板間隔（中5日）の空いた
+  /// 最も背番号の若い投手」。能力で選ばないので推測ゲームのヒントにならない。
+  /// 該当者がいなければ登板間隔の空いた者、それも無ければ背番号最小にフォールバック。
+  Player _pickNextStarter(Team team, NextGameStrategy current) {
+    final benchedIds = current.activeBullpen.map((p) => p.id).toSet();
+    final pitchers = <Player>[
+      ...team.startingRotation,
+      ...team.bullpen,
+    ]..sort((a, b) => a.number.compareTo(b.number));
+    if (pitchers.isEmpty) return team.pitcher;
+    for (final p in pitchers) {
+      if (benchedIds.contains(p.id)) continue;
+      if (canStartNextGame(p.id)) return p;
+    }
+    for (final p in pitchers) {
+      if (canStartNextGame(p.id)) return p;
+    }
+    return pitchers.first;
   }
 
   /// strategy 内の SP を `newSP` に置き換えた新しい [NextGameStrategy] を返す。
   /// 既に同じ SP なら同じインスタンスを返す。
   /// `lineup` 内の旧 SP の位置（打順位置）はそのまま、新 SP に差し替える。
+  /// newSP が当日ベンチ入り救援に入っていた場合は、スタメンと重複しないよう
+  /// activeBullpen から取り除く（先発と救援の二重登録を防ぐ）。
   NextGameStrategy _withSPReplacedInStrategy(
       NextGameStrategy old, Player newSP) {
     if (old.startingPitcher.id == newSP.id) return old;
@@ -624,7 +685,15 @@ class SeasonController {
       ...old.alignment,
       FieldPosition.pitcher: newSP,
     };
-    return NextGameStrategy(lineup: newLineup, alignment: newAlignment);
+    return NextGameStrategy(
+      lineup: newLineup,
+      alignment: newAlignment,
+      activeBench: old.activeBench,
+      activeBullpen: [
+        for (final p in old.activeBullpen)
+          if (p.id != newSP.id) p,
+      ],
+    );
   }
 
   /// 残り全日を一括シミュレート（デバッグ用）
@@ -754,6 +823,7 @@ class SeasonController {
     _recentForms.clear();
     _myStrategy = null;
     _pitcherLastStartDay.clear();
+    _pitcherLastAppearanceDay.clear();
     _pitcherFreshness.clear();
     for (final team in teams) {
       for (final p in [...team.startingRotation, ...team.bullpen]) {
@@ -805,6 +875,7 @@ class SeasonController {
       final current = _pitcherFreshness[sp.id] ?? 100;
       _pitcherFreshness[sp.id] = (current - depletion).clamp(0, 100);
       _pitcherLastStartDay[sp.id] = _currentDay;
+      _pitcherLastAppearanceDay[sp.id] = _currentDay;
     }
   }
 
@@ -829,16 +900,124 @@ class SeasonController {
         final current = _pitcherFreshness[entry.key] ?? 100;
         _pitcherFreshness[entry.key] =
             (current - depletion).clamp(0, 100);
+        _pitcherLastAppearanceDay[entry.key] = _currentDay;
       }
     }
+  }
+
+  /// 40 人ロスターから「当日ベンチ入り 26 人」に絞った試合用 Team を返す。
+  ///
+  /// - 主力野手 8（players[0..7]）と先発ローテ 6 はそのまま
+  ///   （当日先発は後段の [_selectStarter] が 6 人から選ぶ）
+  /// - 控え野手 14 → 9（控え捕手は希少なので最大 2 人を優先確保）
+  /// - 救援 12 → 8（抑えは役割が固有なので 1 人を優先確保）
+  ///
+  /// [neutral] true（自チーム）: 残り枠を**背番号順**で埋める。エンジンが
+  /// 能力上位を選ぶと「どれが上位選手か」のヒントになり推測ゲームが崩れるため
+  /// （SPEC §コンセプト）。false（CPU）: 能力上位で埋め、たまにランダムで入替。
+  /// 既に 26 人以下のロスター（旧データ・テスト用の小規模チーム）はそのまま返す。
+  Team _selectActiveRoster(Team team, {bool neutral = false}) {
+    // players が 9 人に正規化されていない異常系（テスト等）はそのまま返す
+    if (team.players.length < 9) return team;
+    final bench = _selectActiveBench(team.bench, neutral: neutral);
+    final bullpen = _selectActiveBullpen(team.bullpen, neutral: neutral);
+    if (identical(bench, team.bench) && identical(bullpen, team.bullpen)) {
+      return team; // 絞り込み不要だった
+    }
+    return team.copyWith(bench: bench, bullpen: bullpen);
+  }
+
+  /// 控え野手 14 人から当日ベンチ入りの 9 人を選ぶ。
+  /// 控え捕手は代打・守備交代で枯れると守備が回らなくなるため、最大 2 人を
+  /// 必ずアクティブにする（守備適性ベースの確保で、能力リークではない）。
+  List<Player> _selectActiveBench(List<Player> bench, {bool neutral = false}) {
+    if (bench.length <= _activeBenchSize) return bench;
+    final catchers = bench
+        .where((p) => p.getFielding(DefensePosition.catcher) > 0)
+        .toList()
+      ..sort(_rosterRank(neutral));
+    final guaranteed = catchers.take(2).toList();
+    final pool =
+        bench.where((p) => !guaranteed.contains(p)).toList();
+    return [
+      ...guaranteed,
+      ..._pickActive(pool, _activeBenchSize - guaranteed.length,
+          neutral: neutral),
+    ];
+  }
+
+  /// 救援 12 人から当日ベンチ入りの 8 人を選ぶ。
+  /// 抑えは終盤の役割が固有なので 1 人を必ずアクティブにする
+  /// （自チームでロール指定された抑えを当日も使えるようにする意図。
+  /// 自チームは開幕時全員中継ぎなので、その場合は closers が空になり素通し）。
+  List<Player> _selectActiveBullpen(List<Player> bullpen,
+      {bool neutral = false}) {
+    if (bullpen.length <= _activeBullpenSize) return bullpen;
+    final closers = bullpen
+        .where((p) => p.pitcherRole == PitcherRole.closer)
+        .toList()
+      ..sort(_rosterRank(neutral));
+    final guaranteed = closers.take(1).toList();
+    final pool =
+        bullpen.where((p) => !guaranteed.contains(p)).toList();
+    return [
+      ...guaranteed,
+      ..._pickActive(pool, _activeBullpenSize - guaranteed.length,
+          neutral: neutral),
+    ];
+  }
+
+  /// [pool] から [count] 人を選ぶ。
+  /// [neutral] true（自チーム）: 背番号順で先頭 [count] 人。能力序列を出さない。
+  /// false（CPU）: 能力上位で選び、たまに「能力下位アクティブ ↔ 上位非アクティブ」を
+  /// 1 組入れ替える（運用の自然な揺らぎ。当落線上の控えだけが churn）。
+  List<Player> _pickActive(List<Player> pool, int count,
+      {bool neutral = false}) {
+    if (pool.length <= count) return pool.toList();
+    final sorted = pool.toList()..sort(_rosterRank(neutral));
+    if (neutral) return sorted.sublist(0, count);
+    final active = sorted.sublist(0, count);
+    final inactive = sorted.sublist(count);
+    if (_rotationRandom.nextDouble() < _activeRosterSwapChance) {
+      final outIdx = count - 1 - _rotationRandom.nextInt(min(3, count));
+      final inIdx = _rotationRandom.nextInt(min(3, inactive.length));
+      final swapped = active[outIdx];
+      active[outIdx] = inactive[inIdx];
+      inactive[inIdx] = swapped;
+    }
+    return active;
+  }
+
+  /// ロスター選定用のコンパレータ。
+  /// [neutral] true: 背番号昇順（中立）。false: 能力スコア降順。
+  int Function(Player, Player) _rosterRank(bool neutral) {
+    if (neutral) return (a, b) => a.number.compareTo(b.number);
+    return (a, b) => _rosterScore(b).compareTo(_rosterScore(a));
+  }
+
+  /// ロスター選定用の能力スコア。homogeneous なプール内での順位付け専用なので、
+  /// 投手（[_aceScore] 0..1）と野手（打撃 5 項目平均 1..10）でスケールが
+  /// 違っても問題ない（同種同士でしか比較しない）。
+  double _rosterScore(Player p) {
+    if (p.isPitcher) return _aceScore(p);
+    return ((p.meet ?? 5) +
+            (p.power ?? 5) +
+            (p.eye ?? 5) +
+            (p.speed ?? 5) +
+            (p.arm ?? 5)) /
+        5.0;
   }
 
   /// その日のブルペンを「使用可能な順」に並び替えて返す
   /// - コンディション 80 以上を「フレッシュな RP」として優先
   /// - その中でも残コンディションが高い順に並べる（フレッシュ順）
   /// - フレッシュな RP が 3 人未満なら、全員から残コンディション順で並べる
-  List<Player> _availableBullpen(Team team) {
-    final all = team.bullpen.toList();
+  List<Player> _availableBullpen(Team team) =>
+      _availableBullpenFrom(team.bullpen);
+
+  /// [_availableBullpen] のリスト版（当日ベンチ入り救援リストから直接並べる）。
+  List<Player> _availableBullpenFrom(List<Player> bullpen) {
+    final all = bullpen.toList();
     final fresh = all
         .where((p) =>
             (_pitcherFreshness[p.id] ?? 100) >= _relieverReadyThreshold)
@@ -950,6 +1129,23 @@ class SeasonController {
     return (speedNorm + controlNorm + fastballNorm + bestPitch) / 4.0;
   }
 
+  /// オート編成で1試合分の Team を構築する。
+  /// 40 人ロスター → 当日ベンチ入り 26 人に絞り、先発選出・打順編成まで行う。
+  ///
+  /// 自チームは能力序列を出さない中立打順（背番号順）で組む。エンジンが能力順の
+  /// 打順を提示すると推測ゲームの「最適解バレ」になるため（SPEC §コンセプト）。
+  /// 通常はユーザーが作戦画面で打順を確定するのでこの経路は来ないが、
+  /// 作戦未設定での進行・テスト時のフォールバックとして中立にしておく。
+  Team _buildAutoGameTeam(Team season) {
+    final isMyTeam = season.id == myTeamId;
+    final active = _selectActiveRoster(season, neutral: isMyTeam);
+    return _withGameLineup(
+      active,
+      _selectStarter(active),
+      neutralOrder: isMyTeam,
+    );
+  }
+
   /// 1試合分の Team を構築する：
   /// - LineupPlanner で当日の打順 (1〜8番) と守備配置を決定
   /// - 9番は当日の先発 SP
@@ -957,9 +1153,10 @@ class SeasonController {
   /// - スワップで控えに回ったスタメン野手は bench に移動
   ///
   /// ロール別の getter（team.closer / setupPitcher など）は bullpen 内を
-  /// reliefRole で検索するため、疲労した投手はここで bullpen から外れることで
+  /// pitcherRole で検索するため、疲労した投手はここで bullpen から外れることで
   /// 自動的に「当日不在」扱いになる（連投回避）。
-  Team _withGameLineup(Team team, Player sp) {
+  /// [neutralOrder] true で打順を能力順でなく背番号順にする（自チーム用）。
+  Team _withGameLineup(Team team, Player sp, {bool neutralOrder = false}) {
     // 正規化チームの players[0..7] が崩れている場合（テストなど）は最低限の投手差し替えだけ行う
     if (team.players.length < 9) {
       final newPlayers = team.players.length >= 9 && team.players[8].id == sp.id
@@ -975,6 +1172,7 @@ class SeasonController {
       team: team,
       forms: _recentForms,
       todaysPitcher: sp,
+      neutralOrder: neutralOrder,
     );
     final result = planner.buildLineup();
 
@@ -998,21 +1196,27 @@ class SeasonController {
   }
 
   /// ユーザーが指定した作戦（NextGameStrategy）から1試合分の Team を構築する。
-  /// `_withGameLineup` のオート版とほぼ同じだが、打順・守備配置・先発はユーザー指定を採用。
+  ///
+  /// 打順・守備配置・先発・当日ベンチ入り（控え野手・救援）すべてユーザー指定を採用。
+  /// 引数 [team] は 40 人ロスターのシーズン保持 Team（オート版と違い
+  /// `_selectActiveRoster` は通さない — ベンチ入りもユーザーが決めるため）。
+  ///
+  /// `strategy.activeBench` / `activeBullpen` が空（旧セーブ等）の場合のみ、
+  /// エンジンの自動ベンチ入り選定にフォールバックする。
   Team _applyMyStrategy(Team team, NextGameStrategy strategy) {
-    final lineupIds = strategy.fullLineup.map((p) => p.id).toSet();
-    final newBench = <Player>[];
-    for (final p in team.bench) {
-      if (!lineupIds.contains(p.id)) newBench.add(p);
-    }
-    for (final p in team.players.take(8)) {
-      if (!lineupIds.contains(p.id)) newBench.add(p);
-    }
+    // 旧セーブ等で当日ベンチ入りが未指定のときのフォールバック。
+    // _applyMyStrategy は自チーム専用なので中立選定（背番号順）にする。
+    final bench = strategy.activeBench.isNotEmpty
+        ? strategy.activeBench
+        : _selectActiveBench(team.bench, neutral: true);
+    final bullpen = strategy.activeBullpen.isNotEmpty
+        ? strategy.activeBullpen
+        : _selectActiveBullpen(team.bullpen, neutral: true);
     return team.copyWith(
       players: strategy.fullLineup,
       defenseAlignment: Map.of(strategy.alignment),
-      bench: newBench,
-      bullpen: _availableBullpen(team),
+      bench: bench,
+      bullpen: _availableBullpenFrom(bullpen),
     );
   }
 
@@ -1068,12 +1272,14 @@ class SeasonController {
   int? pitcherLastStartDay(String pitcherId) =>
       _pitcherLastStartDay[pitcherId];
 
-  /// 次の自チーム試合（currentDay+1）で、この投手が先発するのに必要な
-  /// 中4日（_minDaysBetweenStarts 日）の登板間隔を満たしているか。
-  /// 自動ローテだけでなく、手動の作戦指定でも連投（昨日の先発を今日も先発）を
-  /// 防ぐためのチェック。
+  /// 次の自チーム試合（currentDay+1）で、この投手が先発できるか。
+  /// 中5日（_minDaysBetweenStarts 日空ける）の登板間隔を満たすことが条件。
+  ///
+  /// 判定は「最終**登板**日」（先発・救援問わず）ベース。これにより、
+  /// ベンチ入りさせて救援で投げ続けている投手は間隔が空かず先発候補に挙がらず、
+  /// ベンチ入りから外して休ませた投手は先発に指定できる。
   bool canStartNextGame(String pitcherId) {
-    final last = _pitcherLastStartDay[pitcherId];
+    final last = _pitcherLastAppearanceDay[pitcherId];
     if (last == null) return true; // 未登板
     return ((_currentDay + 1) - last) >= _minDaysBetweenStarts;
   }
@@ -1127,6 +1333,7 @@ class SeasonController {
       },
       'pitcherFreshness': _pitcherFreshness,
       'pitcherLastStartDay': _pitcherLastStartDay,
+      'pitcherLastAppearanceDay': _pitcherLastAppearanceDay,
       'recentForms': {
         for (final entry in _recentForms.entries)
           entry.key: entry.value.toJson(),
@@ -1227,6 +1434,11 @@ class SeasonController {
     controller._pitcherLastStartDay.clear();
     for (final e in (json['pitcherLastStartDay'] as Map? ?? {}).entries) {
       controller._pitcherLastStartDay[e.key as String] = e.value as int;
+    }
+    controller._pitcherLastAppearanceDay.clear();
+    for (final e
+        in (json['pitcherLastAppearanceDay'] as Map? ?? {}).entries) {
+      controller._pitcherLastAppearanceDay[e.key as String] = e.value as int;
     }
 
     // 5e. RecentForms

@@ -6,7 +6,8 @@ import 'player_detail_screen.dart';
 /// チーム所属選手の一覧画面
 ///
 /// チーム一覧の「選手一覧」リンクから push される。
-/// 投手（先発・救援）と野手（スタメン・控え）をセクションに分けて並べる。
+/// 「投手」「野手」の 2 タブで切り替え、各タブ内は背番号順に並べる
+/// （ロスター40人化でスクロールが長くなるためタブ分割）。
 /// 各行をタップすると [PlayerDetailScreen] に遷移して能力詳細を表示する。
 ///
 /// `listenable` を購読しており、選手編集後に新しい能力で再描画される。
@@ -30,114 +31,92 @@ class PlayerListScreen extends StatelessWidget {
         final team = controller.teams.firstWhere((t) => t.id == teamId);
         final primary = Color(team.primaryColorValue);
 
-        // 先発ローテ（6人）
-        final starters = team.startingRotation;
-        // 救援投手（ロール順に並べ替え）
-        final relievers = [...team.bullpen]..sort((a, b) {
-            final ra = a.reliefRole?.index ?? 999;
-            final rb = b.reliefRole?.index ?? 999;
-            return ra.compareTo(rb);
-          });
-        // スタメン野手（players[0..7]）
-        final fielders = team.players.sublist(0, 8);
-        // 控え野手
-        final bench = team.bench;
+        // 投手（先発ローテ + 救援）/ 野手（主力 + 控え）を背番号順に。
+        final pitchers = <Player>[
+          ...team.startingRotation,
+          ...team.bullpen,
+        ]..sort((a, b) => a.number.compareTo(b.number));
+        final fielders = <Player>[
+          ...team.players.take(8),
+          ...team.bench,
+        ]..sort((a, b) => a.number.compareTo(b.number));
 
-        return Scaffold(
-          appBar: AppBar(
-            title: Text('${team.name}　選手一覧'),
-            backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-            flexibleSpace: Align(
-              alignment: Alignment.bottomCenter,
-              child: Container(height: 3, color: primary),
+        return DefaultTabController(
+          length: 2,
+          child: Scaffold(
+            appBar: AppBar(
+              title: Text('${team.name}　選手一覧'),
+              backgroundColor: Theme.of(context).colorScheme.inversePrimary,
+              bottom: TabBar(
+                indicatorColor: primary,
+                tabs: [
+                  Tab(text: '野手 (${fielders.length})'),
+                  Tab(text: '投手 (${pitchers.length})'),
+                ],
+              ),
             ),
-          ),
-          body: ListView(
-            padding: const EdgeInsets.symmetric(vertical: 8),
-            children: [
-              _SectionHeader(label: '先発ローテーション (${starters.length})'),
-              for (final p in starters)
-                _PlayerRow(
-                  player: p,
-                  subtitle: '先発',
+            // 左タブ＝野手（デフォルト表示）、右タブ＝投手。
+            body: TabBarView(
+              children: [
+                _PlayerList(
+                  players: fielders,
                   controller: controller,
                   listenable: listenable,
                 ),
-              _SectionHeader(label: '救援投手 (${relievers.length})'),
-              for (final p in relievers)
-                _PlayerRow(
-                  player: p,
-                  subtitle: p.reliefRole?.displayName ?? '救援',
+                _PlayerList(
+                  players: pitchers,
                   controller: controller,
                   listenable: listenable,
                 ),
-              _SectionHeader(label: 'スタメン野手 (${fielders.length})'),
-              for (int i = 0; i < fielders.length; i++)
-                _PlayerRow(
-                  player: fielders[i],
-                  subtitle: _starterPositionLabel(i),
-                  controller: controller,
-                  listenable: listenable,
-                ),
-              _SectionHeader(label: '控え野手 (${bench.length})'),
-              for (final p in bench)
-                _PlayerRow(
-                  player: p,
-                  subtitle: _benchPositionLabel(p),
-                  controller: controller,
-                  listenable: listenable,
-                ),
-            ],
+              ],
+            ),
           ),
         );
       },
     );
   }
+}
 
-  // players[0..7] のデフォルト守備配置
-  static const _starterPositions = [
-    '捕',
-    '一',
-    '二',
-    '三',
-    '遊',
-    '左',
-    '中',
-    '右',
-  ];
+/// 1 タブ分の選手リスト（背番号順に渡された [players] をそのまま並べる）。
+class _PlayerList extends StatelessWidget {
+  final List<Player> players;
+  final SeasonController controller;
+  final Listenable listenable;
 
-  String _starterPositionLabel(int index) {
-    return _starterPositions[index];
+  const _PlayerList({
+    required this.players,
+    required this.controller,
+    required this.listenable,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      children: [
+        for (final p in players)
+          _PlayerRow(
+            player: p,
+            subtitle: _roleLabel(p),
+            controller: controller,
+            listenable: listenable,
+          ),
+      ],
+    );
   }
 
-  String _benchPositionLabel(Player p) {
+  /// 行に出す肩書き。投手は先発/救援ロール、野手は守れる守備位置。
+  static String _roleLabel(Player p) {
+    if (p.isPitcher) {
+      return p.pitcherRole?.displayName ?? '先発';
+    }
     final map = p.fielding;
-    if (map == null || map.isEmpty) return '控え';
+    if (map == null || map.isEmpty) return '—';
     final positions = map.entries
         .where((e) => e.value > 0)
         .map((e) => e.key.shortName)
         .toList();
-    return positions.isEmpty ? '控え' : positions.join('/');
-  }
-}
-
-class _SectionHeader extends StatelessWidget {
-  final String label;
-  const _SectionHeader({required this.label});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      color: Colors.grey.shade200,
-      child: Text(
-        label,
-        style: const TextStyle(
-          fontSize: 13,
-          fontWeight: FontWeight.bold,
-        ),
-      ),
-    );
+    return positions.isEmpty ? '—' : positions.join('/');
   }
 }
 
@@ -183,12 +162,13 @@ class _PlayerRow extends StatelessWidget {
                 ),
               ),
             ),
-            // ポジション
+            // ポジション / 役割
             SizedBox(
               width: 56,
               child: Text(
                 subtitle,
                 style: const TextStyle(fontSize: 12),
+                overflow: TextOverflow.ellipsis,
               ),
             ),
             // 名前

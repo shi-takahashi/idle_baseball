@@ -87,19 +87,19 @@ class PlayerGenerator {
 
   /// 救援投手を生成
   ///
-  /// - [reliefRole]: 救援ロール（指定すれば Player.reliefRole にセットされる）
+  /// - [pitcherRole]: 救援ロール（指定すれば Player.pitcherRole にセットされる）
   /// - [abilityBoost]: 能力値の平均オフセット（+1.0 でエース級、-1.0 で控え級）
   /// - [forcedThrows]: 利き腕を強制（例: situational lefty）
   Player generateReliefPitcher({
     required int number,
-    ReliefRole? reliefRole,
+    PitcherRole? pitcherRole,
     double abilityBoost = 0.0,
     Handedness? forcedThrows,
   }) {
     return _generatePitcher(
       number: number,
       isStarter: false,
-      reliefRole: reliefRole,
+      pitcherRole: pitcherRole,
       abilityBoost: abilityBoost,
       forcedThrows: forcedThrows,
     );
@@ -108,7 +108,7 @@ class PlayerGenerator {
   Player _generatePitcher({
     required int number,
     required bool isStarter,
-    ReliefRole? reliefRole,
+    PitcherRole? pitcherRole,
     double abilityBoost = 0.0,
     Handedness? forcedThrows,
     int? ageOverride,
@@ -221,7 +221,7 @@ class PlayerGenerator {
       speed: speed,
       // 打席（投手も打つ）
       bats: _batterHandedness(),
-      reliefRole: reliefRole,
+      pitcherRole: pitcherRole,
       potentials: _buildPotentials(
         meet: meet,
         power: power,
@@ -496,13 +496,13 @@ class PlayerGenerator {
   Player generateRookiePitcher({
     required int number,
     bool isStarter = true,
-    ReliefRole? reliefRole,
+    PitcherRole? pitcherRole,
     RookieType type = RookieType.college,
   }) {
     return _generatePitcher(
       number: number,
       isStarter: isStarter,
-      reliefRole: reliefRole,
+      pitcherRole: pitcherRole,
       abilityBoost: _abilityBoostForRookieType(type),
       ageOverride: _ageForRookieType(type),
       rookieType: type,

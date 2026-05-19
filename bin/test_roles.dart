@@ -9,8 +9,8 @@ void main() {
     final result = simulator.simulate(teams, schedule);
 
     print('=== seed=$seed ===');
-    final byRole = <ReliefRole, _RoleAgg>{
-      for (final r in ReliefRole.values) r: _RoleAgg(),
+    final byRole = <PitcherRole, _RoleAgg>{
+      for (final r in PitcherRole.values) r: _RoleAgg(),
     };
     int totalSaves = 0;
     int totalHolds = 0;
@@ -19,7 +19,7 @@ void main() {
 
     for (final team in teams) {
       for (final p in team.bullpen) {
-        final role = p.reliefRole;
+        final role = p.pitcherRole;
         if (role == null) continue;
         final stats = result.pitcherStats[p.id];
         if (stats == null) continue;
@@ -42,7 +42,7 @@ void main() {
     print('総セーブ=$totalSaves 総ホールド=$totalHolds '
         '総勝=$totalWins 総敗=$totalLosses');
     print('ロール別（リーグ全体での合計）:');
-    for (final role in ReliefRole.values) {
+    for (final role in PitcherRole.values) {
       final agg = byRole[role]!;
       if (agg.players == 0) continue;
       final ip = agg.outs / 3.0;

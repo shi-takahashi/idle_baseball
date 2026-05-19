@@ -189,7 +189,7 @@ class SimplePitcherChangeStrategy implements PitcherChangeStrategy {
     final isCurrentCloser = context.closer != null &&
         state.currentPitcher.id == context.closer!.id;
     final isCurrentSituational =
-        state.currentPitcher.reliefRole == ReliefRole.situational;
+        state.currentPitcher.pitcherRole == PitcherRole.situational;
 
     // ---- 抑え投手の起用判断（セーブ状況） ----
     // 以下のいずれかで、現投手を降ろして抑えに切り替える:
@@ -229,10 +229,10 @@ class SimplePitcherChangeStrategy implements PitcherChangeStrategy {
         context.scoreDiff >= 0 &&
         context.scoreDiff <= 3 &&
         !isCurrentCloser &&
-        state.currentPitcher.reliefRole != ReliefRole.setup &&
+        state.currentPitcher.pitcherRole != PitcherRole.setup &&
         !_isStarterOnShutoutPace(context, isStarter)) {
       for (final p in state.bullpen) {
-        if (p.reliefRole != ReliefRole.setup) continue;
+        if (p.pitcherRole != PitcherRole.setup) continue;
         if (context.closer != null && p.id == context.closer!.id) continue;
         return PitcherChangeDecision(
           newPitcher: p,
@@ -249,7 +249,7 @@ class SimplePitcherChangeStrategy implements PitcherChangeStrategy {
     // セットアッパーは信頼度がワンポイントより高いので、ヒットも失点も
     // していない状態では matchup swap で降ろさない。
     final isCurrentSetup =
-        state.currentPitcher.reliefRole == ReliefRole.setup;
+        state.currentPitcher.pitcherRole == PitcherRole.setup;
     final setupHasBeenHit = state.hitsAllowed > 0 || state.runsAllowed > 0;
     if (!isCurrentCloser &&
         !isStarter &&
@@ -427,6 +427,8 @@ class SimplePitcherChangeStrategy implements PitcherChangeStrategy {
   ///   - 抑え: セーブ機会以外では使わない（decide() 側で直接呼ぶ）
   ///   - セットアッパー: リード時の8回 / 同点8回以降のみ。それ以外では候補から外す。
   ///     どうしても他に投手が残っていない場合のみフォールバックとして起用。
+  ///   - 先発（starter）: リリーフ最低優先。先発以外の救援が全員出尽くした
+  ///     最後の砦としてのみ登板する。
   ///
   /// ロール優先度に合致する投手がいなければフレッシュ順の先頭を選ぶ。
   Player _selectReliever(PitcherChangeContext context) {
@@ -438,10 +440,16 @@ class SimplePitcherChangeStrategy implements PitcherChangeStrategy {
             .toList();
     if (pool.isEmpty) return context.availableRelievers.first;
 
+    // 先発ロールの投手はリリーフ最低優先。先発以外が1人でも残っていれば
+    // 候補から外す（先発以外が全員出尽くしたときだけ最後の砦として登板）。
+    final nonStarter =
+        pool.where((p) => p.pitcherRole != PitcherRole.starter).toList();
+    if (nonStarter.isNotEmpty) pool = nonStarter;
+
     // セットアッパーを温存: 本来の場面以外では候補から外す
     if (_shouldReserveSetup(context)) {
       final nonSetup =
-          pool.where((p) => p.reliefRole != ReliefRole.setup).toList();
+          pool.where((p) => p.pitcherRole != PitcherRole.setup).toList();
       if (nonSetup.isNotEmpty) pool = nonSetup;
       // 残ったのが抑え+セットアッパーだけ等、本当に枯渇した場合は
       // セットアッパーを最終手段として残しておく（pool そのままで継続）
@@ -450,7 +458,7 @@ class SimplePitcherChangeStrategy implements PitcherChangeStrategy {
     final preferred = _preferredRoles(context);
     for (final role in preferred) {
       for (final p in pool) {
-        if (p.reliefRole == role) return p;
+        if (p.pitcherRole == role) return p;
       }
     }
     return pool.first;
@@ -484,7 +492,7 @@ class SimplePitcherChangeStrategy implements PitcherChangeStrategy {
   /// - 同点6〜7回: 中継ぎ
   /// - 接戦で負け: 中継ぎ → 敗戦処理
   /// - 大差で負け: 敗戦処理
-  List<ReliefRole> _preferredRoles(PitcherChangeContext context) {
+  List<PitcherRole> _preferredRoles(PitcherChangeContext context) {
     final inning = context.inning;
     final scoreDiff = context.scoreDiff;
     final state = context.pitchingState;
@@ -493,26 +501,26 @@ class SimplePitcherChangeStrategy implements PitcherChangeStrategy {
     // 延長戦
     if (inning >= 10) {
       return const [
-        ReliefRole.long,
-        ReliefRole.middle,
-        ReliefRole.mopUp,
+        PitcherRole.long,
+        PitcherRole.middle,
+        PitcherRole.mopUp,
       ];
     }
 
     // 先発の早期降板
     if (isStarterPull && (inning <= 3 || state.pitchCount < 50)) {
       return const [
-        ReliefRole.long,
-        ReliefRole.mopUp,
-        ReliefRole.middle,
+        PitcherRole.long,
+        PitcherRole.mopUp,
+        PitcherRole.middle,
       ];
     }
 
     // 大差（5点差以上）→ 主力温存
     if (scoreDiff.abs() >= 5) {
       return const [
-        ReliefRole.mopUp,
-        ReliefRole.middle,
+        PitcherRole.mopUp,
+        PitcherRole.middle,
       ];
     }
 
@@ -520,37 +528,37 @@ class SimplePitcherChangeStrategy implements PitcherChangeStrategy {
     if (scoreDiff > 0) {
       if (inning == 8) {
         return const [
-          ReliefRole.setup,
-          ReliefRole.middle,
+          PitcherRole.setup,
+          PitcherRole.middle,
         ];
       }
       // リード時の他のイニングは中継ぎ
-      return const [ReliefRole.middle];
+      return const [PitcherRole.middle];
     }
 
     // 同点
     if (scoreDiff == 0) {
       if (inning >= 8) {
         return const [
-          ReliefRole.setup,
-          ReliefRole.middle,
+          PitcherRole.setup,
+          PitcherRole.middle,
         ];
       }
-      return const [ReliefRole.middle];
+      return const [PitcherRole.middle];
     }
 
     // 接戦で負け（1〜3点差）
     if (scoreDiff >= -3) {
       return const [
-        ReliefRole.middle,
-        ReliefRole.mopUp,
+        PitcherRole.middle,
+        PitcherRole.mopUp,
       ];
     }
 
     // 4点差以上の負け
     return const [
-      ReliefRole.mopUp,
-      ReliefRole.middle,
+      PitcherRole.mopUp,
+      PitcherRole.middle,
     ];
   }
 
@@ -583,7 +591,7 @@ class SimplePitcherChangeStrategy implements PitcherChangeStrategy {
 
     // ベンチに situational ロールの左投手がいるか
     for (final p in state.bullpen) {
-      if (p.reliefRole != ReliefRole.situational) continue;
+      if (p.pitcherRole != PitcherRole.situational) continue;
       if (p.effectiveThrows != Handedness.left) continue;
       // 抑えと被らないように除外（実際には situational != closer のはずだが念のため）
       if (context.closer != null && p.id == context.closer!.id) continue;

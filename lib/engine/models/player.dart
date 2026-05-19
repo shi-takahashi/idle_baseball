@@ -33,9 +33,10 @@ class Player {
   final Handedness? throws;
   final Handedness? bats;
 
-  // 救援投手のロール（先発投手・野手は null）
-  // 投手交代戦略がこのロールを参照して起用判断を行う。
-  final ReliefRole? reliefRole;
+  // 投手のロール（先発 / 抑え / 中継ぎ等。野手は null）
+  // 投手交代戦略・起用判断がこのロールを参照する。
+  // 自動生成の CPU 先発は null のことがあるが、自チームは全投手にロールを持たせる。
+  final PitcherRole? pitcherRole;
 
   // 守備能力（ポジションごと、0〜10）
   // fielding マップ自体が null  : 全ポジションをデフォルト値5で守れる（未設定の選手用）
@@ -80,7 +81,7 @@ class Player {
     this.fielding,
     this.throws,
     this.bats,
-    this.reliefRole,
+    this.pitcherRole,
     this.potentials,
     this.potentialFielding,
     this.potentialAverageSpeed,
@@ -111,6 +112,37 @@ class Player {
 
   /// 投手かどうか
   bool get isPitcher => averageSpeed != null;
+
+  /// 投手ロールだけを差し替えた複製。
+  /// 能力・球種・ポテンシャルなど他のフィールドはすべて維持する。
+  Player withPitcherRole(PitcherRole role) => Player(
+        id: id,
+        name: name,
+        number: number,
+        age: age,
+        averageSpeed: averageSpeed,
+        fastball: fastball,
+        control: control,
+        slider: slider,
+        curve: curve,
+        splitter: splitter,
+        changeup: changeup,
+        shoot: shoot,
+        cutter: cutter,
+        sinker: sinker,
+        meet: meet,
+        power: power,
+        speed: speed,
+        eye: eye,
+        arm: arm,
+        fielding: fielding,
+        throws: throws,
+        bats: bats,
+        pitcherRole: role,
+        potentials: potentials,
+        potentialFielding: potentialFielding,
+        potentialAverageSpeed: potentialAverageSpeed,
+      );
 
   /// 利き腕（nullはright）
   Handedness get effectiveThrows => throws ?? Handedness.right;
@@ -178,7 +210,7 @@ class Player {
         },
       if (throws != null) 'throws': throws!.name,
       if (bats != null) 'bats': bats!.name,
-      if (reliefRole != null) 'reliefRole': reliefRole!.name,
+      if (pitcherRole != null) 'pitcherRole': pitcherRole!.name,
       if (potentials != null) 'potentials': potentials,
       if (potentialFielding != null)
         'potentialFielding': {
@@ -243,10 +275,10 @@ class Player {
       fielding: fielding,
       throws: parseHand(json['throws']),
       bats: parseHand(json['bats']),
-      reliefRole: json['reliefRole'] == null
+      pitcherRole: json['pitcherRole'] == null
           ? null
-          : ReliefRole.values
-              .firstWhere((r) => r.name == json['reliefRole']),
+          : PitcherRole.values
+              .firstWhere((r) => r.name == json['pitcherRole']),
       potentials: potentials,
       potentialFielding: potentialFielding,
       potentialAverageSpeed: json['potentialAverageSpeed'] as int?,

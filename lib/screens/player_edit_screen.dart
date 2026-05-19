@@ -33,7 +33,7 @@ class _PlayerEditScreenState extends State<PlayerEditScreen> {
   late Handedness _bats;
   late Handedness _throws; // 投手のみ
   // null = 先発、それ以外 = 救援ロール
-  late ReliefRole? _reliefRole;
+  late PitcherRole? _pitcherRole;
 
   // 投手能力（1〜10）
   late int _control;
@@ -84,7 +84,7 @@ class _PlayerEditScreenState extends State<PlayerEditScreen> {
 
     _bats = p.effectiveBatsBase;
     _throws = p.effectiveThrows;
-    _reliefRole = p.reliefRole;
+    _pitcherRole = p.pitcherRole;
 
     _control = p.control ?? 5;
     _fastball = p.fastball ?? 5;
@@ -307,24 +307,24 @@ class _PlayerEditScreenState extends State<PlayerEditScreen> {
           const SizedBox(height: 8),
           _LabelRow(
             label: '起用',
-            child: DropdownButton<ReliefRole?>(
-              value: _reliefRole,
+            child: DropdownButton<PitcherRole?>(
+              value: _pitcherRole,
               isDense: true,
-              onChanged: (v) => setState(() => _reliefRole = v),
+              onChanged: (v) => setState(() => _pitcherRole = v),
               items: const [
                 DropdownMenuItem(value: null, child: Text('先発')),
                 DropdownMenuItem(
-                    value: ReliefRole.closer, child: Text('抑え')),
+                    value: PitcherRole.closer, child: Text('抑え')),
                 DropdownMenuItem(
-                    value: ReliefRole.setup, child: Text('セットアッパー')),
+                    value: PitcherRole.setup, child: Text('セットアッパー')),
                 DropdownMenuItem(
-                    value: ReliefRole.middle, child: Text('中継ぎ')),
+                    value: PitcherRole.middle, child: Text('中継ぎ')),
                 DropdownMenuItem(
-                    value: ReliefRole.situational, child: Text('ワンポイント')),
+                    value: PitcherRole.situational, child: Text('ワンポイント')),
                 DropdownMenuItem(
-                    value: ReliefRole.long, child: Text('ロング')),
+                    value: PitcherRole.long, child: Text('ロング')),
                 DropdownMenuItem(
-                    value: ReliefRole.mopUp, child: Text('敗戦処理')),
+                    value: PitcherRole.mopUp, child: Text('敗戦処理')),
               ],
             ),
           ),
@@ -559,7 +559,7 @@ class _PlayerEditScreenState extends State<PlayerEditScreen> {
       // 利き手・ロール
       throws: _isPitcher ? _throws : null,
       bats: _bats,
-      reliefRole: _isPitcher ? _reliefRole : null,
+      pitcherRole: _isPitcher ? _pitcherRole : null,
     );
 
     widget.controller.updatePlayer(updated);

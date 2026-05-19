@@ -33,14 +33,16 @@ extension RookieTypeExtension on RookieType {
   }
 }
 
-/// 救援投手のロール
+/// 投手のロール（先発 + 救援5種）
+/// - starter: 先発。リリーフ登板は最低優先（他の救援が出尽くした時のみ）
 /// - closer: 抑え。基本9回限定でセーブ機会担当
 /// - setup: セットアッパー。8回でリードを守る
 /// - middle: 中継ぎ（勝ちパ）。6〜7回のリード/同点で投げる
 /// - situational: ワンポイント。左打者へのマッチアップ用（左投手）
 /// - long: ロングリリーフ。先発早期降板や延長戦で長いイニングを投げる
 /// - mopUp: 敗戦処理。負け試合・大差での消耗を引き受ける
-enum ReliefRole {
+enum PitcherRole {
+  starter,
   closer,
   setup,
   middle,
@@ -49,20 +51,22 @@ enum ReliefRole {
   mopUp,
 }
 
-extension ReliefRoleExtension on ReliefRole {
+extension PitcherRoleExtension on PitcherRole {
   String get displayName {
     switch (this) {
-      case ReliefRole.closer:
+      case PitcherRole.starter:
+        return '先発';
+      case PitcherRole.closer:
         return '抑え';
-      case ReliefRole.setup:
+      case PitcherRole.setup:
         return 'セットアッパー';
-      case ReliefRole.middle:
+      case PitcherRole.middle:
         return '中継ぎ';
-      case ReliefRole.situational:
+      case PitcherRole.situational:
         return 'ワンポイント';
-      case ReliefRole.long:
+      case PitcherRole.long:
         return 'ロング';
-      case ReliefRole.mopUp:
+      case PitcherRole.mopUp:
         return '敗戦処理';
     }
   }

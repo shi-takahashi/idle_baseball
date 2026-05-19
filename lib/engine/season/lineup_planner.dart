@@ -16,6 +16,14 @@ import 'recent_form.dart';
 ///        4番→3番→1番→2番→5番 の順に最適な選手を当て、
 ///        残りを打力順で 6→7→8 番に並べる。
 ///   3. 9番は当日の先発投手で固定。
+///
+/// [neutralOrder] が true のときは「能力で並べない」中立モードになる:
+///   - 打順は背番号順（8野手）+ 投手9番。能力序列を UI に出さない。
+///   - 能力差によるベンチ入れ替え（Phase 2）は行わない。
+///   - 守れないポジションの強制スワップ（Phase 1）は中立モードでも行う。
+/// 自チームの初期提案で使う。パラメータ非表示の方針上、エンジンが能力順の
+/// 打順を提示すると「最適解を無料で渡す」ことになり推測ゲームが成立しないため
+/// （SPEC §コンセプト）。CPU チームは従来どおり能力ベース（neutralOrder=false）。
 class LineupPlanner {
   /// 正規化チームの `players[0..7]` のデフォルトポジション対応
   /// （TeamGenerator が生成する順序に対応）
@@ -40,10 +48,14 @@ class LineupPlanner {
   final Map<String, RecentForm> forms;
   final Player todaysPitcher;
 
+  /// true なら能力で並べず背番号順にする（自チームの初期提案用）。
+  final bool neutralOrder;
+
   LineupPlanner({
     required this.team,
     required this.forms,
     required this.todaysPitcher,
+    this.neutralOrder = false,
   });
 
   /// 当日の打順 + 守備配置を返す
@@ -76,6 +88,11 @@ class LineupPlanner {
   ///             ベンチから守れる選手を必ず昇格させる。回数制限なし。
   ///   Phase 2 = 通常スワップ。調子・能力差で最大 [maxSwapsPerGame] 件入れ替え。
   List<Player> _selectFielders() {
+    // 中立モード（自チーム）: スタメン枠（players[0..7]）に頼らず、野手全体から
+    // 「各守備位置を守れる最も背番号の若い選手」を選ぶ。能力で誰が主力かを
+    // エンジンが提示しないため（SPEC §コンセプト）。
+    if (neutralOrder) return _selectFieldersNeutral();
+
     final canonical = team.players.take(8).toList();
     if (canonical.length < 8) return canonical;
 
@@ -156,6 +173,54 @@ class LineupPlanner {
     return result;
   }
 
+  /// 中立モードのスタメン野手選定。
+  ///
+  /// 野手全体（[Team.players] の先頭8人 + [Team.bench]）から、各守備位置
+  /// （捕一二三遊左中右）を守れる「最も背番号の若い選手」を割り当てる。
+  /// 守れる選手が少ない位置（捕手など）から先に埋め、枯渇したら背番号順で補充。
+  /// 能力には一切触れないので、誰が主力かのヒントを出さない。
+  List<Player> _selectFieldersNeutral() {
+    final pool = <Player>[
+      for (final p in [...team.players.take(8), ...team.bench])
+        if (!p.isPitcher) p,
+    ]..sort((a, b) => a.number.compareTo(b.number));
+
+    // 各スロットを守れるプール人数（希少な位置を先に埋めるための順序付け）。
+    int eligibleCount(int slot) {
+      final dp = _defaultPositions[slot].defensePosition;
+      if (dp == null) return 0;
+      return pool.where((p) => p.canPlay(dp)).length;
+    }
+
+    final slotOrder = List.generate(8, (i) => i)
+      ..sort((a, b) => eligibleCount(a).compareTo(eligibleCount(b)));
+
+    final result = List<Player?>.filled(8, null);
+    final used = <String>{};
+    for (final slot in slotOrder) {
+      final dp = _defaultPositions[slot].defensePosition;
+      if (dp == null) continue;
+      for (final p in pool) {
+        if (used.contains(p.id)) continue;
+        if (!p.canPlay(dp)) continue;
+        result[slot] = p;
+        used.add(p.id);
+        break;
+      }
+    }
+    // 守れる選手が枯渇したスロットは背番号順で補充（異常系のフォールバック）。
+    for (int i = 0; i < 8; i++) {
+      if (result[i] != null) continue;
+      for (final p in pool) {
+        if (used.contains(p.id)) continue;
+        result[i] = p;
+        used.add(p.id);
+        break;
+      }
+    }
+    return [for (final p in result) if (p != null) p];
+  }
+
   /// 中心選手（素能力上位）はスワップ閾値を高くする。
   /// 戻り値は「ベンチ選手スコア / スタメンスコア」がこの値を超えたら入れ替え対象。
   double _swapThreshold(Player starter) {
@@ -178,6 +243,11 @@ class LineupPlanner {
   ///   3. 1番・2番（リードオフと繋ぎ）
   ///   4. 6〜8番（残りを打力順）
   List<Player> _assignBattingOrder(List<Player> fielders) {
+    // 中立モード: 能力で並べず背番号順（8野手）。投手は buildLineup 側で9番固定。
+    if (neutralOrder) {
+      return [...fielders]..sort((a, b) => a.number.compareTo(b.number));
+    }
+
     final available = List.of(fielders);
     final result = List<Player?>.filled(8, null);
 

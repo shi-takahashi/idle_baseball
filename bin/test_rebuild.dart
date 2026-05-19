@@ -44,7 +44,7 @@ void main() {
   }
   print('自チーム: 選手構成は不変 OK');
 
-  // CPU チームは 4 人入れ替わっていること（2 野手 + 2 投手 = 4）
+  // CPU チームは 6 人入れ替わっていること（3 野手 + 3 投手 = 6）
   for (final t in c.teams) {
     if (t.id == myTeamId) continue;
     final newIds = _allPlayerIds(t);
@@ -55,7 +55,7 @@ void main() {
     if (added.length != removed.length) {
       throw 'チーム ${t.shortName}: 加入数 ${added.length} != 引退数 ${removed.length}';
     }
-    if (added.length > 4) {
+    if (added.length > 6) {
       throw 'チーム ${t.shortName}: 入れ替え数が多すぎ ${added.length}';
     }
     // ポジション制約
@@ -67,19 +67,27 @@ void main() {
   print('\n--- ブルペンロール構成チェック ---');
   for (final t in c.teams) {
     if (t.id == myTeamId) continue;
-    final roleCount = <ReliefRole, int>{};
+    final roleCount = <PitcherRole, int>{};
     for (final p in t.bullpen) {
-      if (p.reliefRole != null) {
-        roleCount[p.reliefRole!] = (roleCount[p.reliefRole!] ?? 0) + 1;
+      if (p.pitcherRole != null) {
+        roleCount[p.pitcherRole!] = (roleCount[p.pitcherRole!] ?? 0) + 1;
       }
     }
     print('${t.shortName}: $roleCount');
-    // 抑えとセットアッパーは 1 人ずつ存在
-    if ((roleCount[ReliefRole.closer] ?? 0) != 1) {
+    // 12人ブルペンの想定ロール構成: 抑え1 / セットアッパー2 / 中継ぎ4 /
+    // ワンポイント0〜1 / ロング2 / 敗戦処理2。
+    // ワンポイントは左投手がいなければ 0 になり得るので下限のみ確認。
+    if ((roleCount[PitcherRole.closer] ?? 0) != 1) {
       throw '${t.shortName}: 抑え不在または複数';
     }
-    if ((roleCount[ReliefRole.setup] ?? 0) != 1) {
-      throw '${t.shortName}: セットアッパー不在または複数';
+    if ((roleCount[PitcherRole.setup] ?? 0) != 2) {
+      throw '${t.shortName}: セットアッパーが2人でない';
+    }
+    if ((roleCount[PitcherRole.middle] ?? 0) != 4) {
+      throw '${t.shortName}: 中継ぎが4人でない';
+    }
+    if ((roleCount[PitcherRole.long] ?? 0) != 2) {
+      throw '${t.shortName}: ロングが2人でない';
     }
   }
 

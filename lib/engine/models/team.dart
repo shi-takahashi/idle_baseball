@@ -22,7 +22,7 @@ class Team {
   final List<Player> startingRotation;
 
   // 救援投手（8人想定: 抑え1 + セットアッパー1 + 中継ぎ2 + ワンポイント1 + ロング1 + 敗戦処理2）
-  // 各 Player に reliefRole が割り当てられている。
+  // 各 Player に pitcherRole が割り当てられている。
   // 試合用に SeasonController が疲労した投手を除外して並び替えたリストを渡す。
   final List<Player> bullpen;
 
@@ -73,35 +73,51 @@ class Team {
     );
   }
 
+  /// 40人ロスター全体（重複排除）。
+  ///
+  /// シーズン保持用 Team では構成が
+  ///   主力野手8（players[0..7]）+ 先発6 + 救援12 + 控え野手14 = 40
+  /// となっている。players[8] は startingRotation のいずれかと同一インスタンス
+  /// なので、players からは先頭 8 人（野手）のみ取って重複を避ける。
+  ///
+  /// 当日 26 人に絞り込んだ試合用 Team で呼ぶ用途は想定していない
+  /// （その場合 players は打順 9 人なので take(8) の前提が崩れる）。
+  List<Player> get roster => [
+        ...players.take(8),
+        ...startingRotation,
+        ...bullpen,
+        ...bench,
+      ];
+
   // ---- ブルペン内のロール別 getter ----
   // 試合用 Team の bullpen は SeasonController で疲労していない投手のみ含むため、
   // ここで「fresh で利用可能なロール担当」を引ける。
-  Player? _firstWithRole(ReliefRole role) {
+  Player? _firstWithRole(PitcherRole role) {
     for (final p in bullpen) {
-      if (p.reliefRole == role) return p;
+      if (p.pitcherRole == role) return p;
     }
     return null;
   }
 
   /// 抑え投手（fresh で当日使えれば）
-  Player? get closer => _firstWithRole(ReliefRole.closer);
+  Player? get closer => _firstWithRole(PitcherRole.closer);
 
   /// セットアッパー
-  Player? get setupPitcher => _firstWithRole(ReliefRole.setup);
+  Player? get setupPitcher => _firstWithRole(PitcherRole.setup);
 
   /// 中継ぎ（勝ちパ）
   List<Player> get middleRelievers =>
-      [for (final p in bullpen) if (p.reliefRole == ReliefRole.middle) p];
+      [for (final p in bullpen) if (p.pitcherRole == PitcherRole.middle) p];
 
   /// ワンポイント（左投手）
-  Player? get situationalLefty => _firstWithRole(ReliefRole.situational);
+  Player? get situationalLefty => _firstWithRole(PitcherRole.situational);
 
   /// ロングリリーフ
-  Player? get longReliever => _firstWithRole(ReliefRole.long);
+  Player? get longReliever => _firstWithRole(PitcherRole.long);
 
   /// 敗戦処理
   List<Player> get mopUpRelievers =>
-      [for (final p in bullpen) if (p.reliefRole == ReliefRole.mopUp) p];
+      [for (final p in bullpen) if (p.pitcherRole == PitcherRole.mopUp) p];
 
   /// 打順からプレイヤーを取得（0-indexed）
   Player getBatter(int battingOrder) {

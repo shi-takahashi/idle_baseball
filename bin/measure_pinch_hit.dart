@@ -54,9 +54,9 @@ void main() {
             phForPitcher++;
             final diff = battingScore - pitchingScore;
             final leading = diff > 0;
-            if (fc.outgoing.reliefRole == ReliefRole.closer) {
+            if (fc.outgoing.pitcherRole == PitcherRole.closer) {
               phForCloser++;
-            } else if (fc.outgoing.reliefRole != null) {
+            } else if (fc.outgoing.pitcherRole != null) {
               phForReliefNonCloser++;
               if (leading) {
                 phForReliefLeading++;
@@ -117,7 +117,7 @@ void main() {
       '(${pct(phForReliefNonCloser, phForPitcher)})');
   print('    リード時: $phForReliefLeading / 同点・負け: $phForReliefTiedOrLosing');
   print('  クローザー: $phForCloser (${pct(phForCloser, phForPitcher)})');
-  print('  先発（reliefRole=null）: $phForStarter '
+  print('  先発（pitcherRole=null）: $phForStarter '
       '(${pct(phForStarter, phForPitcher)})');
   print('    リード時: $phForStarterLeading / 同点・負け: $phForStarterTiedOrLosing');
   print('');

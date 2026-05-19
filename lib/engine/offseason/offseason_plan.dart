@@ -26,7 +26,7 @@ class OffseasonPlan {
   final List<RookieCandidate> rookieFielderCandidates;
 
   /// 入団候補の新人投手（高卒 / 大卒 / 社会人を各複数名含む。
-  /// 全員 SP 寄りに生成、commit 時に引退者の SP/RP・reliefRole を継承）
+  /// 全員 SP 寄りに生成、commit 時に引退者の SP/RP・pitcherRole を継承）
   final List<RookieCandidate> rookiePitcherCandidates;
 
   /// 自動推奨で引退させる野手 id（CPU と同じ条件: 26 歳以上 + スコア > 0 の上位）

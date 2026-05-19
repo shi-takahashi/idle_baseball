@@ -4,17 +4,20 @@ import 'player_generator.dart';
 
 /// チームを自動生成する
 ///
-/// 1チーム29人構成:
+/// 1チーム40人構成（投手18 / 野手22）:
 /// - スタメン野手 8 (players[0..7]: 1〜8番。捕/一/二/三/遊/左/中/右)
 /// - 先発ローテ 6 (startingRotation、うち1人が試合ごとに players[8]=9番 に入る)
-/// - 救援投手 7 (bullpen: 中継6 + 抑え1)
-/// - 控え野手 8 (bench: 控え捕手2・内野UT2・外野UT3・万能UT1)
+/// - 救援投手 12 (bullpen: 抑え1 + セットアッパー2 + 中継4 + ワンポイント1 + ロング2 + 敗戦処理2)
+/// - 控え野手 14 (bench: 控え捕手2・内野UT4・外野UT8)
+///
+/// このうち実際に各試合に出るのは「当日ベンチ入り26人」
+/// （SeasonController が 40 人から日次で選定）。生成時点では 40 人プール全体を作る。
 ///
 /// 捕手はチームに必ず 3 人（先発 1 + 控え 2）。捕手は専門性が高いポジション
 /// なので、自動生成時は他ポジションを兼任しない（チーム編集画面では制約なし）。
 ///
 /// 開幕時に各ポジションを守れる選手の人数:
-///   捕手 3 / 一塁 3 / 二塁 3 / 三塁 3 / 遊撃 3 / 外野 7
+///   捕手 3 / 一塁 5 / 二塁 4 / 三塁 5 / 遊撃 4 / 外野 11
 /// 試合中の代打・代走で控えを使っても、守備配置を回せるだけの厚みを確保。
 class TeamGenerator {
   final PlayerGenerator _playerGen;
@@ -61,10 +64,10 @@ class TeamGenerator {
       DefensePosition.outfield, // 中
       DefensePosition.outfield, // 右
     ];
-    // 背番号は 1〜30 をシャッフルして割り当てる（1チーム30人）。位置で固定
+    // 背番号は 1〜40 をシャッフルして割り当てる（1チーム40人）。位置で固定
     // （捕手が必ず1番など）にすると全チーム同じ並びになり実在感が無いため。
-    // 手動編集では 99 番なども可能だが、初期状態は 1〜30 に収める。
-    final numberPool = [for (int i = 1; i <= 30; i++) i]..shuffle(_random);
+    // 手動編集では 99 番なども可能だが、初期状態は 1〜40 に収める。
+    final numberPool = [for (int i = 1; i <= 40; i++) i]..shuffle(_random);
     int numberIdx = 0;
     int nextNumber() => numberPool[numberIdx++];
 
@@ -91,99 +94,70 @@ class TeamGenerator {
     ];
     rotation.shuffle(_random);
 
-    // ---- 救援投手 8人（ロール別構成） ----
-    //   抑え 1 / セットアッパー 1 / 中継ぎ 2 / ワンポイント 1 / ロング 1 / 敗戦処理 2
+    // ---- 救援投手 12人（ロール別構成） ----
+    //   抑え 1 / セットアッパー 2 / 中継ぎ 4 / ワンポイント 1 / ロング 2 / 敗戦処理 2
     // ロールごとに能力ブースト・利き腕を調整して生成。
+    // 試合に出るのはこのうち当日ベンチ入りした 8 人（SeasonController が選定）。
+    // ワンポイント（左投手）の指定がある以外は (role, boost) のリストで宣言的に生成。
+    const reliefSpec = <({PitcherRole role, double boost, bool forceLeft})>[
+      (role: PitcherRole.closer, boost: 1.5, forceLeft: false),
+      (role: PitcherRole.setup, boost: 1.0, forceLeft: false),
+      (role: PitcherRole.setup, boost: 1.0, forceLeft: false),
+      (role: PitcherRole.middle, boost: 0.5, forceLeft: false),
+      (role: PitcherRole.middle, boost: 0.5, forceLeft: false),
+      (role: PitcherRole.middle, boost: 0.5, forceLeft: false),
+      (role: PitcherRole.middle, boost: 0.5, forceLeft: false),
+      (role: PitcherRole.situational, boost: 0.0, forceLeft: true),
+      (role: PitcherRole.long, boost: 0.0, forceLeft: false),
+      (role: PitcherRole.long, boost: 0.0, forceLeft: false),
+      (role: PitcherRole.mopUp, boost: -0.5, forceLeft: false),
+      (role: PitcherRole.mopUp, boost: -0.5, forceLeft: false),
+    ];
     final bullpen = <Player>[
-      _playerGen.generateReliefPitcher(
-        number: nextNumber(),
-        reliefRole: ReliefRole.closer,
-        abilityBoost: 1.5, // チーム最強級のリリーフ
-      ),
-      _playerGen.generateReliefPitcher(
-        number: nextNumber(),
-        reliefRole: ReliefRole.setup,
-        abilityBoost: 1.0,
-      ),
-      _playerGen.generateReliefPitcher(
-        number: nextNumber(),
-        reliefRole: ReliefRole.middle,
-        abilityBoost: 0.5,
-      ),
-      _playerGen.generateReliefPitcher(
-        number: nextNumber(),
-        reliefRole: ReliefRole.middle,
-        abilityBoost: 0.5,
-      ),
-      _playerGen.generateReliefPitcher(
-        number: nextNumber(),
-        reliefRole: ReliefRole.situational,
-        abilityBoost: 0.0,
-        forcedThrows: Handedness.left, // ワンポイントは左投手
-      ),
-      _playerGen.generateReliefPitcher(
-        number: nextNumber(),
-        reliefRole: ReliefRole.long,
-        abilityBoost: 0.0,
-      ),
-      _playerGen.generateReliefPitcher(
-        number: nextNumber(),
-        reliefRole: ReliefRole.mopUp,
-        abilityBoost: -0.5,
-      ),
-      _playerGen.generateReliefPitcher(
-        number: nextNumber(),
-        reliefRole: ReliefRole.mopUp,
-        abilityBoost: -0.5,
-      ),
+      for (final s in reliefSpec)
+        _playerGen.generateReliefPitcher(
+          number: nextNumber(),
+          pitcherRole: s.role,
+          abilityBoost: s.boost,
+          forcedThrows: s.forceLeft ? Handedness.left : null,
+        ),
     ];
 
-    // ---- 控え野手 8人 ----
-    final bench = <Player>[];
-
-    // 控え捕手 2人（捕手は専門性が高いので兼任なし）
-    for (int i = 0; i < 2; i++) {
-      bench.add(_playerGen.generateBenchFielder(
-        number: nextNumber(),
-        positions: [DefensePosition.catcher],
-      ));
-    }
-
-    // 内野UT 2人（2〜3ポジション守れる）
-    // 1B/3B は守備イマイチでも務まる、2B/SS は守備が得意な選手の組み合わせが多い
-    final infieldCombos = [
+    // ---- 控え野手 14人 ----
+    // 当日ベンチ入りするのはこのうち 9 人（SeasonController が選定）。
+    //   控え捕手 2 / 内野UT 4 / 外野UT 8（外野系には万能UTを含む）
+    // 1B/3B は守備イマイチでも務まる、2B/SS は守備が得意な選手の組み合わせが多い。
+    final benchCombos = <List<DefensePosition>>[
+      // 控え捕手 2人（捕手は専門性が高いので兼任なし）
+      [DefensePosition.catcher],
+      [DefensePosition.catcher],
+      // 内野UT 4人
+      [DefensePosition.first, DefensePosition.third],
       [DefensePosition.first, DefensePosition.third],
       [DefensePosition.second, DefensePosition.shortstop],
-    ];
-    for (final combo in infieldCombos) {
-      bench.add(_playerGen.generateBenchFielder(
-        number: nextNumber(),
-        positions: combo,
-      ));
-    }
-
-    // 外野UT 3人（外野は試合中の主役で控えも厚くする）
-    final outfieldCombos = [
+      [DefensePosition.second, DefensePosition.shortstop],
+      // 外野UT 8人（外野は試合中の主役で控えも厚くする）
+      [DefensePosition.outfield],
+      [DefensePosition.outfield],
       [DefensePosition.outfield],
       [DefensePosition.outfield, DefensePosition.first],
+      [DefensePosition.outfield, DefensePosition.first],
       [DefensePosition.outfield, DefensePosition.third],
-    ];
-    for (final combo in outfieldCombos) {
-      bench.add(_playerGen.generateBenchFielder(
-        number: nextNumber(),
-        positions: combo,
-      ));
-    }
-
-    // 万能UT 1人（内外野複数ポジション）
-    bench.add(_playerGen.generateBenchFielder(
-      number: nextNumber(),
-      positions: [
+      [DefensePosition.outfield, DefensePosition.third],
+      // 万能UT（内外野複数ポジション）
+      [
         DefensePosition.second,
         DefensePosition.shortstop,
         DefensePosition.outfield,
       ],
-    ));
+    ];
+    final bench = <Player>[
+      for (final combo in benchCombos)
+        _playerGen.generateBenchFielder(
+          number: nextNumber(),
+          positions: combo,
+        ),
+    ];
 
     return Team(
       id: id,

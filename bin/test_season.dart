@@ -192,7 +192,7 @@ void _printPitcherRanking(
   print('-- $title --');
   for (int i = 0; i < top.length; i++) {
     final p = top[i];
-    final role = p.player.reliefRole?.displayName ?? '先発';
+    final role = p.player.pitcherRole?.displayName ?? '先発';
     print('  ${(i + 1).toString().padLeft(2)}. '
         '${format(getValue(p)).padLeft(6)}  '
         '${p.player.name.padRight(8)} '

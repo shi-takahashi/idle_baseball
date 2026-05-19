@@ -25,7 +25,8 @@
       "Bash(cp /Users/takahashi-sh/Project/idle_baseball/images/breaking-ball.png bb.png)",
       "Bash(sips -z 1610 1252 bb.png --out bb_big.png)",
       "Bash(sips -c 805 1252 --cropOffset 0 0 bb_big.png --out bb_top.png)",
-      "Bash(sips -c 805 1252 --cropOffset 805 0 bb_big.png --out bb_bot.png)"
+      "Bash(sips -c 805 1252 --cropOffset 805 0 bb_big.png --out bb_bot.png)",
+      "Bash(bc)"
     ]
   }
 }
