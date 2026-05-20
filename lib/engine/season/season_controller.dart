@@ -100,6 +100,12 @@ class SeasonController {
   // できない／ベンチ入りから外して休ませた投手は先発にできる、を成立させる。
   final Map<String, int> _pitcherLastAppearanceDay = {};
 
+  // シーズン終了後の編成プラン（引退候補・新人候補）のキャッシュ。
+  // 一度生成したら commitOffseason / newSeason まで保持し、再呼出でも同じ
+  // 候補を返す。これでアプリ再起動 → オフシーズン編成画面を開いても同じ
+  // 新人が表示され、リセマラ（再起動で新人ガチャを引き直す）を防ぐ。
+  OffseasonPlan? _pendingOffseasonPlan;
+
   // 完投 1試合 ≒ 120球で full depletion (-100)
   static const double _completeGamePitches = 120;
   // 中4日（5日空ける）以上空いていない投手は原則先発しない。
@@ -709,9 +715,12 @@ class SeasonController {
   /// シーズン終了後に UI から呼んで、ユーザーに引退候補・新人候補を提示するための
   /// データを取得する。`commitOffseason(selection)` を呼ぶまでチームは変更されない。
   ///
-  /// 同じセッション中に複数回呼ぶと、その度に新しい新人候補が生成される
-  /// （前回の候補は破棄される）。アプリ再起動後の再呼出も、別の新人が生成される
-  /// （未確定の候補はディスクに保存しない）。
+  /// **冪等**: 同じシーズン終了状態で複数回呼んでも常に同じ候補（同じ Player・
+  /// 同じ id）を返す。初回呼出時に候補を生成して `_pendingOffseasonPlan` に
+  /// キャッシュし、以降の呼出はキャッシュを返す。アプリ再起動を挟んでも、
+  /// セーブに含まれる pendingOffseasonPlan から復元されるので結果は変わらない。
+  /// これによりリセマラ（アプリ再起動で新人ガチャを引き直す）を防ぐ。
+  /// キャッシュは `commitOffseason` 内で次シーズンに進む際にクリアされる。
   OffseasonPlan prepareOffseason() {
     if (!isSeasonOver) {
       throw StateError('シーズン進行中は prepareOffseason を呼べません');
@@ -720,11 +729,16 @@ class SeasonController {
       throw StateError(
           'オフシーズン進行が OFF のとき prepareOffseason は呼べません');
     }
-    return TeamRebuilder(
+    final cached = _pendingOffseasonPlan;
+    if (cached != null) return cached;
+    final plan = TeamRebuilder(
       playerGen: _playerGen,
       previousBatterStats: _aggregator.batterStats,
       random: _rotationRandom,
     ).buildOffseasonPlan(myTeam);
+    _pendingOffseasonPlan = plan;
+    _notify(); // セーブを誘発
+    return plan;
   }
 
   /// シーズン終了状態から次シーズンへ進む（Day 0 / 新シーズンに準備）。
@@ -832,6 +846,9 @@ class SeasonController {
     }
     _batterConditions = BatterConditionTracker(random: _rotationRandom);
     _currentDay = 0;
+    // 次シーズンに入ったので、保留中の編成プランは消費済み。次のシーズン終了で
+    // 再度生成する。
+    _pendingOffseasonPlan = null;
 
     _notify();
   }
@@ -1371,6 +1388,10 @@ class SeasonController {
       },
       'batterConditions': _batterConditions.exportStates(),
       if (_myStrategy != null) 'myStrategy': _myStrategy!.toJson(),
+      // シーズン終了 → 編成画面確定 の間でアプリ再起動しても同じ候補が表示される
+      // ように、保留中の編成プランを永続化（リセマラ防止）。
+      if (_pendingOffseasonPlan != null)
+        'pendingOffseasonPlan': _pendingOffseasonPlan!.toJson(),
     };
   }
 
@@ -1489,6 +1510,12 @@ class SeasonController {
     final ms = json['myStrategy'] as Map<String, dynamic>?;
     controller._myStrategy =
         ms == null ? null : NextGameStrategy.fromJson(ms, playerById);
+
+    // 5h. 保留中の編成プラン（リセマラ防止用キャッシュ）
+    final planJson = json['pendingOffseasonPlan'] as Map<String, dynamic>?;
+    controller._pendingOffseasonPlan = planJson == null
+        ? null
+        : OffseasonPlan.fromJson(planJson, playerById);
 
     return controller;
   }

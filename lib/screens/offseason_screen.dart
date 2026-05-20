@@ -38,24 +38,9 @@ class _OffseasonScreenState extends State<OffseasonScreen> {
     super.initState();
     _plan = widget.controller.prepareOffseason();
     _nextGamesPerTeam = widget.controller.gamesPerTeam;
-    _applyRecommended();
-  }
-
-  void _applyRecommended() {
-    setState(() {
-      _retireFielderSelected
-        ..clear()
-        ..addAll(_plan.recommendedRetireFielderIds);
-      _retirePitcherSelected
-        ..clear()
-        ..addAll(_plan.recommendedRetirePitcherIds);
-      _takeFielderSelected
-        ..clear()
-        ..addAll(_plan.recommendedTakeFielderIds);
-      _takePitcherSelected
-        ..clear()
-        ..addAll(_plan.recommendedTakePitcherIds);
-    });
+    // 自動推奨はパラメータ非表示方針（SPEC §コンセプト）に反する（エンジンが
+    // 能力で「引退すべき」を提示すると能力バレになる）ため適用しない。
+    // ユーザーは年齢と当季成績を見て自分で選ぶ。
   }
 
   void _clearAll() {
@@ -151,10 +136,6 @@ class _OffseasonScreenState extends State<OffseasonScreen> {
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
         actions: [
           TextButton(
-            onPressed: _applyRecommended,
-            child: const Text('自動推奨'),
-          ),
-          TextButton(
             onPressed: _clearAll,
             child: const Text('全解除'),
           ),
@@ -168,10 +149,15 @@ class _OffseasonScreenState extends State<OffseasonScreen> {
           _SectionHeader(
             title: '引退する野手',
             subtitle:
-                '上位ほど引退推奨（高齢 + 能力低下）。引退人数 = 加入人数になるよう選択してください。',
+                '年齢と今シーズンの成績を見て選んでください。引退人数 = 加入人数になるよう選択してください。',
           ),
-          ..._plan.retireCandidateFielders.map((p) => _RetireFielderTile(
+          // engine 側は能力低下スコア順で並ぶが、それ自体が能力ヒントになるため
+          // 表示は背番号順に並べ直す（他の画面と一貫）。
+          ...(_plan.retireCandidateFielders.toList()
+                ..sort((a, b) => a.number.compareTo(b.number)))
+              .map((p) => _RetireFielderTile(
                 player: p,
+                controller: widget.controller,
                 selected: _retireFielderSelected.contains(p.id),
                 onToggle: () {
                   setState(() {
@@ -187,10 +173,14 @@ class _OffseasonScreenState extends State<OffseasonScreen> {
           const SizedBox(height: 16),
           _SectionHeader(
             title: '引退する投手',
-            subtitle: '同上。先発・救援どちらも候補に含まれます。',
+            subtitle:
+                '年齢と今シーズンの成績を見て選んでください。先発・救援どちらも候補に含まれます。',
           ),
-          ..._plan.retireCandidatePitchers.map((p) => _RetirePitcherTile(
+          ...(_plan.retireCandidatePitchers.toList()
+                ..sort((a, b) => a.number.compareTo(b.number)))
+              .map((p) => _RetirePitcherTile(
                 player: p,
+                controller: widget.controller,
                 isStarter: widget.controller.myTeam.startingRotation
                     .any((sp) => sp.id == p.id),
                 selected: _retirePitcherSelected.contains(p.id),
@@ -209,7 +199,9 @@ class _OffseasonScreenState extends State<OffseasonScreen> {
           _SectionHeader(
             title: '入団する新人野手',
             subtitle: '${_plan.rookieFielderCandidates.length} 名の候補から、'
-                '引退野手と同じ人数だけ選んでください。',
+                '引退野手と同じ人数だけ選んでください。\n'
+                '※ 能力表示はスカウトの大雑把な評価です。'
+                '実際にどう活躍するかは入団後に確かめてください。',
           ),
           ..._plan.rookieFielderCandidates.map((c) => _RookieFielderTile(
                 candidate: c,
@@ -229,7 +221,9 @@ class _OffseasonScreenState extends State<OffseasonScreen> {
           _SectionHeader(
             title: '入団する新人投手',
             subtitle: '${_plan.rookiePitcherCandidates.length} 名の候補から、'
-                '引退投手と同じ人数だけ選んでください。',
+                '引退投手と同じ人数だけ選んでください。\n'
+                '※ 能力表示はスカウトの大雑把な評価です。'
+                '実際にどう活躍するかは入団後に確かめてください。',
           ),
           ..._plan.rookiePitcherCandidates.map((c) => _RookiePitcherTile(
                 candidate: c,
@@ -378,11 +372,13 @@ class _SectionHeader extends StatelessWidget {
 /// 引退候補（野手）の行。
 class _RetireFielderTile extends StatelessWidget {
   final Player player;
+  final SeasonController controller;
   final bool selected;
   final VoidCallback onToggle;
 
   const _RetireFielderTile({
     required this.player,
+    required this.controller,
     required this.selected,
     required this.onToggle,
   });
@@ -390,7 +386,7 @@ class _RetireFielderTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final positions = _fielderPositions(player);
-    final stats = _abilityLine(player);
+    final stats = _fielderSeasonLine(controller, player);
     return _CandidateTile(
       selected: selected,
       onTap: onToggle,
@@ -404,12 +400,14 @@ class _RetireFielderTile extends StatelessWidget {
 /// 引退候補（投手）の行。
 class _RetirePitcherTile extends StatelessWidget {
   final Player player;
+  final SeasonController controller;
   final bool isStarter;
   final bool selected;
   final VoidCallback onToggle;
 
   const _RetirePitcherTile({
     required this.player,
+    required this.controller,
     required this.isStarter,
     required this.selected,
     required this.onToggle,
@@ -417,7 +415,7 @@ class _RetirePitcherTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final stats = _pitcherAbilityLine(player);
+    final stats = _pitcherSeasonLine(controller, player);
     final role = isStarter
         ? '先発'
         : (player.pitcherRole?.displayName ?? '救援');
@@ -447,7 +445,7 @@ class _RookieFielderTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final p = candidate.player;
     final positions = _fielderPositions(p);
-    final stats = _abilityLine(p);
+    final stats = _rookieAbilityLine(p);
     return _CandidateTile(
       selected: selected,
       onTap: onToggle,
@@ -476,7 +474,7 @@ class _RookiePitcherTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final p = candidate.player;
-    final stats = _pitcherAbilityLine(p);
+    final stats = _rookiePitcherAbilityLine(p);
     return _CandidateTile(
       selected: selected,
       onTap: onToggle,
@@ -601,28 +599,92 @@ class _RookieTypeBadge extends StatelessWidget {
   }
 }
 
-/// 野手の能力サマリ: ミ/長/走/眼
-String _abilityLine(Player p) {
-  return 'ミ${p.meet ?? "-"} '
-      '長${p.power ?? "-"} '
-      '走${p.speed ?? "-"} '
-      '眼${p.eye ?? "-"}';
+/// 新人野手のスカウト評価（A / B / C の 3 段階）。
+/// 新人は試合に出ていないので結果ベースの推測ができないため、生数値ではなく
+/// 「現時点の能力をスカウトの目で評価」した粗い指標を出す。
+///   - 打撃 = (ミート + 長打) / 2（選球眼は含めない＝隠しパラメータ）
+///   - 走力 = 走力そのまま
+///   - 守備 = 守れるポジションのうち最高の守備力（肩は含めない）
+/// ポテンシャル（隠し）で伸びるかは別なので、評価通りになるとは限らない。
+/// 助っ人外国人（未実装）は「博打要素を強める」用途で別途設計予定。
+String _rookieAbilityLine(Player p) {
+  final batting = ((p.meet ?? 5) + (p.power ?? 5)) / 2;
+  final running = (p.speed ?? 5).toDouble();
+  final fielding = (p.fielding == null || p.fielding!.values.isEmpty)
+      ? 0.0
+      : p.fielding!.values.reduce((a, b) => a > b ? a : b).toDouble();
+  return '打撃 ${_scoutRank(batting)} '
+      '走力 ${_scoutRank(running)} '
+      '守備 ${_scoutRank(fielding)}';
 }
 
-/// 投手の能力サマリ: 球速/制球/球質
-String _pitcherAbilityLine(Player p) {
-  return '球${p.averageSpeed ?? "-"} '
-      '制${p.control ?? "-"} '
-      '質${p.fastball ?? "-"}';
+/// 新人投手のスカウト評価（A / B / C の 3 段階）。
+///   - 球速 = 平均球速。NPB 平均 ~147 km/h を B 中央に置く
+///     （150+ A / 145-149 B / それ未満 C）。伸び（fastball）は含めない＝隠し
+///   - 制球 = 制球力そのまま
+///   - 変化球 = 持ち球の中で一番得意な変化球の質
+///     （ストレートの伸びは隠し、変化球の種類数も隠す）
+String _rookiePitcherAbilityLine(Player p) {
+  final speed = p.averageSpeed ?? 145;
+  String speedRank() {
+    if (speed >= 150) return 'A';
+    if (speed >= 145) return 'B';
+    return 'C';
+  }
+  // 持ち球 7 種類から一番得意なものを拾う（持っていない球種は null）
+  final breakingValues = <int>[
+    if (p.slider != null) p.slider!,
+    if (p.curve != null) p.curve!,
+    if (p.splitter != null) p.splitter!,
+    if (p.changeup != null) p.changeup!,
+    if (p.shoot != null) p.shoot!,
+    if (p.cutter != null) p.cutter!,
+    if (p.sinker != null) p.sinker!,
+  ];
+  final bestBreaking = breakingValues.isEmpty
+      ? 0
+      : breakingValues.reduce((a, b) => a > b ? a : b);
+  return '球速 ${speedRank()} '
+      '制球 ${_scoutRank((p.control ?? 5).toDouble())} '
+      '変化球 ${_scoutRank(bestBreaking.toDouble())}';
 }
 
-/// 野手が守れるポジションの短縮表示
+/// 1〜10 の能力値を A / B / C の 3 段階に変換する。
+///   - A: 7 以上（上位 ~20%）
+///   - B: 4〜6（中位 ~60%）
+///   - C: 3 以下（下位 ~20%）
+String _scoutRank(double v) {
+  if (v >= 7) return 'A';
+  if (v >= 4) return 'B';
+  return 'C';
+}
+
+/// 既存野手の当季シーズン成績サマリ。能力数値ではなく結果ベースで表示する
+/// （パラメータ非表示方針 / SPEC §コンセプト）。
+String _fielderSeasonLine(SeasonController c, Player p) {
+  final s = c.batterStats[p.id];
+  if (s == null || s.games == 0) return '出場なし';
+  final ba = s.atBats == 0
+      ? '-.---'
+      : '.${(s.battingAverage * 1000).round().toString().padLeft(3, '0')}';
+  return '試${s.games} 打率$ba 本${s.homeRuns} 点${s.rbi} 盗${s.stolenBases}';
+}
+
+/// 既存投手の当季シーズン成績サマリ。同上。
+String _pitcherSeasonLine(SeasonController c, Player p) {
+  final s = c.pitcherStats[p.id];
+  if (s == null || s.games == 0) return '登板なし';
+  final era = s.outsRecorded == 0 ? '-.--' : s.era.toStringAsFixed(2);
+  return '登${s.games} 防率 $era 勝${s.wins} 負${s.losses} 回${s.inningsPitchedDisplay}';
+}
+
+/// 野手が守れるポジション（位置名のみ。守備力の数値は隠す: SPEC §2.0）。
 String _fielderPositions(Player p) {
   final f = p.fielding;
   if (f == null) return '全ポジ';
   final positions = f.entries
       .where((e) => e.value > 0)
-      .map((e) => '${e.key.shortName}${e.value}')
-      .join(' ');
+      .map((e) => e.key.shortName)
+      .join('・');
   return positions.isEmpty ? '-' : positions;
 }

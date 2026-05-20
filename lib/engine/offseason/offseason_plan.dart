@@ -8,6 +8,18 @@ class RookieCandidate {
   const RookieCandidate({required this.player, required this.type});
 
   String get id => player.id;
+
+  Map<String, dynamic> toJson() => {
+        'player': player.toJson(),
+        'type': type.name,
+      };
+
+  factory RookieCandidate.fromJson(Map<String, dynamic> json) =>
+      RookieCandidate(
+        player: Player.fromJson(json['player'] as Map<String, dynamic>),
+        type: RookieType.values
+            .firstWhere((t) => t.name == json['type']),
+      );
 }
 
 /// オフシーズン中、自チーム向けに提示する候補一覧。
@@ -66,6 +78,65 @@ class OffseasonPlan {
       if (c.id == id) return c.type;
     }
     return null;
+  }
+
+  /// 永続化用。引退候補は id のみ保存（既存選手は controller の playerById で復元）、
+  /// 新人候補は Player を丸ごと保存する（commit までは controller に登録されていないため）。
+  Map<String, dynamic> toJson() => {
+        'retireFielderIds':
+            [for (final p in retireCandidateFielders) p.id],
+        'retirePitcherIds':
+            [for (final p in retireCandidatePitchers) p.id],
+        'rookieFielders':
+            [for (final c in rookieFielderCandidates) c.toJson()],
+        'rookiePitchers':
+            [for (final c in rookiePitcherCandidates) c.toJson()],
+        'recommendedRetireFielderIds':
+            List.of(recommendedRetireFielderIds),
+        'recommendedRetirePitcherIds':
+            List.of(recommendedRetirePitcherIds),
+        'recommendedTakeFielderIds':
+            List.of(recommendedTakeFielderIds),
+        'recommendedTakePitcherIds':
+            List.of(recommendedTakePitcherIds),
+      };
+
+  /// JSON からの復元。引退候補の Player は [playerById] で解決する
+  /// （既存選手なので controller に登録されている前提）。
+  /// 新人候補は JSON 内に Player を丸ごと持っているのでそのまま復元。
+  factory OffseasonPlan.fromJson(
+    Map<String, dynamic> json,
+    Map<String, Player> playerById,
+  ) {
+    List<Player> resolvePlayers(String key) {
+      final ids = (json[key] as List).cast<String>();
+      return [
+        for (final id in ids)
+          if (playerById[id] != null) playerById[id]!,
+      ];
+    }
+
+    List<RookieCandidate> resolveRookies(String key) => [
+          for (final j in (json[key] as List))
+            RookieCandidate.fromJson(j as Map<String, dynamic>),
+        ];
+
+    return OffseasonPlan(
+      retireCandidateFielders: resolvePlayers('retireFielderIds'),
+      retireCandidatePitchers: resolvePlayers('retirePitcherIds'),
+      rookieFielderCandidates: resolveRookies('rookieFielders'),
+      rookiePitcherCandidates: resolveRookies('rookiePitchers'),
+      recommendedRetireFielderIds: (json['recommendedRetireFielderIds']
+              as List)
+          .cast<String>(),
+      recommendedRetirePitcherIds: (json['recommendedRetirePitcherIds']
+              as List)
+          .cast<String>(),
+      recommendedTakeFielderIds:
+          (json['recommendedTakeFielderIds'] as List).cast<String>(),
+      recommendedTakePitcherIds:
+          (json['recommendedTakePitcherIds'] as List).cast<String>(),
+    );
   }
 }
 
