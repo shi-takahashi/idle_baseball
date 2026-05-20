@@ -964,12 +964,11 @@ class StrategyScreenState extends State<StrategyScreen>
           child: ListView(
             shrinkWrap: true,
             children: [
-              if (slotPos != null)
-                _SectionHeader(
-                  isPitcherSlot
-                      ? '緑＝投手'
-                      : '緑＝${slotPos.displayName}を守れる選手',
-                ),
+              // 投手スロットは「全候補が投手」なので凡例を出す意味が薄く、かつ
+              // 登板不可（中4日不足／体力不足）でグレーアウトされる投手もあるため、
+              // 「緑＝投手」は誤解を招く。投手スロットではヘッダーを出さない。
+              if (slotPos != null && !isPitcherSlot)
+                _SectionHeader('緑＝${slotPos.displayName}を守れる選手'),
               for (final p in all)
                 _PlayerTile(
                   player: p,
