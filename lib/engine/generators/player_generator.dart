@@ -311,14 +311,64 @@ class PlayerGenerator {
     return const _PositionalProfile();
   }
 
-  /// スタメン野手（専任ポジション1つだけ守れる、守備力高め）
+  /// 主ポジション → サブポジションの典型的なコンバート関係。
+  /// `chance` の確率で「低めの守備力で守れる」位置として fielding に追加する。
+  /// 「2 塁手だけど 1 塁も守れる」「3 塁手だけど 1 塁・外野もできる」のような
+  /// NPB で実際にあるユーティリティ性を再現し、「2 塁しか守れない使いづらい選手」を
+  /// 減らす狙い。生成時に確定するので、シーズン途中の急なコンバートは起きない
+  /// （= ユーザーの「この選手はここを守る」認識を壊さない）。
+  static const Map<DefensePosition,
+      List<({DefensePosition pos, double chance})>> _secondaryFielding = {
+    DefensePosition.catcher: [
+      // 捕手はほぼ専門。ベテランで一塁回りが稀にある程度
+      (pos: DefensePosition.first, chance: 0.15),
+    ],
+    DefensePosition.first: [
+      (pos: DefensePosition.third, chance: 0.35),
+      (pos: DefensePosition.outfield, chance: 0.35),
+    ],
+    DefensePosition.second: [
+      (pos: DefensePosition.shortstop, chance: 0.55),
+      (pos: DefensePosition.third, chance: 0.45),
+    ],
+    DefensePosition.third: [
+      (pos: DefensePosition.first, chance: 0.45),
+      (pos: DefensePosition.outfield, chance: 0.35),
+      (pos: DefensePosition.second, chance: 0.20),
+    ],
+    DefensePosition.shortstop: [
+      (pos: DefensePosition.second, chance: 0.60),
+      (pos: DefensePosition.third, chance: 0.40),
+    ],
+    DefensePosition.outfield: [
+      (pos: DefensePosition.first, chance: 0.25),
+      (pos: DefensePosition.third, chance: 0.20),
+    ],
+  };
+
+  /// 主ポジションに紐づくサブポジションを抽選し、`fielding` map に低めの守備力で追加する。
+  void _attachSecondaryPositions(
+    Map<DefensePosition, int> fielding,
+    DefensePosition primary,
+  ) {
+    final secondaries = _secondaryFielding[primary] ?? const [];
+    for (final entry in secondaries) {
+      if (fielding.containsKey(entry.pos)) continue;
+      if (!_r.chance(entry.chance)) continue;
+      // サブポジは「守れるが下手」の幅。mean 3.5 で 1〜6 程度に分布。
+      fielding[entry.pos] = _r.normalInt(mean: 3.5, sd: 1.5);
+    }
+  }
+
+  /// スタメン野手（主ポジション + ユーティリティ性のあるサブポジション）
   Player generateStarterFielder({
     required int number,
     required DefensePosition primaryPosition,
   }) {
-    final fielding = {
+    final fielding = <DefensePosition, int>{
       primaryPosition: _r.normalInt(mean: 6.5, sd: 1.5),
     };
+    _attachSecondaryPositions(fielding, primaryPosition);
     final profile = _profileForPosition(primaryPosition);
     final meet = _r.normalInt(mean: 5.0 + profile.meet);
     final power = _r.normalInt(mean: 5.0 + profile.power);
@@ -358,6 +408,9 @@ class PlayerGenerator {
     for (final pos in positions) {
       fielding[pos] = _r.normalInt(mean: 4.5, sd: 1.5);
     }
+    // 主ポジション（先頭）に紐づくサブポジションも低めの守備力で追加。
+    // 既に positions に含まれている場合はスキップ（containsKey で吸収）。
+    _attachSecondaryPositions(fielding, positions.first);
     // 守備傾向は主ポジション（positions の先頭）で決める
     final profile = _profileForPosition(positions.first);
     final meet = _r.normalInt(mean: 4.5 + profile.meet);
@@ -480,6 +533,8 @@ class PlayerGenerator {
       final mean = (i == 0 ? 5.5 : 4.5) + boost;
       fielding[positions[i]] = _r.normalInt(mean: mean, sd: 1.5);
     }
+    // 主ポジションに紐づくサブポジションも低めで追加
+    _attachSecondaryPositions(fielding, positions.first);
     // 守備傾向は主ポジション（positions の先頭）で決める
     final profile = _profileForPosition(positions.first);
     final meet = _r.normalInt(mean: 5.0 + boost + profile.meet, sd: 1.8);
