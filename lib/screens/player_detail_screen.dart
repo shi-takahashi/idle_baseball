@@ -594,6 +594,9 @@ class _FielderYearByYearCard extends StatelessWidget {
     return _SectionCard(
       title: '年度別成績',
       children: [
+        // 横スクロール 1 本（左固定なし）。新聞風の並びで、主要指標
+        // （試/打数/安/本/点/盗/打率）がファーストビューに収まる順。
+        // 細かい数字（二塁打/三塁打/犠打/失策/出塁率 等）はスクロール先に置く。
         SingleChildScrollView(
           scrollDirection: Axis.horizontal,
           child: DataTable(
@@ -602,11 +605,9 @@ class _FielderYearByYearCard extends StatelessWidget {
             headingRowHeight: 28,
             dataRowMinHeight: 26,
             dataRowMaxHeight: 26,
-            // team_stats_screen の打撃タブと同じ列構成。年度別の二塁打・三塁打・
-            // 失策の推移も追えるようにし、衰え/上達の手がかりを増やす。
-            // 打率はメインで見たい指標なので、率系の先頭に置く。
             columns: const [
               DataColumn(label: _Hd('年')),
+              DataColumn(label: _Hd('打率')),
               DataColumn(label: _Hd('試')),
               DataColumn(label: _Hd('打席')),
               DataColumn(label: _Hd('打数')),
@@ -615,15 +616,13 @@ class _FielderYearByYearCard extends StatelessWidget {
               DataColumn(label: _Hd('三')),
               DataColumn(label: _Hd('本')),
               DataColumn(label: _Hd('点')),
-              DataColumn(label: _Hd('得')),
               DataColumn(label: _Hd('盗')),
-              DataColumn(label: _Hd('盗死')),
+              DataColumn(label: _Hd('得')),
               DataColumn(label: _Hd('四球')),
               DataColumn(label: _Hd('死球')),
               DataColumn(label: _Hd('三振')),
               DataColumn(label: _Hd('犠打')),
               DataColumn(label: _Hd('失')),
-              DataColumn(label: _Hd('打率')),
               DataColumn(label: _Hd('出塁')),
               DataColumn(label: _Hd('長打')),
               DataColumn(label: _Hd('OPS')),
@@ -633,6 +632,7 @@ class _FielderYearByYearCard extends StatelessWidget {
                 DataRow(cells: [
                   DataCell(Text('${row.year}',
                       style: const TextStyle(fontSize: 12))),
+                  _rateCell(row.stats.battingAverage),
                   _numCell(row.stats.games),
                   _numCell(row.stats.plateAppearances),
                   _numCell(row.stats.atBats),
@@ -641,16 +641,13 @@ class _FielderYearByYearCard extends StatelessWidget {
                   _numCell(row.stats.triples),
                   _numCell(row.stats.homeRuns),
                   _numCell(row.stats.rbi),
-                  _numCell(row.stats.runs),
                   _numCell(row.stats.stolenBases),
-                  _numCell(row.stats.caughtStealing),
+                  _numCell(row.stats.runs),
                   _numCell(row.stats.walks),
                   _numCell(row.stats.hitByPitch),
                   _numCell(row.stats.strikeouts),
-                  // 犠打 = 送りバント + 犠飛 の合算（team_stats_screen と同じ）
                   _numCell(row.stats.sacrificeBunts + row.stats.sacFlies),
                   _numCell(row.stats.errors),
-                  _rateCell(row.stats.battingAverage),
                   _rateCell(row.stats.onBasePct),
                   _rateCell(row.stats.sluggingPct),
                   _rateCell(row.stats.ops),
@@ -696,6 +693,8 @@ class _PitcherYearByYearCard extends StatelessWidget {
     return _SectionCard(
       title: '年度別成績',
       children: [
+        // 横スクロール 1 本（左固定なし）。新聞風の並びで、主要指標
+        // （登板/勝/敗/S/防御率）がファーストビューに収まる順。
         SingleChildScrollView(
           scrollDirection: Axis.horizontal,
           child: DataTable(
@@ -704,18 +703,17 @@ class _PitcherYearByYearCard extends StatelessWidget {
             headingRowHeight: 28,
             dataRowMinHeight: 26,
             dataRowMaxHeight: 26,
-            // team_stats_screen の投手タブと同じ列構成。完投・完封・QS・自責・
-            // WHIP も含めて、年度ごとの投球内容の質の推移を追える。
             columns: const [
               DataColumn(label: _Hd('年')),
               DataColumn(label: _Hd('登板')),
+              DataColumn(label: _Hd('勝')),
+              DataColumn(label: _Hd('敗')),
+              DataColumn(label: _Hd('S')),
+              DataColumn(label: _Hd('防御率')),
               DataColumn(label: _Hd('先発')),
               DataColumn(label: _Hd('完投')),
               DataColumn(label: _Hd('完封')),
               DataColumn(label: _Hd('QS')),
-              DataColumn(label: _Hd('勝')),
-              DataColumn(label: _Hd('敗')),
-              DataColumn(label: _Hd('S')),
               DataColumn(label: _Hd('H')),
               DataColumn(label: _Hd('回')),
               DataColumn(label: _Hd('被安')),
@@ -725,7 +723,6 @@ class _PitcherYearByYearCard extends StatelessWidget {
               DataColumn(label: _Hd('奪三')),
               DataColumn(label: _Hd('失')),
               DataColumn(label: _Hd('自責')),
-              DataColumn(label: _Hd('防御率')),
               DataColumn(label: _Hd('WHIP')),
             ],
             rows: [
@@ -734,13 +731,18 @@ class _PitcherYearByYearCard extends StatelessWidget {
                   DataCell(Text('${row.year}',
                       style: const TextStyle(fontSize: 12))),
                   _numCell(row.stats.games),
+                  _numCell(row.stats.wins),
+                  _numCell(row.stats.losses),
+                  _numCell(row.stats.saves),
+                  DataCell(Text(
+                      row.stats.outsRecorded == 0
+                          ? '-'
+                          : row.stats.era.toStringAsFixed(2),
+                      style: const TextStyle(fontSize: 12))),
                   _numCell(row.stats.starts),
                   _numCell(row.stats.completeGames),
                   _numCell(row.stats.shutouts),
                   _numCell(row.stats.qualityStarts),
-                  _numCell(row.stats.wins),
-                  _numCell(row.stats.losses),
-                  _numCell(row.stats.saves),
                   _numCell(row.stats.holds),
                   DataCell(Text(row.stats.inningsPitchedDisplay,
                       style: const TextStyle(fontSize: 12))),
@@ -751,11 +753,6 @@ class _PitcherYearByYearCard extends StatelessWidget {
                   _numCell(row.stats.strikeoutsRecorded),
                   _numCell(row.stats.runsAllowed),
                   _numCell(row.stats.earnedRuns),
-                  DataCell(Text(
-                      row.stats.outsRecorded == 0
-                          ? '-'
-                          : row.stats.era.toStringAsFixed(2),
-                      style: const TextStyle(fontSize: 12))),
                   DataCell(Text(
                       row.stats.outsRecorded == 0
                           ? '-'
