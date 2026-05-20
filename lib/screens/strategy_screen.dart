@@ -910,6 +910,7 @@ class StrategyScreenState extends State<StrategyScreen>
     // セクション分け（現スタメン / ベンチ）はしない:
     // LineupPlanner で当日入れ替わった選手とのズレで紛らわしくなるため。
     final slotPos = _slots[slotIndex].position;
+    final isPitcherSlot = slotPos == FieldPosition.pitcher;
     bool isCompatible(Player p) => _isPlayerCompatibleWith(p, slotPos);
     int groupOf(Player p) {
       if (isCompatible(p)) return 0;
@@ -925,10 +926,21 @@ class StrategyScreenState extends State<StrategyScreen>
       ...team.startingRotation,
       ...team.bullpen,
     ];
+    // 投手スロットの並び（適性グループ内のみ）:
+    //   ロール優先度 → 体力降順 → 背番号
+    // それ以外のスロットは従来どおり背番号順。
     all.sort((a, b) {
       final ga = groupOf(a);
       final gb = groupOf(b);
       if (ga != gb) return ga.compareTo(gb);
+      if (isPitcherSlot && a.isPitcher && b.isPitcher) {
+        final ra = _pitcherSlotRoleOrder(a.pitcherRole);
+        final rb = _pitcherSlotRoleOrder(b.pitcherRole);
+        if (ra != rb) return ra.compareTo(rb);
+        final fa = widget.controller.pitcherFreshness(a.id);
+        final fb = widget.controller.pitcherFreshness(b.id);
+        if (fa != fb) return fb.compareTo(fa);
+      }
       return a.number.compareTo(b.number);
     });
 
@@ -953,7 +965,11 @@ class StrategyScreenState extends State<StrategyScreen>
             shrinkWrap: true,
             children: [
               if (slotPos != null)
-                _SectionHeader('緑＝${slotPos.displayName}を守れる選手'),
+                _SectionHeader(
+                  isPitcherSlot
+                      ? '緑＝投手'
+                      : '緑＝${slotPos.displayName}を守れる選手',
+                ),
               for (final p in all)
                 _PlayerTile(
                   player: p,
@@ -961,6 +977,12 @@ class StrategyScreenState extends State<StrategyScreen>
                   compatible: isCompatible(p),
                   slotPosition: slotPos,
                   controller: widget.controller,
+                  // 投手スロットだけ「中4日不足／体力不足」で選択不可にする。
+                  // 「現在」スロットに既に入っている投手は disable 化しても
+                  // 元から選択する意味がないので統一して disable で構わない。
+                  disabledReason: isPitcherSlot && p.isPitcher
+                      ? widget.controller.starterDisabledReason(p.id)
+                      : null,
                   onTap: () => Navigator.of(ctx).pop(p),
                 ),
             ],
@@ -1186,12 +1208,14 @@ class StrategyScreenState extends State<StrategyScreen>
     final alignment = <FieldPosition, Player>{
       for (int i = 0; i < 9; i++) _slots[i].position!: lineup[i],
     };
-    // 先発投手の中5日チェック（手動指定でも連投を許さない）
+    // 先発投手のゲート（中4日 + 体力100%）。手動指定でも連投・疲労登板は許さない。
     final startingPitcher = alignment[FieldPosition.pitcher]!;
-    if (!widget.controller.canStartNextGame(startingPitcher.id)) {
+    final disabledReason =
+        widget.controller.starterDisabledReason(startingPitcher.id);
+    if (disabledReason != null) {
       return (
         strategy: null,
-        error: '${startingPitcher.name} は登板間隔（中5日）が不足しています。'
+        error: '${startingPitcher.name} は先発できません（$disabledReason）。'
             '別の投手を先発に指定してください',
       );
     }
@@ -1339,6 +1363,11 @@ class _PlayerTile extends StatelessWidget {
   /// 比較対象の守備位置（守備力の数値表示用）。null の場合は表示しない。
   final FieldPosition? slotPosition;
 
+  /// このスロットにこの選手を選べない場合の理由。
+  /// 非 null のとき、行をグレーアウトし、タップを無効化、trailing に赤字で
+  /// 理由を表示する。投手スロットで「中4日不足／体力不足」のケースで使う。
+  final String? disabledReason;
+
   const _PlayerTile({
     required this.player,
     required this.lineupStatus,
@@ -1346,9 +1375,12 @@ class _PlayerTile extends StatelessWidget {
     required this.controller,
     this.compatible = false,
     this.slotPosition,
+    this.disabledReason,
   });
 
-  /// 打順絡みを示すタグ（この打順 / スタメン / 控え）。
+  /// 打順絡みを示すタグ（この打順 / スタメン / 控え or 投手）。
+  /// available（スタメンに入っていない）の投手は「控え」だと先発ローテに
+  /// 入っている投手まで控え扱いに見えるため、投手の場合は「投手」と表示。
   Widget _buildStatusChip() {
     final String label;
     final Color color;
@@ -1360,7 +1392,7 @@ class _PlayerTile extends StatelessWidget {
         label = 'スタメン';
         color = Colors.indigo.shade400;
       case _LineupStatus.available:
-        label = '控え';
+        label = player.isPitcher ? '投手' : '控え';
         color = Colors.grey.shade500;
     }
     return Container(
@@ -1383,27 +1415,43 @@ class _PlayerTile extends StatelessWidget {
         ? _pitcherStatsLine(controller, player)
         : _fielderStatsLine(controller, player);
     final subtitle = '${_handednessLabel(player)}  $stats';
+    final disabled = disabledReason != null;
 
     // 適性ありの場合の trailing:
-    //  - 投手位置 → 体力（登板疲労の回復度、連投回避の目安）
-    //  - 野手位置 → そのポジションの守備力
+    //  - 投手位置 → 体力 + 先発不可ならその理由を赤字で
+    //  - 野手位置 → そのポジション名のみ（守備力の数値は隠す: SPEC §2.0）
     Widget? trailing;
     if (compatible && slotPosition != null) {
       if (slotPosition == FieldPosition.pitcher) {
         final fr = controller.pitcherFreshness(player.id);
-        trailing = Text(
-          '体力 $fr%',
-          style: TextStyle(
-            fontSize: 11,
-            color: _freshnessColor(fr),
-            fontWeight: FontWeight.bold,
-          ),
+        trailing = Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            Text(
+              '体力 $fr%',
+              style: TextStyle(
+                fontSize: 11,
+                color: _freshnessColor(fr),
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            if (disabled)
+              Text(
+                disabledReason!,
+                style: TextStyle(
+                  fontSize: 10,
+                  color: Colors.red.shade700,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+          ],
         );
       } else {
         final dp = slotPosition!.defensePosition;
         if (dp != null) {
           trailing = Text(
-            '${slotPosition!.displayName} ${player.getFielding(dp)}',
+            slotPosition!.displayName,
             style: TextStyle(
               fontSize: 11,
               color: Colors.green.shade700,
@@ -1415,14 +1463,20 @@ class _PlayerTile extends StatelessWidget {
     }
 
     return Container(
-      // 適性ありは緑の薄いハイライトで目立たせる
-      color: compatible ? Colors.green.shade50 : null,
+      // 適性あり: 緑の薄いハイライト。先発不可: グレーの薄いハイライトで上書き。
+      color: disabled
+          ? Colors.grey.shade200
+          : (compatible ? Colors.green.shade50 : null),
       child: ListTile(
         dense: true,
+        enabled: !disabled,
         // 打順絡みはタグで示すので、selected による文字色の微妙な変化は使わない。
         leading: compatible
             ? Icon(Icons.check_circle,
-                size: 20, color: Colors.green.shade600)
+                size: 20,
+                color: disabled
+                    ? Colors.grey.shade400
+                    : Colors.green.shade600)
             : (player.isPitcher
                 ? const Icon(Icons.sports_baseball,
                     size: 18, color: Colors.deepPurple)
@@ -1436,6 +1490,7 @@ class _PlayerTile extends StatelessWidget {
                 style: TextStyle(
                   fontWeight:
                       compatible ? FontWeight.bold : FontWeight.normal,
+                  color: disabled ? Colors.grey.shade600 : null,
                 ),
               ),
             ),
@@ -1445,10 +1500,13 @@ class _PlayerTile extends StatelessWidget {
         ),
         subtitle: Text(
           subtitle,
-          style: const TextStyle(fontSize: 11),
+          style: TextStyle(
+            fontSize: 11,
+            color: disabled ? Colors.grey.shade600 : null,
+          ),
         ),
         trailing: trailing,
-        onTap: onTap,
+        onTap: disabled ? null : onTap,
       ),
     );
   }
@@ -1491,23 +1549,23 @@ String _pitcherStatsLine(SeasonController c, Player p) {
 }
 
 /// 野手のコンパクト版（スタメン行で名前の隣に表示する）。
-/// 例: "打.267 本3 点11 盗2"
+/// 例: "打率 .267 本3 点11 盗2"
 String _fielderStatsCompact(SeasonController c, Player p) {
   final s = c.batterStats[p.id];
   if (s == null) return '';
   final ba = s.atBats == 0
       ? '-.---'
       : '.${(s.battingAverage * 1000).round().toString().padLeft(3, '0')}';
-  return '打$ba 本${s.homeRuns} 点${s.rbi} 盗${s.stolenBases}';
+  return '打率 $ba 本${s.homeRuns} 点${s.rbi} 盗${s.stolenBases}';
 }
 
 /// 投手のコンパクト版（スタメン行で名前の隣に表示する）。
-/// 例: "防3.42 2-1-0"  (W-L-S)
+/// 例: "防率 3.00 勝3 負1 S2"
 String _pitcherStatsCompact(SeasonController c, Player p) {
   final s = c.pitcherStats[p.id];
   if (s == null) return '';
   final era = s.outsRecorded == 0 ? '-.--' : s.era.toStringAsFixed(2);
-  return '防$era ${s.wins}-${s.losses}-${s.saves}';
+  return '防率 $era 勝${s.wins} 負${s.losses} S${s.saves}';
 }
 
 /// コンディションに応じた色（80↑=緑 / 60↑=橙 / それ以下=赤）
@@ -1515,6 +1573,32 @@ Color _freshnessColor(int freshness) {
   if (freshness >= 80) return Colors.green.shade700;
   if (freshness >= 60) return Colors.orange.shade700;
   return Colors.red.shade700;
+}
+
+/// 投手スロットの選手ピッカー内で投手を並べる時のロール優先度。
+/// 「先発として起用する可能性が高い順」で並べる:
+///   先発 → ロング → 中継ぎ → 敗戦処理 → ワンポイント → セットアッパー → 抑え。
+/// 抑え指名の投手を先発に持ってくることは普通ないので最下段、ロングは先発の
+/// 早期降板を埋める役なのでまだ転用しやすい、という発想。
+int _pitcherSlotRoleOrder(PitcherRole? role) {
+  switch (role) {
+    case PitcherRole.starter:
+      return 0;
+    case PitcherRole.long:
+      return 1;
+    case PitcherRole.middle:
+      return 2;
+    case PitcherRole.mopUp:
+      return 3;
+    case PitcherRole.situational:
+      return 4;
+    case PitcherRole.setup:
+      return 5;
+    case PitcherRole.closer:
+      return 6;
+    case null:
+      return 7;
+  }
 }
 
 class _PositionTile extends StatelessWidget {
@@ -1537,17 +1621,18 @@ class _PositionTile extends StatelessWidget {
     final canField =
         compatible && !isPitcherPos && player.canPlay(position.defensePosition!);
 
+    // 守備力・球速の数値は能力バレなので出さない（SPEC §2.0）。
+    // 守備適性の有無のみを質的に示す。
     String trailingText;
     if (!compatible) {
       trailingText = isPitcherPos ? '※ 野手は不可' : '※ 投手は不可';
     } else if (isPitcherPos) {
-      trailingText = '球速 ${player.averageSpeed ?? '-'}';
+      trailingText = '投手位置';
     } else if (canField) {
-      trailingText = '守備力 ${player.getFielding(position.defensePosition!)}';
+      trailingText = '守れる';
     } else {
-      // 守れない位置は守備力 0 で表す（守れるが下手な「守備力 1」と区別する）。
       // 配置自体は可能だが強制配置のペナルティがかかる。
-      trailingText = '守備力 0（適性なし）';
+      trailingText = '適性なし';
     }
 
     // アイコン: 守れる=緑チェック / 守れない=オレンジ警告（チェックにしない。

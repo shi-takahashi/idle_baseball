@@ -627,7 +627,10 @@ class GameSimulator {
         outsBefore: outsBefore,
         runnersBefore: runnersBefore,
         tagUps: advanceResult.tagUps.isNotEmpty ? advanceResult.tagUps : null,
-        fieldingError: atBatResult.fieldingError,
+        fieldingError: atBatResult.fieldingError?.withFielder(
+          pitchingFieldingState
+              .currentAlignment[atBatResult.fieldingError!.position],
+        ),
         isBunt: shouldBunt,
         runsByPitcher: runsByPitcher,
         earnedRunsByPitcher: earnedRunsByPitcher,

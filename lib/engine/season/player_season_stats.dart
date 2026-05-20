@@ -24,6 +24,7 @@ class BatterSeasonStats {
   int caughtStealing = 0; // 盗塁死
   int sacFlies = 0; // 犠飛
   int sacrificeBunts = 0; // 犠打（送りバント成功）
+  int errors = 0; // 失策（守備時に記録した個人失策数）
 
   BatterSeasonStats({required this.player, required this.team});
 
@@ -67,6 +68,7 @@ class BatterSeasonStats {
         'caughtStealing': caughtStealing,
         'sacFlies': sacFlies,
         'sacrificeBunts': sacrificeBunts,
+        'errors': errors,
       };
 
   factory BatterSeasonStats.fromJson(
@@ -94,6 +96,7 @@ class BatterSeasonStats {
     s.caughtStealing = (json['caughtStealing'] as int?) ?? 0;
     s.sacFlies = (json['sacFlies'] as int?) ?? 0;
     s.sacrificeBunts = (json['sacrificeBunts'] as int?) ?? 0;
+    s.errors = (json['errors'] as int?) ?? 0;
     return s;
   }
 }
@@ -118,6 +121,9 @@ class PitcherSeasonStats {
   int strikeoutsRecorded = 0; // 奪三振
   int runsAllowed = 0; // 失点（責任投手にホームインされた点をカウント）
   int earnedRuns = 0; // 自責点（エラーが無ければ無かった失点を除く）
+  int completeGames = 0; // 完投（先発で投手交代なしに試合終了まで投げ切る）
+  int shutouts = 0; // 完封勝ち（完投かつ相手チームを 0 点に抑える）
+  int qualityStarts = 0; // QS（先発で 6 回以上 + 自責 3 点以下）
 
   PitcherSeasonStats({required this.player, required this.team});
 
@@ -161,6 +167,9 @@ class PitcherSeasonStats {
         'strikeoutsRecorded': strikeoutsRecorded,
         'runsAllowed': runsAllowed,
         'earnedRuns': earnedRuns,
+        'completeGames': completeGames,
+        'shutouts': shutouts,
+        'qualityStarts': qualityStarts,
       };
 
   factory PitcherSeasonStats.fromJson(
@@ -186,6 +195,9 @@ class PitcherSeasonStats {
     s.strikeoutsRecorded = (json['strikeoutsRecorded'] as int?) ?? 0;
     s.runsAllowed = (json['runsAllowed'] as int?) ?? 0;
     s.earnedRuns = (json['earnedRuns'] as int?) ?? 0;
+    s.completeGames = (json['completeGames'] as int?) ?? 0;
+    s.shutouts = (json['shutouts'] as int?) ?? 0;
+    s.qualityStarts = (json['qualityStarts'] as int?) ?? 0;
     return s;
   }
 }

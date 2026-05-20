@@ -45,6 +45,7 @@ class SeasonAggregator {
     _updateTeamRecord(game);
     _collectPlayerStats(game);
     _updateWinLoss(game);
+    _updateStarterMilestones(game);
   }
 
   /// 試合の勝敗・セーブ投手を解決して返す（公開API: UI表示等で使用）
@@ -320,6 +321,12 @@ class SeasonAggregator {
           pStats.outsRecorded += _outsInAtBat(ab);
         }
 
+        // 個人失策の集計（未完了打席でも記録される可能性があるので isIncomplete 前に）
+        final fielder = ab.fieldingError?.fielder;
+        if (fielder != null) {
+          batterStats[fielder.id]?.errors++;
+        }
+
         if (ab.isIncomplete) continue;
 
         // 野手成績
@@ -426,6 +433,59 @@ class SeasonAggregator {
     return outs;
   }
 
+  /// 先発投手の完投 / 完封 / QS を判定して集計に反映。
+  ///   - 完投: 守備イニングで投手交代が 1 度も発生せず、先発が試合終了まで投げ切った
+  ///   - 完封: 完投かつ相手チームの得点が 0
+  ///   - QS: 先発がこの試合で 6 回以上投げ、自責点 3 以下
+  /// （QS は完投と独立。先発が降りた後の判定でも QS は成立する。）
+  void _updateStarterMilestones(GameResult game) {
+    for (final isHomeDefense in const [true, false]) {
+      final team = isHomeDefense ? game.homeTeam : game.awayTeam;
+      final starter = team.pitcher;
+      final starterId = starter.id;
+
+      // この試合で starter が積んだ outs / 自責点、および投手交代の有無
+      int starterOuts = 0;
+      int starterEarned = 0;
+      bool starterRelieved = false;
+
+      for (final half in game.halfInnings) {
+        // 守備側が一致するハーフのみ。
+        // half.isTop = 表 = away が攻撃 = home が守備
+        final halfIsHomeDefense = half.isTop;
+        if (halfIsHomeDefense != isHomeDefense) continue;
+
+        // 交代があった時点から後の打席は starter のものではない
+        final firstChangeIdx = half.pitcherChanges.isEmpty
+            ? half.atBats.length
+            : half.pitcherChanges.first.atBatIndex;
+        if (half.pitcherChanges.isNotEmpty) starterRelieved = true;
+
+        for (int i = 0; i < firstChangeIdx; i++) {
+          final ab = half.atBats[i];
+          starterOuts += _outsInAtBat(ab);
+          starterEarned += ab.earnedRunsByPitcher[starterId] ?? 0;
+        }
+      }
+
+      final stats = pitcherStats[starterId];
+      if (stats == null) continue;
+
+      // 完投: 守備中に交代が一度も無かった
+      if (!starterRelieved) {
+        stats.completeGames++;
+        final opponentScore =
+            isHomeDefense ? game.awayScore : game.homeScore;
+        if (opponentScore == 0) stats.shutouts++;
+      }
+
+      // QS: 6 回（18 アウト）以上 + 自責 3 以下
+      if (starterOuts >= 18 && starterEarned <= 3) {
+        stats.qualityStarts++;
+      }
+    }
+  }
+
   /// 勝利投手・敗戦投手を決定する（ハーフイニング単位の簡易版）
   ///
   /// 「勝ちチームがリードを取った最後のハーフイニング」で、その時の両チームの現役投手を採用する。
@@ -434,6 +494,12 @@ class SeasonAggregator {
   ///
   /// 引き分けの場合はどちらも null。
   /// 複数回リードが入れ替わった場合、最後の勝ち越しの瞬間を採用（再度追いつかれていないので）。
+  ///
+  /// **先発5回ルール（NPB 公式記録規則）:**
+  /// 決定的な勝ち越しの瞬間の投手が「その試合の先発と同一」かつ「5回未満で降板」
+  /// していた場合、その先発は勝利投手として不適格となる。代わりに、決定打以降に
+  /// 投げた救援陣の中で最長イニングを投げた投手（同イニングなら最初に登板した者）
+  /// を記録員裁定で勝利投手にする。
   (Player?, Player?) _determineDecisivePitchers(GameResult game) {
     if (game.winner == null) return (null, null);
     final homeWon = game.winner == game.homeTeamName;
@@ -478,7 +544,75 @@ class SeasonAggregator {
       }
     }
 
+    // 先発5回ルール: 勝ち越し時の投手が「先発」かつ「5回未満で降板」していたら
+    // 勝利投手として不適格。代替の救援投手を記録員裁定で選び直す。
+    if (decisiveWinner != null) {
+      final winningTeam = homeWon ? game.homeTeam : game.awayTeam;
+      final starterId = winningTeam.pitcher.id;
+      if (decisiveWinner.id == starterId) {
+        final starterOuts = _winningStarterOuts(game, homeWon);
+        if (starterOuts < 15) {
+          decisiveWinner = _selectRecorderJudgedWinner(game, homeWon);
+        }
+      }
+    }
+
     return (decisiveWinner, decisiveLoser);
+  }
+
+  /// 勝者チームの先発投手が積んだ outs を計算する（_updateStarterMilestones と同じロジック）。
+  int _winningStarterOuts(GameResult game, bool homeWon) {
+    final winningTeam = homeWon ? game.homeTeam : game.awayTeam;
+    final starterId = winningTeam.pitcher.id;
+    final defendsAreTopHalves = homeWon; // 勝者ホームなら表 = 勝者守備
+    int outs = 0;
+    for (final half in game.halfInnings) {
+      if (half.isTop != defendsAreTopHalves) continue;
+      final firstChangeIdx = half.pitcherChanges.isEmpty
+          ? half.atBats.length
+          : half.pitcherChanges.first.atBatIndex;
+      for (int i = 0; i < firstChangeIdx; i++) {
+        // 先発が投げた打席（最初の交代より前）
+        if (half.atBats[i].pitcher.id != starterId) continue;
+        outs += _outsInAtBat(half.atBats[i]);
+      }
+    }
+    return outs;
+  }
+
+  /// NPB 記録員裁定の代替勝利投手を選ぶ。
+  /// 先発の5回ルール不適格時に呼ばれる。
+  /// 勝者チームの救援陣のうち、最も長いイニングを投げた投手を選ぶ。
+  /// 同イニングなら最初に登板した（リードを引き継いだ）投手を優先。
+  Player? _selectRecorderJudgedWinner(GameResult game, bool homeWon) {
+    final winningTeam = homeWon ? game.homeTeam : game.awayTeam;
+    final starterId = winningTeam.pitcher.id;
+    final defendsAreTopHalves = homeWon;
+
+    final outsByPitcher = <String, int>{};
+    final firstAppearanceIdx = <String, int>{};
+    final pitcherById = <String, Player>{};
+
+    for (int i = 0; i < game.halfInnings.length; i++) {
+      final half = game.halfInnings[i];
+      if (half.isTop != defendsAreTopHalves) continue;
+      for (final ab in half.atBats) {
+        final id = ab.pitcher.id;
+        if (id == starterId) continue;
+        outsByPitcher[id] = (outsByPitcher[id] ?? 0) + _outsInAtBat(ab);
+        firstAppearanceIdx[id] ??= i;
+        pitcherById[id] = ab.pitcher;
+      }
+    }
+    if (outsByPitcher.isEmpty) return null;
+
+    final sortedIds = outsByPitcher.keys.toList()
+      ..sort((a, b) {
+        final c = outsByPitcher[b]!.compareTo(outsByPitcher[a]!);
+        if (c != 0) return c;
+        return firstAppearanceIdx[a]!.compareTo(firstAppearanceIdx[b]!);
+      });
+    return pitcherById[sortedIds.first];
   }
 }
 

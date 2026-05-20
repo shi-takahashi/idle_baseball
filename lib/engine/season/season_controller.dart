@@ -102,13 +102,14 @@ class SeasonController {
 
   // 完投 1試合 ≒ 120球で full depletion (-100)
   static const double _completeGamePitches = 120;
-  // 中5日（6日空ける）以上空いていない投手は原則先発しない。
-  // 先発6人ロスターを 6 日周期で回す前提（ROSTER_EXPANSION_PLAN.md）。
-  static const int _minDaysBetweenStarts = 6;
-  // 先発として「フル回復」とみなす閾値
-  // ここを 100 にすることで「完全回復するまで先発させない」運用にし、
-  // 投球数（=消耗の重さ）次第で次の登板までの間隔が変わる → 各チームの
-  // ローテ周期にズレが生じて、同じ投手の投げ合いが固定化しない。
+  // 中4日（5日空ける）以上空いていない投手は原則先発しない。
+  // 中4日 + 体力100% の AND 条件で先発登板可。「中4日経過しても体力が戻らない」
+  // 場合は先発できず、「中4日で体力100%に戻った（前回球数を抑えた）」場合は登板可。
+  // これで前回球数の重さ次第でローテ周期が自然にズレ、同じ投手の対戦の固定化を防ぐ。
+  // 完投 (~120球) すると 6日後（中5日）にようやく 100 復帰、~100球以下で降りれば
+  // 中4日で 100 復帰、というメジャーリーグ寄りの運用になる。
+  static const int _minDaysBetweenStarts = 5;
+  // 先発として「フル回復」とみなす閾値。
   static const int _starterReadyThreshold = 100;
 
   // リリーフ投手は短い登板が多いので、コンディション 80 を「使用可能」とみなす。
@@ -129,8 +130,8 @@ class SeasonController {
   static const double _activeRosterSwapChance = 0.12;
 
   /// 先発選出時のローテ揺らぎ用 RNG。
-  /// 完全に決定論的に「最終登板日が古い順」で選ぶと 100% 中5日に固定されるため、
-  /// 微小な揺らぎを与えて現実の中4日／中6日が混ざるようにする。
+  /// 完全に決定論的に「最終登板日が古い順」で選ぶと 100% 中4日に固定されるため、
+  /// 微小な揺らぎを与えて現実の中4日／中5日／中6日が混ざるようにする。
   final Random _rotationRandom;
 
   /// 各打者の直近の打席結果。
@@ -292,7 +293,7 @@ class SeasonController {
   /// すべて中立（能力序列を出さない）— 推測ゲームの最適解バレを避けるため
   /// （SPEC §コンセプト）。ユーザーが作戦画面で観察に基づき組み替える。
   ///
-  /// - 先発: 全18投手から、登板間隔（中5日）の空いた最も背番号の若い投手
+  /// - 先発: 全18投手から、登板間隔（中4日）+ 体力100% の空いた最も背番号の若い投手
   /// - ベンチ入り救援: 先発ロールの投手を除き、中継ぎ等のロールから背番号順で8人
   /// - 打順・守備: 背番号順の中立編成（[_withGameLineup] neutralOrder）
   ///
@@ -650,8 +651,8 @@ class SeasonController {
   }
 
   /// 次の試合用の先発を中立に選ぶ（試合後の SP 自動差し替え用）。
-  /// 全18投手のうち「ベンチ入り救援に入れておらず、登板間隔（中5日）の空いた
-  /// 最も背番号の若い投手」。能力で選ばないので推測ゲームのヒントにならない。
+  /// 全18投手のうち「ベンチ入り救援に入れておらず、登板間隔（中4日）+ 体力100%
+  /// を満たす最も背番号の若い投手」。能力で選ばないので推測ゲームのヒントにならない。
   /// 該当者がいなければ登板間隔の空いた者、それも無ければ背番号最小にフォールバック。
   Player _pickNextStarter(Team team, NextGameStrategy current) {
     final benchedIds = current.activeBullpen.map((p) => p.id).toSet();
@@ -1262,25 +1263,56 @@ class SeasonController {
 
   /// 投手のコンディション（0〜100、100 = 完全フレッシュ）。
   /// 試合の球数で消費し、1 日経過で全投手一律の量だけ回復する。
-  /// 作戦画面で「連投できそうか」の判断材料として表示する。
-  /// 未登録の投手は 100 を返す（開幕直後の挙動と一致）。
-  int pitcherFreshness(String pitcherId) =>
-      _pitcherFreshness[pitcherId] ?? 100;
+  ///
+  /// **作戦画面表示用に、保存値ではなく「次の試合での体力」を返す。**
+  /// 内部状態 `_pitcherFreshness` は「直近の試合実施後」の値だが、advanceDay の
+  /// 冒頭で +`_freshnessRecoveryPerDay` 回復してから試合が始まるため、ユーザーが
+  /// 作戦画面で見るべき値は「保存値 + 1日分の回復」になる。これを足さないと
+  /// 「Day N に登板 → Day N+1 の作戦画面で 0 と表示 → でも実際は 17 で投げる」
+  /// という表示と挙動の食い違いが起きる。エンジン内部のロジック（先発候補選定など）
+  /// は `_pitcherFreshness` を直接読むのでこの補正は無関係。
+  int pitcherFreshness(String pitcherId) {
+    final saved = _pitcherFreshness[pitcherId] ?? 100;
+    return (saved + _freshnessRecoveryPerDay).clamp(0, 100);
+  }
 
   /// 投手の最終登板日参照（UI 用）
   int? pitcherLastStartDay(String pitcherId) =>
       _pitcherLastStartDay[pitcherId];
 
   /// 次の自チーム試合（currentDay+1）で、この投手が先発できるか。
-  /// 中5日（_minDaysBetweenStarts 日空ける）の登板間隔を満たすことが条件。
+  /// 次の自チーム試合（currentDay+1）で、この投手が先発できるか。
+  ///
+  /// 条件は AND:
+  ///   1. 中4日（[_minDaysBetweenStarts] 日空ける）の登板間隔を満たす
+  ///   2. 次の試合の登板時に体力が [_starterReadyThreshold] (= 100%) ある
   ///
   /// 判定は「最終**登板**日」（先発・救援問わず）ベース。これにより、
   /// ベンチ入りさせて救援で投げ続けている投手は間隔が空かず先発候補に挙がらず、
   /// ベンチ入りから外して休ませた投手は先発に指定できる。
+  ///
+  /// 体力条件は「次の試合での体力 = 保存値 + 1 日分の回復」で判定する
+  /// （advanceDay が +[_freshnessRecoveryPerDay] してから試合を実行するため）。
+  /// 中4日経過しても体力 100% に届かない（前回球数が多すぎた）場合は不可、
+  /// 中4日で 100% に届く（前回球数を抑えた）場合は可になる。
   bool canStartNextGame(String pitcherId) {
+    return starterDisabledReason(pitcherId) == null;
+  }
+
+  /// 次の試合でこの投手が先発できない理由を短い日本語で返す。
+  /// 先発可能なら null。UI のピッカーで「なぜ選べないか」を表示するのに使う。
+  String? starterDisabledReason(String pitcherId) {
+    final saved = _pitcherFreshness[pitcherId] ?? 100;
+    final nextGameFreshness =
+        (saved + _freshnessRecoveryPerDay).clamp(0, 100);
+    final tired = nextGameFreshness < _starterReadyThreshold;
     final last = _pitcherLastAppearanceDay[pitcherId];
-    if (last == null) return true; // 未登板
-    return ((_currentDay + 1) - last) >= _minDaysBetweenStarts;
+    final tooSoon = last != null &&
+        ((_currentDay + 1) - last) < _minDaysBetweenStarts;
+    if (tired && tooSoon) return '登板間隔・体力 不足';
+    if (tired) return '体力 不足';
+    if (tooSoon) return '登板間隔 不足';
+    return null;
   }
 
   // ---- 永続化 ----

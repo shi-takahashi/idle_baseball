@@ -169,6 +169,7 @@ class _TeamStatsScreenState extends State<TeamStatsScreen>
         DataColumn(label: _Hd('四球')),
         DataColumn(label: _Hd('三振')),
         DataColumn(label: _Hd('犠打')),
+        DataColumn(label: _Hd('失')),
         DataColumn(label: _Hd('出塁')),
         DataColumn(label: _Hd('長打')),
         DataColumn(label: _Hd('OPS')),
@@ -190,6 +191,7 @@ class _TeamStatsScreenState extends State<TeamStatsScreen>
             _Cell.num(b.strikeouts),
             // 犠打 = 送りバント成功 + 犠飛 の合算
             _Cell.num(b.sacrificeBunts + b.sacFlies),
+            _Cell.num(b.errors),
             _Cell.rate(b.onBasePct),
             _Cell.rate(b.sluggingPct),
             _Cell.rate(b.ops),
@@ -276,6 +278,9 @@ class _TeamStatsScreenState extends State<TeamStatsScreen>
       columns: const [
         DataColumn(label: _Hd('登板')),
         DataColumn(label: _Hd('先発')),
+        DataColumn(label: _Hd('完投')),
+        DataColumn(label: _Hd('完封')),
+        DataColumn(label: _Hd('QS')),
         DataColumn(label: _Hd('勝')),
         DataColumn(label: _Hd('敗')),
         DataColumn(label: _Hd('S')),
@@ -294,6 +299,9 @@ class _TeamStatsScreenState extends State<TeamStatsScreen>
           DataRow(cells: [
             _Cell.num(p.games),
             _Cell.num(p.starts),
+            _Cell.num(p.completeGames),
+            _Cell.num(p.shutouts),
+            _Cell.num(p.qualityStarts),
             _Cell.num(p.wins),
             _Cell.num(p.losses),
             _Cell.num(p.saves),

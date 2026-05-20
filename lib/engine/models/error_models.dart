@@ -1,4 +1,5 @@
 import 'enums.dart';
+import 'player.dart';
 
 /// バッテリーエラー（ワイルドピッチ/パスボール）の種類
 enum BatteryErrorType {
@@ -87,25 +88,45 @@ class FieldingError {
   final FieldingErrorType type;
   final FieldPosition position; // エラーしたポジション
   final int runsScored; // このエラーによる得点
+  /// エラーした選手。打席シミュレーションでは null で生成され、game_simulator が
+  /// 守備配置から該当ポジションの選手を解決して埋める（個人失策の集計に使う）。
+  final Player? fielder;
 
   const FieldingError({
     required this.type,
     required this.position,
     required this.runsScored,
+    this.fielder,
   });
+
+  /// 同じ内容で fielder だけ差し替えた複製。
+  FieldingError withFielder(Player? fielder) => FieldingError(
+        type: type,
+        position: position,
+        runsScored: runsScored,
+        fielder: fielder,
+      );
 
   Map<String, dynamic> toJson() => {
         'type': type.name,
         'position': position.name,
         'runsScored': runsScored,
+        if (fielder != null) 'fielderId': fielder!.id,
       };
 
-  factory FieldingError.fromJson(Map<String, dynamic> json) => FieldingError(
+  factory FieldingError.fromJson(
+    Map<String, dynamic> json, [
+    Map<String, Player>? playerById,
+  ]) =>
+      FieldingError(
         type: FieldingErrorType.values
             .firstWhere((t) => t.name == json['type']),
         position: FieldPosition.values
             .firstWhere((p) => p.name == json['position']),
         runsScored: json['runsScored'] as int,
+        fielder: json['fielderId'] == null
+            ? null
+            : playerById?[json['fielderId'] as String],
       );
 
   @override

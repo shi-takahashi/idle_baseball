@@ -151,7 +151,8 @@ class AtBatResult {
         fieldingError: json['fieldingError'] == null
             ? null
             : FieldingError.fromJson(
-                json['fieldingError'] as Map<String, dynamic>),
+                json['fieldingError'] as Map<String, dynamic>,
+                playerById),
         isIncomplete: (json['isIncomplete'] as bool?) ?? false,
         isBunt: (json['isBunt'] as bool?) ?? false,
         runsByPitcher: json['runsByPitcher'] == null
