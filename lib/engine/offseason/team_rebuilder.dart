@@ -20,6 +20,10 @@ class TeamRebuilder {
   static const int retireFieldersPerTeam = 3;
   static const int retirePitchersPerTeam = 3;
 
+  /// 外国人選手の強制離脱率（シーズン終了時、各外国人について独立判定）。
+  /// 1/5 = キャリア平均 5 年で離脱する目安。優秀な選手も含めて確率は一律。
+  static const double foreignDepartureChance = 0.20;
+
   /// 引退候補に入る最低年齢（これ未満は能力が低くても引退しない）
   static const int minRetirementAge = 26;
 
@@ -78,6 +82,7 @@ class TeamRebuilder {
       final previousStarterIds =
           team.players.take(8).map((p) => p.id).toSet();
 
+      retired.addAll(_handleForeignDepartures(team));
       retired.addAll(_retireAndReplaceFielders(team));
       retired.addAll(_retireAndReplacePitchers(team));
       _rebalanceStarters(team, previousStarterIds);
@@ -222,13 +227,55 @@ class TeamRebuilder {
   }
 
   // ---------------------------------------------------
+  // 外国人選手の強制離脱と新外国人での補充
+  // ---------------------------------------------------
+
+  /// 各シーズン終了時、チーム内の外国人選手を 1/5 の確率で独立に強制離脱させる。
+  /// 離脱した枠は同じ守備位置タイプ（野手 or 投手）の新外国人で即補充する。
+  /// 補充選手は能力フラット分布で当たり外れ、ユーザーから見ると賭け。
+  /// 戻り値: 離脱した外国人選手の id リスト。
+  List<String> _handleForeignDepartures(Team team) {
+    final retiredIds = <String>[];
+    // チーム内の外国人選手を一意収集（id ベース）
+    final seen = <String>{};
+    final foreigners = <Player>[];
+    for (final p in [
+      ...team.players,
+      ...team.startingRotation,
+      ...team.bullpen,
+      ...team.bench,
+    ]) {
+      if (!p.isForeign) continue;
+      if (!seen.add(p.id)) continue;
+      foreigners.add(p);
+    }
+
+    for (final f in foreigners) {
+      if (_random.nextDouble() >= foreignDepartureChance) continue;
+      // 離脱 → 新外国人で同じ枠を補充
+      final newForeign = f.isPitcher
+          ? playerGen.generateForeignPitcher(
+              number: f.number,
+              pitcherRole: f.pitcherRole ?? PitcherRole.starter,
+            )
+          : playerGen.generateForeignFielder(number: f.number);
+      _replacePlayerInTeam(team, f, newForeign);
+      retiredIds.add(f.id);
+    }
+    return retiredIds;
+  }
+
+  // ---------------------------------------------------
   // 野手の引退・新人加入
   // ---------------------------------------------------
 
   List<String> _retireAndReplaceFielders(Team team) {
+    // 外国人選手は別ロジック（_handleForeignDepartures）で離脱処理されているので、
+    // 日本人選手の引退枠からは除外する。混ぜると外国人が日本人新人で置き換わって
+    // 外国人枠が消失してしまう。
     final fielders = <Player>[
-      ...team.players.where((p) => !p.isPitcher),
-      ...team.bench,
+      ...team.players.where((p) => !p.isPitcher && !p.isForeign),
+      ...team.bench.where((p) => !p.isForeign),
     ];
     // 引退スコア順に並べる（高スコア = 引退候補）
     fielders.sort(
@@ -318,9 +365,10 @@ class TeamRebuilder {
   // ---------------------------------------------------
 
   List<String> _retireAndReplacePitchers(Team team) {
+    // 外国人投手は別ロジックで離脱処理済み。日本人引退枠からは除外する。
     final pitchers = <Player>[
-      ...team.startingRotation,
-      ...team.bullpen,
+      ...team.startingRotation.where((p) => !p.isForeign),
+      ...team.bullpen.where((p) => !p.isForeign),
     ];
     pitchers.sort(
         (a, b) => _retirementScore(b).compareTo(_retirementScore(a)));
@@ -490,16 +538,19 @@ class TeamRebuilder {
     Team team, {
     int rookieCandidatesPerType = 2,
   }) {
+    // 外国人選手は自動離脱ロジック（commitOffseason 内の
+    // applyForeignDeparturesToMyTeam）で別途処理されるので、引退候補リストには
+    // 含めない。混ぜると日本人新人で置き換わって外国人枠が消失してしまう。
     final fielders = <Player>[
-      ...team.players.where((p) => !p.isPitcher),
-      ...team.bench,
+      ...team.players.where((p) => !p.isPitcher && !p.isForeign),
+      ...team.bench.where((p) => !p.isForeign),
     ]..sort(
         (a, b) => _retirementScore(b).compareTo(_retirementScore(a)),
       );
 
     final pitchers = <Player>[
-      ...team.startingRotation,
-      ...team.bullpen,
+      ...team.startingRotation.where((p) => !p.isForeign),
+      ...team.bullpen.where((p) => !p.isForeign),
     ]..sort(
         (a, b) => _retirementScore(b).compareTo(_retirementScore(a)),
       );
@@ -584,6 +635,13 @@ class TeamRebuilder {
   /// 引退・新人のペアリングは順序ベース:
   /// `selection.retireFielderIds[i]` を引退させ、`selection.takeFielderIds[i]` を加入させる。
   /// 新人は引退者の背番号と先発／救援ロールを引き継ぐ。
+  /// 自チームに対して外国人選手の強制離脱と新外国人での補充を実行する。
+  /// CPU と同じロジック（[_handleForeignDepartures]）を public 露出したもの。
+  /// 戻り値は離脱した外国人選手の id リスト（UI で「離脱: ○○」と通知する用）。
+  List<String> applyForeignDeparturesToMyTeam(Team team) {
+    return _handleForeignDepartures(team);
+  }
+
   void applyUserSelection(
     Team team,
     OffseasonPlan plan,
@@ -694,6 +752,7 @@ class TeamRebuilder {
       potentials: p.potentials,
       potentialFielding: p.potentialFielding,
       potentialAverageSpeed: p.potentialAverageSpeed,
+      isForeign: p.isForeign,
     );
   }
 }

@@ -718,6 +718,166 @@ class PlayerGenerator {
     return Handedness.both;
   }
 
+  // ===========================================================
+  // 外国人選手の生成
+  // ===========================================================
+
+  /// 外国人選手の能力値: フラット寄りの分布。sd を 1.5 → 2.5 に拡大して
+  /// 「両端（1 / 9）が出やすい」当たり外れ型を再現する。
+  /// mean を主ポジション・能力傾向で上下させて、長打強め・走力弱めなどを表現。
+  int _foreignAbility({double mean = 5.0}) {
+    return _r.normalInt(mean: mean, sd: 2.5);
+  }
+
+  /// 外国人選手の年齢分布: mean 28 / sd 5 / 22〜40。
+  /// NPB の外国人選手は経験豊富な中堅〜ベテランが多いことを反映。
+  int _foreignAge() {
+    return _r.normalInt(mean: 28.0, sd: 5.0, min: 22, max: 40);
+  }
+
+  /// 外国人野手の主ポジションを抽選（捕手なし、一塁・外野中心）。
+  /// 重みは NPB の外国人野手の起用傾向に近づける:
+  ///   一塁 30% / 外野 40% / 三塁 15% / 二塁 10% / 遊撃 5%
+  DefensePosition _foreignFielderPrimary() {
+    final roll = _r.random.nextDouble();
+    if (roll < 0.30) return DefensePosition.first;
+    if (roll < 0.70) return DefensePosition.outfield;
+    if (roll < 0.85) return DefensePosition.third;
+    if (roll < 0.95) return DefensePosition.second;
+    return DefensePosition.shortstop;
+  }
+
+  /// 外国人野手を生成する。
+  /// 能力フラット分布 + 長打プラス（+1.5）/ 走力・守備マイナス（-1）。
+  /// 守備位置は 1 つだけ（NPB の外国人野手のユーティリティ性は低い）。
+  Player generateForeignFielder({required int number}) {
+    final primary = _foreignFielderPrimary();
+    final fielding = <DefensePosition, int>{
+      primary: _foreignAbility(mean: 4.0), // 守備力は弱め
+    };
+    // 外国人野手の能力傾向（トータルは日本人と概ね均衡、強み・弱みの分布が違う）:
+    //   ミート: 細かいテクニックは日本人の方が上で、外国人はやや下（-0.5）
+    //   長打: パワー型が多いので日本人より +1
+    //   走力: 鈍足傾向で日本人より -0.5
+    //   選球眼・肩: 日本人と同じ
+    final meet = _foreignAbility(mean: 4.5);
+    final power = _foreignAbility(mean: 5.5);
+    final speed = _foreignAbility(mean: 4.5);
+    final eye = _foreignAbility(mean: 5.0);
+    final arm = _foreignAbility(mean: 5.0);
+    return Player(
+      id: _newId(),
+      name: _uniqueForeignName(),
+      number: number,
+      age: _foreignAge(),
+      meet: meet,
+      power: power,
+      speed: speed,
+      eye: eye,
+      arm: arm,
+      bats: _batterHandedness(),
+      // 外国人投手は左投げ比率がやや高い（NPB 外国人左腕の人気）
+      throws: _r.chance(0.20) ? Handedness.left : Handedness.right,
+      fielding: fielding,
+      potentials: _buildPotentials(
+        meet: meet, power: power, speed: speed, eye: eye, arm: arm,
+      ),
+      potentialFielding: _buildPotentialFielding(fielding),
+      isForeign: true,
+    );
+  }
+
+  /// 外国人投手を生成する。
+  /// 球速 +3 km/h、制球 -1、その他の質はフラット分布（sd 2.5）で当たり外れ大。
+  /// 球種抽選は通常投手と同じ枠（最低 2 変化球 + ストレート）。
+  Player generateForeignPitcher({
+    required int number,
+    bool isStarter = true,
+    PitcherRole? pitcherRole,
+  }) {
+    // 球速: 平均 +3 km/h で 142〜158 km/h レンジ、sd 4 で当たり外れ
+    final avgSpeed =
+        (150.0 + _r.nextGaussian() * 4.0).round().clamp(140, 158);
+
+    // 変化球抽選（通常投手と同じロジック）
+    const breakingProbs = <String, double>{
+      'slider': 0.88,
+      'curve': 0.55,
+      'splitter': 0.50,
+      'changeup': 0.50,
+      'shoot': 0.20,
+      'cutter': 0.35,
+      'sinker': 0.30,
+    };
+    final chosen = <String>[];
+    for (final e in breakingProbs.entries) {
+      if (_r.chance(e.value)) chosen.add(e.key);
+    }
+    while (chosen.length < 2) {
+      chosen.add(breakingProbs.keys.firstWhere((k) => !chosen.contains(k)));
+    }
+    while (chosen.length > 5) {
+      chosen.removeAt(_r.random.nextInt(chosen.length));
+    }
+    int? slider, curve, splitter, changeup, shoot, cutter, sinker;
+    for (final t in chosen) {
+      // 変化球の質もフラット分布で当たり外れ
+      final v = _foreignAbility(mean: 5.0);
+      switch (t) {
+        case 'slider': slider = v; break;
+        case 'curve': curve = v; break;
+        case 'splitter': splitter = v; break;
+        case 'changeup': changeup = v; break;
+        case 'shoot': shoot = v; break;
+        case 'cutter': cutter = v; break;
+        case 'sinker': sinker = v; break;
+      }
+    }
+
+    // 外国人投手は左投手の比率がやや高め（30 → 40%）
+    final throws = _r.chance(0.40) ? Handedness.left : Handedness.right;
+
+    final fastball = _foreignAbility(mean: 5.0);
+    final control = _foreignAbility(mean: 4.0); // 制球 -1
+    // 投手の打撃能力は通常通り低め（DH 非採用で打席に立つ）
+    final meet = _r.normalInt(mean: 2.0, sd: 0.8);
+    final power = _r.normalInt(mean: 2.0, sd: 0.8); // 外国人投手はやや長打あり
+    final eye = _r.normalInt(mean: 2.5, sd: 0.8);
+    final speed = _r.normalInt(mean: 3.0, sd: 1.2);
+
+    return Player(
+      id: _newId(),
+      name: _uniqueForeignName(),
+      number: number,
+      age: _foreignAge(),
+      averageSpeed: avgSpeed,
+      fastball: fastball,
+      control: control,
+      slider: slider,
+      curve: curve,
+      splitter: splitter,
+      changeup: changeup,
+      shoot: shoot,
+      cutter: cutter,
+      sinker: sinker,
+      throws: throws,
+      meet: meet,
+      power: power,
+      eye: eye,
+      speed: speed,
+      bats: _batterHandedness(),
+      pitcherRole: pitcherRole,
+      potentials: _buildPotentials(
+        meet: meet, power: power, speed: speed, eye: eye,
+        fastball: fastball, control: control,
+        slider: slider, curve: curve, splitter: splitter,
+        changeup: changeup, shoot: shoot, cutter: cutter, sinker: sinker,
+      ),
+      potentialAverageSpeed: _potentialAverageSpeed(avgSpeed),
+      isForeign: true,
+    );
+  }
+
   /// ID生成（簡易: p_1, p_2, ...）
   String _newId() => 'p_${++_idCounter}';
 
@@ -728,5 +888,16 @@ class PlayerGenerator {
       if (_usedNames.add(name)) return name;
     }
     throw StateError('一意な名前を生成できませんでした（名前データが不足している可能性）');
+  }
+
+  /// 外国人選手用の重複しない名前を生成。「名 苗字」の順（NPB の登録名慣習に近い）。
+  String _uniqueForeignName() {
+    for (int i = 0; i < 1000; i++) {
+      final name = '${_r.pick(NameData.foreignGivenNames)}・'
+          '${_r.pick(NameData.foreignSurnames)}';
+      if (_usedNames.add(name)) return name;
+    }
+    throw StateError(
+        '一意な外国人名を生成できませんでした（名前データが不足している可能性）');
   }
 }

@@ -857,6 +857,7 @@ class SeasonController {
 
       // 2. CPU チームの引退・新人加入・スタメン再編成・投手ロール再編。
       //    再編成時に前シーズンの成績（OPS）をスコア要素として参照する。
+      //    外国人の強制離脱・補充も CPU の rebuildCpuTeams 内で実行される。
       final rebuilder = TeamRebuilder(
         playerGen: _playerGen,
         previousBatterStats: _aggregator.batterStats,
@@ -864,7 +865,11 @@ class SeasonController {
       );
       rebuilder.rebuildCpuTeams(teams, myTeamId);
 
-      // 3. 自チーム: ユーザー選択を反映（プランが渡されたときのみ）
+      // 3. 自チーム: 外国人の強制離脱と新外国人での補充（CPU と同じ確率で発動）。
+      //    日本人選手の引退・新人加入はユーザー選択ベースで別途行う。
+      rebuilder.applyForeignDeparturesToMyTeam(myTeam);
+
+      // 4. 自チーム: ユーザー選択を反映（プランが渡されたときのみ）
       if (plan != null && selection != null) {
         rebuilder.applyUserSelection(
           myTeam,

@@ -58,6 +58,13 @@ class Player {
   final Map<DefensePosition, int>? potentialFielding;
   final int? potentialAverageSpeed;
 
+  /// 外国人選手かどうか。
+  /// 各チームに毎シーズン野手1+投手1の枠で含まれる。生成パラメータが日本人と
+  /// 異なり（能力フラット分布で当たり外れが激しい、野手は長打 +・走力守備 -、
+  /// 投手は球速 +・制球 -、捕手はなし）、シーズン終了時に確率で強制離脱する。
+  /// 既存セーブとの互換性: フラグなし → false（日本人扱い）。
+  final bool isForeign;
+
   const Player({
     required this.id,
     required this.name,
@@ -85,6 +92,7 @@ class Player {
     this.potentials,
     this.potentialFielding,
     this.potentialAverageSpeed,
+    this.isForeign = false,
   });
 
   /// 指定能力（meet, fastball, ...）のポテンシャル上限を返す。
@@ -142,6 +150,7 @@ class Player {
         potentials: potentials,
         potentialFielding: potentialFielding,
         potentialAverageSpeed: potentialAverageSpeed,
+        isForeign: isForeign,
       );
 
   /// 投手ロールだけを差し替えた複製。
@@ -173,6 +182,7 @@ class Player {
         potentials: potentials,
         potentialFielding: potentialFielding,
         potentialAverageSpeed: potentialAverageSpeed,
+        isForeign: isForeign,
       );
 
   /// 利き腕（nullはright）
@@ -249,6 +259,7 @@ class Player {
         },
       if (potentialAverageSpeed != null)
         'potentialAverageSpeed': potentialAverageSpeed,
+      if (isForeign) 'isForeign': true,
     };
   }
 
@@ -313,6 +324,7 @@ class Player {
       potentials: potentials,
       potentialFielding: potentialFielding,
       potentialAverageSpeed: json['potentialAverageSpeed'] as int?,
+      isForeign: (json['isForeign'] as bool?) ?? false,
     );
   }
 

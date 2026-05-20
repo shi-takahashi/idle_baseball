@@ -163,6 +163,7 @@ class PlayerAging {
       potentials: p.potentials,
       potentialFielding: p.potentialFielding,
       potentialAverageSpeed: p.potentialAverageSpeed,
+      isForeign: p.isForeign,
     );
   }
 

@@ -79,7 +79,7 @@ class TeamGenerator {
       ));
     }
 
-    // ---- 先発ローテ 6人 ----
+    // ---- 先発ローテ 6人（うち 1 人は外国人）----
     // players[8]（=9番打者枠）には rotation[0] を初期値として入れておく（最初の試合の先発）。
     // 以降は SeasonController が日々選んで差し替える。
     //
@@ -89,7 +89,12 @@ class TeamGenerator {
     // 当たる」という固定マッチアップになってしまう。シャッフルすることで
     // チーム間の cycle phase がズレ、対戦カードに変化が生まれる。
     final rotation = <Player>[
-      for (int i = 0; i < 6; i++)
+      // 外国人先発 1人（当たり外れ大、球速 +、制球 -）
+      _playerGen.generateForeignPitcher(
+        number: nextNumber(),
+        pitcherRole: PitcherRole.starter,
+      ),
+      for (int i = 1; i < 6; i++)
         _playerGen.generateStartingPitcher(number: nextNumber()),
     ];
     rotation.shuffle(_random);
@@ -151,12 +156,14 @@ class TeamGenerator {
         DefensePosition.outfield,
       ],
     ];
+    // 控え 14 のうち最後の 1 枠は外国人野手（守備位置抽選、当たり外れ大）
     final bench = <Player>[
-      for (final combo in benchCombos)
+      for (int i = 0; i < benchCombos.length - 1; i++)
         _playerGen.generateBenchFielder(
           number: nextNumber(),
-          positions: combo,
+          positions: benchCombos[i],
         ),
+      _playerGen.generateForeignFielder(number: nextNumber()),
     ];
 
     return Team(
