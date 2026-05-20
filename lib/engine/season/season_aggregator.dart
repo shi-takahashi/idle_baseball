@@ -455,15 +455,26 @@ class SeasonAggregator {
         final halfIsHomeDefense = half.isTop;
         if (halfIsHomeDefense != isHomeDefense) continue;
 
-        // 交代があった時点から後の打席は starter のものではない
+        // 交代があった時点から後の打席は starter のマウンドではない
         final firstChangeIdx = half.pitcherChanges.isEmpty
             ? half.atBats.length
             : half.pitcherChanges.first.atBatIndex;
         if (half.pitcherChanges.isNotEmpty) starterRelieved = true;
 
+        // outs は先発がマウンドにいる打席だけ集計。
+        // 「firstChangeIdx より前」だけだと、別のハーフでリリーフが先頭から投げて
+        // 途中で交代するケースで、そのリリーフのアウトも先発に加算されてしまう。
+        // ab.pitcher.id == starterId フィルタで本物の先発の打席だけに絞る。
         for (int i = 0; i < firstChangeIdx; i++) {
-          final ab = half.atBats[i];
-          starterOuts += _outsInAtBat(ab);
+          if (half.atBats[i].pitcher.id != starterId) continue;
+          starterOuts += _outsInAtBat(half.atBats[i]);
+        }
+        // 自責点は **全打席** を見る必要がある。先発降板後にリリーフが
+        // 引き継いだ走者を生還させた場合、その自責点は元の投手（先発）に
+        // 計上される（NPB 公式記録規則「インヘリット失点」）。
+        // earnedRunsByPitcher[starterId] が交代後の打席にも入りうるので、
+        // ハーフ全体を走査して集計する。
+        for (final ab in half.atBats) {
           starterEarned += ab.earnedRunsByPitcher[starterId] ?? 0;
         }
       }
