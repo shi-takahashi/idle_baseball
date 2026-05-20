@@ -12,4 +12,5 @@ export 'season_aggregator.dart';
 export 'season_controller.dart';
 export 'season_result.dart';
 export 'season_simulator.dart';
+export 'season_snapshot.dart';
 export 'standings.dart';

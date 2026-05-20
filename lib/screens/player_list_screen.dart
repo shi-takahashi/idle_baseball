@@ -106,16 +106,18 @@ class _PlayerList extends StatelessWidget {
   }
 
   /// 行に出す肩書き。投手は先発/救援ロール、野手は守れる守備位置。
+  /// 守備位置は **enum 順（捕→一→二→三→遊→外）** で並べ、選手ごとの順序揺らぎを
+  /// 排除する（Map の挿入順だと生成時のサブポジ追加順に依存して安定しない）。
   static String _roleLabel(Player p) {
     if (p.isPitcher) {
       return p.pitcherRole?.displayName ?? '先発';
     }
     final map = p.fielding;
     if (map == null || map.isEmpty) return '—';
-    final positions = map.entries
-        .where((e) => e.value > 0)
-        .map((e) => e.key.shortName)
-        .toList();
+    final positions = [
+      for (final dp in DefensePosition.values)
+        if ((map[dp] ?? 0) > 0) dp.shortName,
+    ];
     return positions.isEmpty ? '—' : positions.join('/');
   }
 }

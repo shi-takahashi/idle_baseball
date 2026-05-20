@@ -17,6 +17,7 @@ import 'schedule.dart';
 import 'schedule_generator.dart';
 import 'scheduled_game.dart';
 import 'season_aggregator.dart';
+import 'season_snapshot.dart';
 import 'standings.dart';
 
 /// シーズン進行を管理するコントローラー（可変状態）
@@ -106,6 +107,52 @@ class SeasonController {
   // 候補を返す。これでアプリ再起動 → オフシーズン編成画面を開いても同じ
   // 新人が表示され、リセマラ（再起動で新人ガチャを引き直す）を防ぐ。
   OffseasonPlan? _pendingOffseasonPlan;
+
+  // 過去シーズンの集計スナップショット履歴。
+  // commitOffseason で次シーズンに進む直前に現シーズンの成績を凍結して
+  // ここに追加する。年度別成績画面・オフシーズン編成画面・作戦画面で
+  // 「前年成績」「キャリア推移」を見るために使う。
+  // 全シーズン保持しても 50 シーズンで 3.5MB 程度なので切り捨てなし。
+  final List<SeasonSnapshot> _seasonHistory = [];
+
+  /// 過去シーズンのスナップショット（古い順）。
+  List<SeasonSnapshot> get seasonHistory =>
+      List.unmodifiable(_seasonHistory);
+
+  /// 指定選手の年度別成績（野手）を古い順で返す。出場が無いシーズンは含めない。
+  List<({int year, BatterSeasonStats stats})> batterHistoryOf(
+      String playerId) {
+    return [
+      for (final s in _seasonHistory)
+        if (s.batterStats[playerId] != null &&
+            s.batterStats[playerId]!.games > 0)
+          (year: s.year, stats: s.batterStats[playerId]!),
+    ];
+  }
+
+  /// 指定選手の年度別成績（投手）を古い順で返す。登板が無いシーズンは含めない。
+  List<({int year, PitcherSeasonStats stats})> pitcherHistoryOf(
+      String playerId) {
+    return [
+      for (final s in _seasonHistory)
+        if (s.pitcherStats[playerId] != null &&
+            s.pitcherStats[playerId]!.games > 0)
+          (year: s.year, stats: s.pitcherStats[playerId]!),
+    ];
+  }
+
+  /// 前年の野手成績（直近のシーズンスナップショットから引く）。
+  /// 履歴が空（1 年目）なら null。
+  BatterSeasonStats? previousBatterStatsOf(String playerId) {
+    if (_seasonHistory.isEmpty) return null;
+    return _seasonHistory.last.batterStats[playerId];
+  }
+
+  /// 前年の投手成績。同上。
+  PitcherSeasonStats? previousPitcherStatsOf(String playerId) {
+    if (_seasonHistory.isEmpty) return null;
+    return _seasonHistory.last.pitcherStats[playerId];
+  }
 
   // 完投 1試合 ≒ 120球で full depletion (-100)
   static const double _completeGamePitches = 120;
@@ -829,6 +876,18 @@ class SeasonController {
     }
     // OFF 時は加齢・rebuild をスキップし、選手・能力をそのまま次シーズンへ持ち越す。
 
+    // 次シーズンに進む前に現シーズンの集計結果をスナップショット化して履歴に追加。
+    // 加齢で Player インスタンス自体は差し替わるが、stats は id 参照ベースで
+    // 復元できる（fromJson の playerById で解決）ので、加齢後でも参照が壊れない。
+    // BatterSeasonStats / PitcherSeasonStats は加齢前の Player 参照を保持しているが、
+    // toJson で id だけ保存されるため永続化往復後は新しい Player に解決される。
+    _seasonHistory.add(SeasonSnapshot(
+      year: _seasonYear,
+      batterStats: Map.of(_aggregator.batterStats),
+      pitcherStats: Map.of(_aggregator.pitcherStats),
+      standings: _aggregator.standings,
+    ));
+
     // 4〜6.
     _seasonYear++;
     if (gamesPerTeam != null) {
@@ -1396,6 +1455,8 @@ class SeasonController {
       // ように、保留中の編成プランを永続化（リセマラ防止）。
       if (_pendingOffseasonPlan != null)
         'pendingOffseasonPlan': _pendingOffseasonPlan!.toJson(),
+      // 過去シーズンの年度別成績（古い順）。
+      'seasonHistory': [for (final s in _seasonHistory) s.toJson()],
     };
   }
 
@@ -1520,6 +1581,18 @@ class SeasonController {
     controller._pendingOffseasonPlan = planJson == null
         ? null
         : OffseasonPlan.fromJson(planJson, playerById);
+
+    // 5i. 過去シーズンのスナップショット履歴
+    final history = json['seasonHistory'] as List?;
+    if (history != null) {
+      for (final s in history) {
+        controller._seasonHistory.add(SeasonSnapshot.fromJson(
+          s as Map<String, dynamic>,
+          playerById,
+          teamById,
+        ));
+      }
+    }
 
     return controller;
   }

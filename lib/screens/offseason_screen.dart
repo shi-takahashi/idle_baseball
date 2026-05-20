@@ -675,6 +675,9 @@ String _scoutRankMax(double v) {
 
 /// 既存野手の当季シーズン成績サマリ。能力数値ではなく結果ベースで表示する
 /// （パラメータ非表示方針 / SPEC §コンセプト）。
+/// オフシーズン編成は「衰えたベテランを引退させる」判断が中心なので、当季成績だけで
+/// 十分。前年と並べると情報過多で見づらくなるため当季のみに留める。
+/// 年度別推移は選手詳細画面の「年度別成績」セクションで確認できる。
 String _fielderSeasonLine(SeasonController c, Player p) {
   final s = c.batterStats[p.id];
   if (s == null || s.games == 0) return '出場なし';
@@ -689,16 +692,17 @@ String _pitcherSeasonLine(SeasonController c, Player p) {
   final s = c.pitcherStats[p.id];
   if (s == null || s.games == 0) return '登板なし';
   final era = s.outsRecorded == 0 ? '-.--' : s.era.toStringAsFixed(2);
-  return '登${s.games} 防率 $era 勝${s.wins} 負${s.losses} 回${s.inningsPitchedDisplay}';
+  return '登${s.games} 防率$era 勝${s.wins} 負${s.losses} 回${s.inningsPitchedDisplay}';
 }
 
 /// 野手が守れるポジション（位置名のみ。守備力の数値は隠す: SPEC §2.0）。
+/// 並び順は enum 順（捕→一→二→三→遊→外）に統一し、選手ごとの揺らぎを排除する。
 String _fielderPositions(Player p) {
   final f = p.fielding;
   if (f == null) return '全ポジ';
-  final positions = f.entries
-      .where((e) => e.value > 0)
-      .map((e) => e.key.shortName)
-      .join('・');
+  final positions = [
+    for (final dp in DefensePosition.values)
+      if ((f[dp] ?? 0) > 0) dp.shortName,
+  ].join('・');
   return positions.isEmpty ? '-' : positions;
 }

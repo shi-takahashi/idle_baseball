@@ -187,6 +187,8 @@ class PlayerDetailScreen extends StatelessWidget {
             _RatingRow(label: '走力', value: player.speed),
           ],
         ),
+        const SizedBox(height: 8),
+        _PitcherYearByYearCard(controller: controller, playerId: player.id),
       ],
     );
   }
@@ -219,6 +221,8 @@ class PlayerDetailScreen extends StatelessWidget {
           title: '守備力（ポジション別）',
           children: _buildFieldingRows(player),
         ),
+        const SizedBox(height: 8),
+        _FielderYearByYearCard(controller: controller, playerId: player.id),
       ],
     );
   }
@@ -548,6 +552,239 @@ class _Chip extends StatelessWidget {
         label,
         style: const TextStyle(fontSize: 11),
       ),
+    );
+  }
+}
+
+// =====================================================
+// 年度別成績カード
+// =====================================================
+
+/// 野手の年度別成績テーブル（現役シーズン分も含む）。
+class _FielderYearByYearCard extends StatelessWidget {
+  final SeasonController controller;
+  final String playerId;
+
+  const _FielderYearByYearCard({
+    required this.controller,
+    required this.playerId,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    // 履歴 + 現シーズン（出場あり）を年度順で結合
+    final rows = <({int year, BatterSeasonStats stats})>[];
+    rows.addAll(controller.batterHistoryOf(playerId));
+    final current = controller.batterStats[playerId];
+    if (current != null && current.games > 0) {
+      rows.add((year: controller.seasonYear, stats: current));
+    }
+    if (rows.isEmpty) {
+      return const _SectionCard(
+        title: '年度別成績',
+        children: [
+          Padding(
+            padding: EdgeInsets.symmetric(vertical: 4),
+            child: Text('出場なし',
+                style: TextStyle(fontSize: 12, color: Colors.grey)),
+          ),
+        ],
+      );
+    }
+    return _SectionCard(
+      title: '年度別成績',
+      children: [
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: DataTable(
+            columnSpacing: 12,
+            horizontalMargin: 4,
+            headingRowHeight: 28,
+            dataRowMinHeight: 26,
+            dataRowMaxHeight: 26,
+            // team_stats_screen の打撃タブと同じ列構成。年度別の二塁打・三塁打・
+            // 失策の推移も追えるようにし、衰え/上達の手がかりを増やす。
+            // 打率はメインで見たい指標なので、率系の先頭に置く。
+            columns: const [
+              DataColumn(label: _Hd('年')),
+              DataColumn(label: _Hd('試')),
+              DataColumn(label: _Hd('打席')),
+              DataColumn(label: _Hd('打数')),
+              DataColumn(label: _Hd('安')),
+              DataColumn(label: _Hd('二')),
+              DataColumn(label: _Hd('三')),
+              DataColumn(label: _Hd('本')),
+              DataColumn(label: _Hd('点')),
+              DataColumn(label: _Hd('得')),
+              DataColumn(label: _Hd('盗')),
+              DataColumn(label: _Hd('盗死')),
+              DataColumn(label: _Hd('四球')),
+              DataColumn(label: _Hd('死球')),
+              DataColumn(label: _Hd('三振')),
+              DataColumn(label: _Hd('犠打')),
+              DataColumn(label: _Hd('失')),
+              DataColumn(label: _Hd('打率')),
+              DataColumn(label: _Hd('出塁')),
+              DataColumn(label: _Hd('長打')),
+              DataColumn(label: _Hd('OPS')),
+            ],
+            rows: [
+              for (final row in rows)
+                DataRow(cells: [
+                  DataCell(Text('${row.year}',
+                      style: const TextStyle(fontSize: 12))),
+                  _numCell(row.stats.games),
+                  _numCell(row.stats.plateAppearances),
+                  _numCell(row.stats.atBats),
+                  _numCell(row.stats.hits),
+                  _numCell(row.stats.doubles),
+                  _numCell(row.stats.triples),
+                  _numCell(row.stats.homeRuns),
+                  _numCell(row.stats.rbi),
+                  _numCell(row.stats.runs),
+                  _numCell(row.stats.stolenBases),
+                  _numCell(row.stats.caughtStealing),
+                  _numCell(row.stats.walks),
+                  _numCell(row.stats.hitByPitch),
+                  _numCell(row.stats.strikeouts),
+                  // 犠打 = 送りバント + 犠飛 の合算（team_stats_screen と同じ）
+                  _numCell(row.stats.sacrificeBunts + row.stats.sacFlies),
+                  _numCell(row.stats.errors),
+                  _rateCell(row.stats.battingAverage),
+                  _rateCell(row.stats.onBasePct),
+                  _rateCell(row.stats.sluggingPct),
+                  _rateCell(row.stats.ops),
+                ]),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// 投手の年度別成績テーブル（現役シーズン分も含む）。
+class _PitcherYearByYearCard extends StatelessWidget {
+  final SeasonController controller;
+  final String playerId;
+
+  const _PitcherYearByYearCard({
+    required this.controller,
+    required this.playerId,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final rows = <({int year, PitcherSeasonStats stats})>[];
+    rows.addAll(controller.pitcherHistoryOf(playerId));
+    final current = controller.pitcherStats[playerId];
+    if (current != null && current.games > 0) {
+      rows.add((year: controller.seasonYear, stats: current));
+    }
+    if (rows.isEmpty) {
+      return const _SectionCard(
+        title: '年度別成績',
+        children: [
+          Padding(
+            padding: EdgeInsets.symmetric(vertical: 4),
+            child: Text('登板なし',
+                style: TextStyle(fontSize: 12, color: Colors.grey)),
+          ),
+        ],
+      );
+    }
+    return _SectionCard(
+      title: '年度別成績',
+      children: [
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: DataTable(
+            columnSpacing: 12,
+            horizontalMargin: 4,
+            headingRowHeight: 28,
+            dataRowMinHeight: 26,
+            dataRowMaxHeight: 26,
+            // team_stats_screen の投手タブと同じ列構成。完投・完封・QS・自責・
+            // WHIP も含めて、年度ごとの投球内容の質の推移を追える。
+            columns: const [
+              DataColumn(label: _Hd('年')),
+              DataColumn(label: _Hd('登板')),
+              DataColumn(label: _Hd('先発')),
+              DataColumn(label: _Hd('完投')),
+              DataColumn(label: _Hd('完封')),
+              DataColumn(label: _Hd('QS')),
+              DataColumn(label: _Hd('勝')),
+              DataColumn(label: _Hd('敗')),
+              DataColumn(label: _Hd('S')),
+              DataColumn(label: _Hd('H')),
+              DataColumn(label: _Hd('回')),
+              DataColumn(label: _Hd('被安')),
+              DataColumn(label: _Hd('被本')),
+              DataColumn(label: _Hd('与四')),
+              DataColumn(label: _Hd('与死')),
+              DataColumn(label: _Hd('奪三')),
+              DataColumn(label: _Hd('失')),
+              DataColumn(label: _Hd('自責')),
+              DataColumn(label: _Hd('防御率')),
+              DataColumn(label: _Hd('WHIP')),
+            ],
+            rows: [
+              for (final row in rows)
+                DataRow(cells: [
+                  DataCell(Text('${row.year}',
+                      style: const TextStyle(fontSize: 12))),
+                  _numCell(row.stats.games),
+                  _numCell(row.stats.starts),
+                  _numCell(row.stats.completeGames),
+                  _numCell(row.stats.shutouts),
+                  _numCell(row.stats.qualityStarts),
+                  _numCell(row.stats.wins),
+                  _numCell(row.stats.losses),
+                  _numCell(row.stats.saves),
+                  _numCell(row.stats.holds),
+                  DataCell(Text(row.stats.inningsPitchedDisplay,
+                      style: const TextStyle(fontSize: 12))),
+                  _numCell(row.stats.hitsAllowed),
+                  _numCell(row.stats.homeRunsAllowed),
+                  _numCell(row.stats.walksAllowed),
+                  _numCell(row.stats.hitBatsmen),
+                  _numCell(row.stats.strikeoutsRecorded),
+                  _numCell(row.stats.runsAllowed),
+                  _numCell(row.stats.earnedRuns),
+                  DataCell(Text(
+                      row.stats.outsRecorded == 0
+                          ? '-'
+                          : row.stats.era.toStringAsFixed(2),
+                      style: const TextStyle(fontSize: 12))),
+                  DataCell(Text(
+                      row.stats.outsRecorded == 0
+                          ? '-'
+                          : row.stats.whip.toStringAsFixed(2),
+                      style: const TextStyle(fontSize: 12))),
+                ]),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+DataCell _numCell(int v) =>
+    DataCell(Text('$v', style: const TextStyle(fontSize: 12)));
+
+DataCell _rateCell(double v) =>
+    DataCell(Text(v.toStringAsFixed(3), style: const TextStyle(fontSize: 12)));
+
+class _Hd extends StatelessWidget {
+  final String label;
+  const _Hd(this.label);
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      label,
+      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
     );
   }
 }

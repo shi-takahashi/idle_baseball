@@ -1527,24 +1527,50 @@ String _handednessLabel(Player p) {
   }
 }
 
-/// 野手の主要成績を 1 行で（picker subtitle 用、ラベル入りのフルバージョン）。
+/// 野手の主要成績（picker subtitle 用）。
+/// 通常は当季成績のみ。**Day 1（開幕直前 = `currentDay == 0`）の編成画面のみ**、
+/// 当季試合が無いため代わりに前年成績を括弧書きで表示する。
+/// Day 2 以降は当季成績だけで判断する（前年情報はノイズになる）。
 String _fielderStatsLine(SeasonController c, Player p) {
-  final s = c.batterStats[p.id];
-  if (s == null) return '記録なし';
+  final cur = c.batterStats[p.id];
+  if (cur != null && cur.games > 0) return _formatBatterLine(cur);
+  // 当季出場ゼロ。Day 1 のみ前年成績を表示。
+  if (c.currentDay == 0) {
+    final prev = c.previousBatterStatsOf(p.id);
+    if (prev != null && prev.games > 0) {
+      return '(前年 ${_formatBatterLine(prev)})';
+    }
+  }
+  return '記録なし';
+}
+
+String _formatBatterLine(BatterSeasonStats s) {
   final ba = s.atBats == 0
       ? '-.---'
       : '.${(s.battingAverage * 1000).round().toString().padLeft(3, '0')}';
   return '打率 $ba / 本 ${s.homeRuns} / 点 ${s.rbi} / 盗 ${s.stolenBases}';
 }
 
-/// 投手の主要成績を 1 行で（picker subtitle 用）。
+/// 投手の主要成績（picker subtitle 用）。野手と同じ「Day 1 のみ前年表示」方式。
 String _pitcherStatsLine(SeasonController c, Player p) {
-  final s = c.pitcherStats[p.id];
-  if (s == null) return '記録なし';
-  final era = s.outsRecorded == 0 ? '-.--' : s.era.toStringAsFixed(2);
   final role =
       p.pitcherRole != null ? p.pitcherRole!.displayName : '先発';
-  return '防率 $era / 勝 ${s.wins} / 負 ${s.losses} / S ${s.saves} [$role]';
+  final cur = c.pitcherStats[p.id];
+  if (cur != null && cur.games > 0) {
+    return '${_formatPitcherLine(cur)} [$role]';
+  }
+  if (c.currentDay == 0) {
+    final prev = c.previousPitcherStatsOf(p.id);
+    if (prev != null && prev.games > 0) {
+      return '(前年 ${_formatPitcherLine(prev)}) [$role]';
+    }
+  }
+  return '記録なし [$role]';
+}
+
+String _formatPitcherLine(PitcherSeasonStats s) {
+  final era = s.outsRecorded == 0 ? '-.--' : s.era.toStringAsFixed(2);
+  return '防率 $era / 勝 ${s.wins} / 負 ${s.losses} / S ${s.saves}';
 }
 
 /// 野手のコンパクト版（スタメン行で名前の隣に表示する）。
