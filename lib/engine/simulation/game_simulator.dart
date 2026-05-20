@@ -695,6 +695,17 @@ class GameSimulator {
     // 12回裏 → 試合終了なので、それ以降の予測は不要
     if (nextInning > maxInnings) return null;
 
+    // 序盤〜中盤の大差ビハインド（次守備が 6 回以下 + 攻撃側=投手側が 5 点以上負け）
+    // の場合は、投手交代の予測をスキップして続投させる。NPB の敗戦処理・ロング起用の
+    // 慣例で、序盤の捨て試合では残りのリリーフを温存するため。これにより:
+    //   1. plannedChange が予約されず、次の守備頭で強制交代が起きない
+    //   2. willPullNext = false になり、投手打席で代打も成立しない（投手が打席へ）
+    //   3. 結果としてロング・敗戦処理が長いイニングを引き受けられる
+    // 終盤（7 回以降）の大差ビハインドは制限しない。残りイニングが少ないので
+    // 敗戦処理にスイッチ → 投手打席は代打、という通常運用に戻る。
+    // `_decideCore` の自然な降板条件（5 失点・3 連打・3 連続四球）は常に機能。
+    if (nextInning <= 6 && attackingScore - defendingScore <= -5) return null;
+
     // 攻撃側チームの抑え情報（ブルペンに残っている場合のみ候補として渡す）
     final closer = attackingTeam.closer;
     final isCloserAvailable = closer != null &&

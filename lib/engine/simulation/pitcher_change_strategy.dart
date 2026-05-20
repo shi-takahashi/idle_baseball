@@ -313,8 +313,13 @@ class SimplePitcherChangeStrategy implements PitcherChangeStrategy {
     }
     // リリーフ投手: イニング境界 + 失点 / 連打 / 連続四球
     else {
-      if (context.outs == 0 &&
-          state.pitchCount >= relieverPitchCountThreshold) {
+      // ロール別の球数閾値:
+      //   - long（ロング）: 80球（5〜6イニング相当）。先発の早期降板を埋める役
+      //   - mopUp（敗戦処理）: 40球（2イニング相当）。他リリーフを温存する役
+      //   - その他（中継ぎ・セットアッパー・ワンポイント）: 25球（1イニング前後）
+      final threshold = _relieverPitchThreshold(
+          state.currentPitcher.pitcherRole);
+      if (context.outs == 0 && state.pitchCount >= threshold) {
         reason = 'イニング終了';
       } else if (state.runsAllowed >= runsAllowedThreshold) {
         reason = '${state.runsAllowed}失点';
@@ -566,6 +571,19 @@ class SimplePitcherChangeStrategy implements PitcherChangeStrategy {
       PitcherRole.mopUp,
       PitcherRole.middle,
     ];
+  }
+
+  /// リリーフ投手のロール別「イニング境界降板の球数閾値」。
+  /// ロングは5〜6イニング、敗戦処理は2イニング、その他は1イニング前後で降板。
+  int _relieverPitchThreshold(PitcherRole? role) {
+    switch (role) {
+      case PitcherRole.long:
+        return 80;
+      case PitcherRole.mopUp:
+        return 40;
+      default:
+        return relieverPitchCountThreshold;
+    }
   }
 
   /// ワンポイント候補（specialist）の投手を見つける。
