@@ -565,8 +565,20 @@ class PlayerGenerator {
     return raw.round().clamp(initial, _speedCeiling);
   }
 
+  /// 「眠った変化球ポテンシャル」を仕込む確率（未習得の球種ごとに抽選）。
+  /// 20% で「将来カーブを覚える可能性のある投手」のような余地を残す。
+  /// ポテンシャル質は通常の能力分布（mean 5, sd 1.5）から仮 initial を立てて
+  /// `_potentialFor` で算出するので、3〜9 の範囲に分布する。
+  static const double _hiddenPitchPotentialChance = 0.20;
+  static const Set<String> _breakingBallKeys = {
+    'slider', 'curve', 'splitter', 'changeup',
+    'shoot', 'cutter', 'sinker',
+  };
+
   /// 1〜10 能力一式（field name → potential）のマップを構築するヘルパー。
-  /// initial が null のキーはマップに含めない（その能力を持たない選手の意）。
+  /// initial が null のキーは原則含めないが、変化球は別扱い:
+  /// 投手の場合、持っていない変化球にも一定確率で「眠ったポテンシャル」を仕込み、
+  /// 加齢処理 (`PlayerAging`) で習得判定の対象にする。
   Map<String, int> _buildPotentials({
     int? meet,
     int? power,
@@ -585,10 +597,22 @@ class PlayerGenerator {
     double bonus = 0.0,
   }) {
     final map = <String, int>{};
+    // 投手判定: 投手能力（fastball / control）のいずれかが non-null なら投手扱い
+    final isPitcher = fastball != null || control != null;
     void put(String key, int? v) {
-      if (v == null) return;
-      // 能力名 key を渡して、_abilityGrowthMargin から能力別マージンを引く
-      map[key] = _potentialFor(v, key: key, bonus: bonus);
+      if (v != null) {
+        // 能力名 key を渡して、_abilityGrowthMargin から能力別マージンを引く
+        map[key] = _potentialFor(v, key: key, bonus: bonus);
+        return;
+      }
+      // 投手の未習得変化球: 確率で「眠ったポテンシャル」を仕込む
+      if (isPitcher && _breakingBallKeys.contains(key)) {
+        if (_r.chance(_hiddenPitchPotentialChance)) {
+          // 仮 initial を平均的な能力分布から作り、その上でポテンシャル算出
+          final virtualInitial = _r.normalInt();
+          map[key] = _potentialFor(virtualInitial, key: key, bonus: bonus);
+        }
+      }
     }
 
     put('meet', meet);

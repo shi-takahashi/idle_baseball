@@ -54,6 +54,18 @@ class PlayerAging {
   /// 守備力の衰え係数。反応速度低下が大きく、先に衰える系。
   static const double _fieldingDeclineFactor = 0.5;
 
+  /// 「眠った変化球ポテンシャル」を持つ未習得球種を、1 シーズンで習得する確率。
+  /// 年齢制限なし（ダルビッシュ型のように年取ってからも新球種を覚える）。
+  /// キャリア 15 年で約 85%、20 年でほぼ確実に習得する計算。
+  /// 習得時の質はポテンシャル値そのままなので、覚醒した瞬間から決め球になる。
+  static const double _newPitchAcquisitionRate = 0.12;
+
+  /// 加齢処理の対象となる変化球キー
+  static const Set<String> _breakingBallKeys = {
+    'slider', 'curve', 'splitter', 'changeup',
+    'shoot', 'cutter', 'sinker',
+  };
+
   PlayerAging({Random? random}) : _random = random ?? Random();
 
   /// 選手 1 名を 1 年加齢して返す。
@@ -68,8 +80,23 @@ class PlayerAging {
     /// 衰え方向（delta < 0）は能力別の係数 [_abilityDeclineFactor] を掛ける:
     /// 「走力は加齢で落ちる」「ミートは技術系で維持」など現実の選手挙動に近づける。
     /// 成長方向は係数を掛けない（成長は potential cap で頭打ちになるので非対称でOK）。
+    ///
+    /// 変化球の場合は「未習得（v == null）でもポテンシャルがあれば習得判定」を行う。
+    /// 持っていない変化球に `potentials` 上で値が入っているのは PlayerGenerator が
+    /// 「眠った才能」として 20% で仕込んだもの。`_newPitchAcquisitionRate` の確率で
+    /// 覚醒し、その瞬間からポテンシャル値（=決め球レベル）で投げられるようになる。
     int? adjust(String key, int? v) {
-      if (v == null) return null;
+      if (v == null) {
+        // 変化球の眠ったポテンシャル発動を判定
+        if (_breakingBallKeys.contains(key)) {
+          final pot = p.potentials?[key];
+          if (pot != null &&
+              _random.nextDouble() < _newPitchAcquisitionRate) {
+            return pot; // 急に決め球を覚える
+          }
+        }
+        return null;
+      }
       double delta = mean + _gauss() * sd;
       if (delta < 0) {
         final factor = _abilityDeclineFactor[key] ?? 1.0;
