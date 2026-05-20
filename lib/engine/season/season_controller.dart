@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math';
 
 import '../generators/generators.dart';
@@ -737,7 +738,10 @@ class SeasonController {
       random: _rotationRandom,
     ).buildOffseasonPlan(myTeam);
     _pendingOffseasonPlan = plan;
-    _notify(); // セーブを誘発
+    // セーブを誘発するため notify は必要だが、本メソッドは UI の initState
+    // から呼ばれることがあり、その場合は「ビルド中の setState」エラーになる。
+    // 次のマイクロタスクで notify を発火し、ビルド完了後に listener が走るようにする。
+    scheduleMicrotask(_notify);
     return plan;
   }
 
