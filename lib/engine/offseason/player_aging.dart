@@ -13,6 +13,47 @@ import '../models/models.dart';
 class PlayerAging {
   final Random _random;
 
+  /// 能力別の「衰えやすさ」係数（delta が負のときに掛ける）。
+  /// 衰えは「動体視力 / 反応速度 / 瞬発系」が先に来て、「筋力系」が後から、
+  /// という順序を反映する。
+  ///
+  ///   先に衰える系（0.5）:
+  ///     - 走力（瞬発・スタミナ）
+  ///     - 選球眼（動体視力）
+  ///     - 守備（反応速度の 1 歩目の遅れ。`_fieldingDeclineFactor` で別管理）
+  ///   やや早く衰える系（0.4）:
+  ///     - ミート（反応速度低下で振り遅れが出る。技術である程度補える）
+  ///   後から衰える系（0.3）:
+  ///     - 長打（筋力ベース。王貞治 40 歳 30 本、落合 40 歳 20 本+）
+  ///     - 肩（送球の強さは筋力主体）
+  ///   投手系:
+  ///     - 制球 / 各変化球: 技術で維持 (0.3)
+  ///     - 伸び (fastball): 体力依存 (0.5)
+  ///   球速 (averageSpeed) は別計算 (`adjustSpeed`) なのでここには含めない。
+  ///
+  /// 値 1.0 = `_meanDeltaForAge` の負側をそのまま反映、0.5 なら半分の速度で落ちる。
+  static const Map<String, double> _abilityDeclineFactor = {
+    // 野手能力
+    'speed': 0.5,
+    'eye': 0.5,
+    'meet': 0.4,
+    'arm': 0.3,
+    'power': 0.3,
+    // 投手能力
+    'control': 0.3,
+    'fastball': 0.5,
+    'slider': 0.3,
+    'curve': 0.3,
+    'splitter': 0.3,
+    'changeup': 0.3,
+    'shoot': 0.3,
+    'cutter': 0.3,
+    'sinker': 0.3,
+  };
+
+  /// 守備力の衰え係数。反応速度低下が大きく、先に衰える系。
+  static const double _fieldingDeclineFactor = 0.5;
+
   PlayerAging({Random? random}) : _random = random ?? Random();
 
   /// 選手 1 名を 1 年加齢して返す。
@@ -24,9 +65,16 @@ class PlayerAging {
 
     /// 1〜10 能力の加齢適用。potential 上限でクランプ。
     /// potential 未設定の選手（旧セーブ等）は現在値を上限とする = 成長停止。
+    /// 衰え方向（delta < 0）は能力別の係数 [_abilityDeclineFactor] を掛ける:
+    /// 「走力は加齢で落ちる」「ミートは技術系で維持」など現実の選手挙動に近づける。
+    /// 成長方向は係数を掛けない（成長は potential cap で頭打ちになるので非対称でOK）。
     int? adjust(String key, int? v) {
       if (v == null) return null;
-      final delta = mean + _gauss() * sd;
+      double delta = mean + _gauss() * sd;
+      if (delta < 0) {
+        final factor = _abilityDeclineFactor[key] ?? 1.0;
+        delta *= factor;
+      }
       final cap = p.potentialOf(key, v);
       return (v + delta.round()).clamp(1, cap);
     }
@@ -48,7 +96,11 @@ class PlayerAging {
           // 「守れない」は維持（年齢で守備位置が増えることはない）
           out[entry.key] = 0;
         } else {
-          final delta = mean + _gauss() * sd;
+          double delta = mean + _gauss() * sd;
+          if (delta < 0) {
+            // 守備力は反応速度低下があるが、ある程度技術で維持できる
+            delta *= _fieldingDeclineFactor;
+          }
           final cap = p.potentialFieldingOf(entry.key, entry.value);
           out[entry.key] = (entry.value + delta.round()).clamp(1, cap);
         }
@@ -87,15 +139,19 @@ class PlayerAging {
     );
   }
 
-  /// 加齢後の年齢に対する平均的な能力変化量（1〜10 の能力に直接加算する想定）
+  /// 加齢後の年齢に対する平均的な能力変化量（1〜10 の能力に直接加算する想定）。
+  /// NPB の打撃・投手のピーク年齢は 27 前後（一般に研究でも 27-29 がピーク帯）
+  /// なので、ピーク帯を 26-29 にしている。
+  /// 後段（36+）の衰えは、リーグに数名いる「40 歳まで現役を続ける選手」が
+  /// 何かしらの能力で平均以上を維持できる程度に抑えている。
   double _meanDeltaForAge(int newAge) {
-    if (newAge <= 21) return 1.5;
-    if (newAge <= 24) return 0.5;
-    if (newAge <= 28) return 0.0;
-    if (newAge <= 31) return -0.3;
-    if (newAge <= 34) return -0.7;
-    if (newAge <= 37) return -1.2;
-    return -1.8;
+    if (newAge <= 22) return 1.5; // 急成長
+    if (newAge <= 25) return 0.5; // 緩やか成長
+    if (newAge <= 29) return 0.0; // ピーク（4 年）
+    if (newAge <= 32) return -0.3; // 緩やかに低下
+    if (newAge <= 35) return -0.7; // はっきり低下
+    if (newAge <= 37) return -0.9; // 急低下
+    return -1.3; // 38+ 大幅低下（ただし能力別係数で抑えられる）
   }
 
   /// Box-Muller 法による標準正規分布のサンプル

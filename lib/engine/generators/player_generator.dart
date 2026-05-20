@@ -37,13 +37,37 @@ class PlayerGenerator {
 
   // ---- ポテンシャル算出パラメータ ----
   // 仮実装: 全能力で同じ値。将来「素質型 / 練習型」に応じて能力ごとに変える想定。
-  static const double _potentialBaseMargin = 2.0; // 平均的な伸びしろ
+  static const double _potentialBaseMargin = 2.0; // デフォルトの伸びしろ
   static const double _potentialSd = 1.0; // 個人差（晩成・期待外れ）
+
+  /// 能力ごとの成長マージン（伸びしろ）。プロ入り後にどれだけ伸びうるかは
+  /// 能力の性質によって差がある。実際の現実観に近づけるための非対称設定:
+  ///   - 走力 / 肩: 先天的要素が強く、入団後ほぼ変わらない（+1）
+  ///   - 長打 / 選球眼: 中間。筋トレ・経験で多少伸びるが頭打ちは早い（+2）
+  ///   - ミート / 守備力: 技術的要素が大きく、練習で大きく伸びうる（+3）
+  ///   - 投手系（球速以外）: デフォルト（+2）
+  /// 球速は別スケール（_speedBaseMargin、km/h ベース）で扱う。
+  static const Map<String, double> _abilityGrowthMargin = {
+    'speed': 1.0,
+    'arm': 1.0,
+    'power': 2.0,
+    'eye': 2.0,
+    'meet': 3.0,
+    // 投手能力（fastball / control / 各変化球）は明示しない → デフォルト 2.0
+  };
+
+  /// 守備力（fielding map 内の各ポジション値）の成長マージン。
+  /// 練習で大きく伸びうる技術系のため +3。
+  static const double _fieldingGrowthMargin = 3.0;
   // 1〜10 能力の上限。10 は基本的に出現しない方針 → 生成時に initial=10 だった
   // 選手のみそのまま 10、それ以外は最大 9 に制限。
   static const int _abilityCeiling = 9;
-  // 球速 (km/h) のポテンシャル: 1〜10 の能力換算で +2 ≒ +4 km/h 相当
-  static const double _speedBaseMargin = 4.0;
+  // 球速 (km/h) のポテンシャル成長マージン。
+  // 平均 +5 km/h、ガウス揺らぎ sd=2 で「+1 〜 +9 km/h」のレンジ。
+  // 高卒 boost (+1.5 × 2 = +3 km/h) と組み合わせると「+4 〜 +12 km/h」になり、
+  // 大谷型「高卒157→165 (+8)」や田中型「高卒155→ピーク160 (+5)」の双方が
+  // 出現可能。多くの選手は +3〜+6 km/h 程度の伸び。
+  static const double _speedBaseMargin = 5.0;
   static const double _speedSd = 2.0;
   // 球速の自然上限。147 km/h ≒ ability 5、160 km/h ≒ ability 10 のマッピングで、
   // 1〜10 能力の ceiling=9 と同様に「ability 9 相当 = 158 km/h」で抑える。
@@ -511,13 +535,20 @@ class PlayerGenerator {
 
   /// 1〜10 能力のポテンシャル上限を計算する。
   /// initial が 10 のときはそのまま 10、それ以外は 9 をハードキャップとする。
-  int _potentialFor(int? initial, {double bonus = 0.0}) {
+  /// [marginOverride] が指定されたときはそのマージンを使う（守備力用）。
+  /// それ以外は能力名 [key] から `_abilityGrowthMargin` を引く（未定義はデフォルト 2.0）。
+  int _potentialFor(
+    int? initial, {
+    String? key,
+    double? marginOverride,
+    double bonus = 0.0,
+  }) {
     if (initial == null) return 0;
     if (initial >= 10) return 10;
-    final raw = initial +
-        _potentialBaseMargin +
-        bonus +
-        _r.nextGaussian() * _potentialSd;
+    final margin = marginOverride ??
+        _abilityGrowthMargin[key] ??
+        _potentialBaseMargin;
+    final raw = initial + margin + bonus + _r.nextGaussian() * _potentialSd;
     return raw.round().clamp(initial, _abilityCeiling);
   }
 
@@ -556,7 +587,8 @@ class PlayerGenerator {
     final map = <String, int>{};
     void put(String key, int? v) {
       if (v == null) return;
-      map[key] = _potentialFor(v, bonus: bonus);
+      // 能力名 key を渡して、_abilityGrowthMargin から能力別マージンを引く
+      map[key] = _potentialFor(v, key: key, bonus: bonus);
     }
 
     put('meet', meet);
@@ -588,7 +620,12 @@ class PlayerGenerator {
       if (e.value == 0) {
         out[e.key] = 0;
       } else {
-        out[e.key] = _potentialFor(e.value, bonus: bonus);
+        // 守備力は技術系で大きく伸びうるため +3 のマージンを使う
+        out[e.key] = _potentialFor(
+          e.value,
+          marginOverride: _fieldingGrowthMargin,
+          bonus: bonus,
+        );
       }
     }
     return out;
