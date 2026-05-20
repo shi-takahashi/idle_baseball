@@ -615,7 +615,7 @@ String _rookieAbilityLine(Player p) {
       : p.fielding!.values.reduce((a, b) => a > b ? a : b).toDouble();
   return '打撃 ${_scoutRank(batting)} '
       '走力 ${_scoutRank(running)} '
-      '守備 ${_scoutRank(fielding)}';
+      '守備 ${_scoutRankMax(fielding)}';
 }
 
 /// 新人投手のスカウト評価（A / B / C の 3 段階）。
@@ -646,16 +646,30 @@ String _rookiePitcherAbilityLine(Player p) {
       : breakingValues.reduce((a, b) => a > b ? a : b);
   return '球速 ${speedRank()} '
       '制球 ${_scoutRank((p.control ?? 5).toDouble())} '
-      '変化球 ${_scoutRank(bestBreaking.toDouble())}';
+      '変化球 ${_scoutRankMax(bestBreaking.toDouble())}';
 }
 
-/// 1〜10 の能力値を A / B / C の 3 段階に変換する。
+/// 1〜10 の能力値を A / B / C の 3 段階に変換する（単一値・平均値用）。
 ///   - A: 7 以上（上位 ~20%）
 ///   - B: 4〜6（中位 ~60%）
 ///   - C: 3 以下（下位 ~20%）
 String _scoutRank(double v) {
   if (v >= 7) return 'A';
   if (v >= 4) return 'B';
+  return 'C';
+}
+
+/// 「複数の指標のうち最高値」を A / B / C に変換する（守備力・変化球用）。
+/// max を取るぶん A が出やすくなり、特に複数球種・複数ポジション持ちの選手は
+/// 普通の閾値だと C がほぼ出ない（例: 3 球種すべて 4 以下になる確率は 1.6% 程度）。
+/// 「武器がある = A」「使える1つ以上はある = B」「どれも振るわない = C」が
+/// 自然に出るよう閾値を 1 段ずつ厳しくしている。
+///   - A: 8 以上（明確な武器あり）
+///   - B: 5〜7（使えるレベル）
+///   - C: 4 以下（どれも振るわない）
+String _scoutRankMax(double v) {
+  if (v >= 8) return 'A';
+  if (v >= 5) return 'B';
   return 'C';
 }
 
