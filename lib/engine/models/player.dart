@@ -113,6 +113,37 @@ class Player {
   /// 投手かどうか
   bool get isPitcher => averageSpeed != null;
 
+  /// 背番号だけを差し替えた複製。
+  /// 編集画面の「他選手と背番号を入れ替え」処理で使用する。
+  Player withNumber(int newNumber) => Player(
+        id: id,
+        name: name,
+        number: newNumber,
+        age: age,
+        averageSpeed: averageSpeed,
+        fastball: fastball,
+        control: control,
+        slider: slider,
+        curve: curve,
+        splitter: splitter,
+        changeup: changeup,
+        shoot: shoot,
+        cutter: cutter,
+        sinker: sinker,
+        meet: meet,
+        power: power,
+        speed: speed,
+        eye: eye,
+        arm: arm,
+        fielding: fielding,
+        throws: throws,
+        bats: bats,
+        pitcherRole: pitcherRole,
+        potentials: potentials,
+        potentialFielding: potentialFielding,
+        potentialAverageSpeed: potentialAverageSpeed,
+      );
+
   /// 投手ロールだけを差し替えた複製。
   /// 能力・球種・ポテンシャルなど他のフィールドはすべて維持する。
   Player withPitcherRole(PitcherRole role) => Player(

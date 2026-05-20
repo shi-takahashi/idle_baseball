@@ -62,6 +62,8 @@ class _PlayerEditScreenState extends State<PlayerEditScreen> {
 
   // 背番号の重複エラー（同一チームに同じ番号がいると非null）
   String? _numberError;
+  // 重複している相手選手。保存時の「入れ替え確認」ダイアログで使う。
+  Player? _numberConflictPlayer;
 
   bool get _isPitcher => widget.initial.isPitcher;
 
@@ -119,10 +121,13 @@ class _PlayerEditScreenState extends State<PlayerEditScreen> {
 
   /// 同一チーム内で背番号が他の選手と重複していないかをチェック。
   /// 重複していたら `_numberError` にメッセージを入れて TextField に表示する。
+  /// 重複している相手 Player は `_numberConflictPlayer` にも保存し、
+  /// 保存時の「入れ替え確認」ダイアログで使う。
   void _validateNumber() {
     final text = _numberCtrl.text;
     final n = int.tryParse(text);
     String? error;
+    Player? conflict;
     if (text.isNotEmpty && n != null) {
       final team = _findTeamOf(widget.initial.id);
       if (team != null) {
@@ -137,13 +142,17 @@ class _PlayerEditScreenState extends State<PlayerEditScreen> {
           if (!seen.add(p.id)) continue; // 重複参照（先発ローテと players の交差）を除外
           if (p.number == n) {
             error = '背番号 $n は ${p.name} が使用中';
+            conflict = p;
             break;
           }
         }
       }
     }
-    if (error != _numberError) {
-      setState(() => _numberError = error);
+    if (error != _numberError || conflict?.id != _numberConflictPlayer?.id) {
+      setState(() {
+        _numberError = error;
+        _numberConflictPlayer = conflict;
+      });
     }
   }
 
@@ -499,7 +508,7 @@ class _PlayerEditScreenState extends State<PlayerEditScreen> {
   // ---------------------------------------------------
   // 保存
   // ---------------------------------------------------
-  void _save() {
+  Future<void> _save() async {
     final p = widget.initial;
     final name = _nameCtrl.text.trim().isEmpty ? p.name : _nameCtrl.text.trim();
     final number = int.tryParse(_numberCtrl.text) ?? p.number;
@@ -508,9 +517,37 @@ class _PlayerEditScreenState extends State<PlayerEditScreen> {
         int.tryParse(_speedCtrl.text) ?? (p.averageSpeed ?? 145);
     final speed = rawSpeed.clamp(_minSpeed, _maxSpeed);
 
-    // 背番号が同一チーム内の他選手と重複していたら保存をブロック
+    // 背番号が同一チーム内の他選手と重複している場合は、入れ替え確認ダイアログを
+    // 出してユーザーが OK すれば相手の番号もこちらの旧番号に書き換える。
     _validateNumber();
-    if (_numberError != null) {
+    if (_numberConflictPlayer != null) {
+      final other = _numberConflictPlayer!;
+      final swap = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: Text('背番号 $number は使用中'),
+          content: Text(
+            '${other.name} と背番号を入れ替えますか？\n\n'
+            '${other.name}: ${other.number} → ${p.number}\n'
+            '$name: ${p.number} → $number',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('キャンセル'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('入れ替える'),
+            ),
+          ],
+        ),
+      );
+      if (swap != true) return;
+      // 相手の選手の番号を、こちらの旧番号に更新（updatePlayer は全リスト同期）。
+      widget.controller.updatePlayer(other.withNumber(p.number));
+    } else if (_numberError != null) {
+      // 競合相手は特定できないがエラーが残っている（タイミングの問題）→ 保存を止める
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           duration: const Duration(seconds: 2),
@@ -556,6 +593,7 @@ class _PlayerEditScreenState extends State<PlayerEditScreen> {
 
     widget.controller.updatePlayer(updated);
 
+    if (!mounted) return;
     // 球速が範囲外で補正された場合だけ通知する
     if (_isPitcher && rawSpeed != speed) {
       ScaffoldMessenger.of(context).showSnackBar(
