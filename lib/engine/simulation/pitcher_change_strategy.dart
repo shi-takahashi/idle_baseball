@@ -359,11 +359,27 @@ class SimplePitcherChangeStrategy implements PitcherChangeStrategy {
       return '${state.runsAllowed}失点';
     }
 
-    // 3. 4連打 / 4連続四球（単独でも降ろす水準）
+    // 3. 4連打 / 4連続四球
+    //    序盤（1〜2回）で失点 3 以下なら立ち直りのチャンスを与えて続投。
+    //    1回頭から4連打3失点でリリーフ早期投入はリリーフ陣にも負担が大きく、
+    //    NPB でもエース級ならまず続投する。3回以降、または4失点以上なら降板。
     if (state.hitsAllowedStreak >= 4) {
-      return '${state.hitsAllowedStreak}連打';
+      final earlyLowDamage = inning <= 2 && state.runsAllowed <= 3;
+      if (!earlyLowDamage) {
+        return '${state.hitsAllowedStreak}連打';
+      }
     }
     if (state.walksStreak >= 4) {
+      final earlyLowDamage = inning <= 2 && state.runsAllowed <= 3;
+      if (!earlyLowDamage) {
+        return '${state.walksStreak}連続四球';
+      }
+    }
+    // 5連打 / 5連続四球は「立ち直り無理」と判断、序盤でも降板
+    if (state.hitsAllowedStreak >= 5) {
+      return '${state.hitsAllowedStreak}連打';
+    }
+    if (state.walksStreak >= 5) {
       return '${state.walksStreak}連続四球';
     }
 
