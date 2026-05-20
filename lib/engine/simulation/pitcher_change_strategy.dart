@@ -241,9 +241,10 @@ class SimplePitcherChangeStrategy implements PitcherChangeStrategy {
       }
     }
 
-    // ---- ワンポイント（左 vs 左マッチアップ）の起用判断 ----
-    // 終盤の接戦で、現投手が右投手、次打者が左強打者、左の situational reliever が
-    // ベンチにいるならスイッチする。
+    // ---- ワンポイント（specialist マッチアップ）の起用判断 ----
+    // 終盤の接戦で、現投手と次打者の利き腕が違い、ベンチに「打者と同じ利き腕の
+    // specialist」がいるならスイッチ。左投手ワンポイント (vs 左強打者) / 右投手
+    // ワンポイント (vs 右強打者) の両方をカバー。
     // 抑え/先発の交代として割り込まないようにリリーフ間の交代に限定（先発が
     // まだマウンドにいる場合は普通の交代条件で先に降ろす方が自然）。
     // セットアッパーは信頼度がワンポイントより高いので、ヒットも失点も
@@ -255,22 +256,27 @@ class SimplePitcherChangeStrategy implements PitcherChangeStrategy {
         !isStarter &&
         !isCurrentSituational &&
         (!isCurrentSetup || setupHasBeenHit)) {
-      final lefty = _findLefty(context, state);
-      if (lefty != null) {
+      final specialist = _findSpecialist(context, state);
+      if (specialist != null) {
+        final side =
+            specialist.effectiveThrows == Handedness.left ? '左' : '右';
         return PitcherChangeDecision(
-          newPitcher: lefty,
-          reason: '左vs左',
+          newPitcher: specialist,
+          reason: '$side vs $side',
         );
       }
     }
 
     // ---- ワンポイント役目終了後の交代 ----
-    // 現投手がワンポイント（situational）で、左打者をすでに1人以上抑え、
-    // 次打者が右打ちなら役目終了。次の中継ぎへスイッチする。
+    // 現投手がワンポイント（situational）で、1球以上投げて、次打者の打席方向が
+    // 「specialist の利き腕と違う」ならマッチアップ崩れ → 役目終了。
+    // 左ワンポイント: 左打者続投 / 右打者で交代
+    // 右ワンポイント: 右打者続投 / 左打者で交代
     if (isCurrentSituational && state.pitchCount > 0 && context.batter != null) {
+      final specialistArm = state.currentPitcher.effectiveThrows;
       final batsAgainst =
           context.batter!.effectiveBatsAgainst(state.currentPitcher);
-      if (batsAgainst != Handedness.left) {
+      if (batsAgainst != specialistArm) {
         // 役目を終えた → 通常選択でリリーフを呼ぶ
         if (state.bullpen.isNotEmpty) {
           final newPitcher = _selectReliever(context);
@@ -562,37 +568,43 @@ class SimplePitcherChangeStrategy implements PitcherChangeStrategy {
     ];
   }
 
-  /// ワンポイント候補の左投手を見つける
+  /// ワンポイント候補（specialist）の投手を見つける。
+  /// 左ワンポイント = 左打者ピンチ → 左投手 / 右ワンポイント = 右打者ピンチ → 右投手。
   /// 条件:
   ///   - 終盤（7〜9回）
   ///   - 接戦（リード/ビハインド ≤ 2 点）
   ///   - 走者あり（ピンチでないと出さない）
-  ///   - 次打者が左打ち、かつ「強打者」（meet ≥ 7 or power ≥ 7）
-  ///   - 現投手が左投手ではない（既に左 vs 左になっていない）
-  ///   - 利用可能な situational lefty がベンチにいる
+  ///   - 次打者が「強打者」（meet ≥ 7 or power ≥ 7）
+  ///   - 次打者の打席方向と「同じ利き腕」の situational がベンチにいる
+  ///     （= プラトーン優位を得るためのマッチアップ）
+  ///   - 現投手は打者と同じ利き腕ではない（既にマッチアップが取れていない）
+  ///   - 両打ち打者は投手の利き腕に合わせて打席を変えるので対象外
   ///
-  /// MLB の3 batter rule 以降の現代運用に合わせ、左強打者へのワンポイント起用に
-  /// 限定する。普通の左打者にいちいち変えるとワンポイントが酷使される。
-  Player? _findLefty(PitcherChangeContext context, TeamPitchingState state) {
+  /// MLB の3 batter rule 以降の現代運用に合わせ、強打者へのワンポイント起用に
+  /// 限定する。普通の打者にいちいち変えるとワンポイントが酷使される。
+  Player? _findSpecialist(
+      PitcherChangeContext context, TeamPitchingState state) {
     final batter = context.batter;
     if (batter == null) return null;
-    // 両打ち打者は投手の利き腕に合わせて打席を切り替えるため、左投手を出した
-    // 瞬間に右打席へ移行する。プラトーン優位が得られないので対象外。
-    if (batter.effectiveBatsBase != Handedness.left) return null;
+    // 両打ち打者は投手の利き腕に合わせて打席を切り替えるため、specialist を出した
+    // 瞬間に反対の打席へ移行する。プラトーン優位が得られないので対象外。
+    final batterSide = batter.effectiveBatsBase;
+    if (batterSide == Handedness.both) return null;
     if (context.inning < 7) return null;
     if (context.scoreDiff.abs() > 2) return null;
-    if (state.currentPitcher.effectiveThrows == Handedness.left) return null;
     if (!context.runners.hasRunners) return null;
+    // 現投手が既に打者と同じ利き腕（= マッチアップが取れている）なら不要
+    if (state.currentPitcher.effectiveThrows == batterSide) return null;
 
     // 強打者（ミート力か長打力が7以上）に限定
     final meet = batter.meet ?? 5;
     final power = batter.power ?? 5;
     if (meet < 7 && power < 7) return null;
 
-    // ベンチに situational ロールの左投手がいるか
+    // ベンチに situational ロールで、打者と同じ利き腕の投手がいるか
     for (final p in state.bullpen) {
       if (p.pitcherRole != PitcherRole.situational) continue;
-      if (p.effectiveThrows != Handedness.left) continue;
+      if (p.effectiveThrows != batterSide) continue;
       // 抑えと被らないように除外（実際には situational != closer のはずだが念のため）
       if (context.closer != null && p.id == context.closer!.id) continue;
       return p;
