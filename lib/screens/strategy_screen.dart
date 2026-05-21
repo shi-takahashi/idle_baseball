@@ -772,7 +772,9 @@ class StrategyScreenState extends State<StrategyScreen>
       cantField = dp != null && !slot.player!.canPlay(dp);
     }
 
-    // 名前と成績を 1 行で並べる（縦スペース節約）
+    // 名前と成績を 1 行に並べる（縦スペース節約）。
+    // 推測ゲーム成立のため、打撃指標だけでなく出場数・四球・三振・失策まで
+    // 1 行に詰めて、スタメン編成の手がかりをひと目で読める形にする。
     final p = slot.player;
     final statsLine = p == null
         ? null
@@ -837,14 +839,22 @@ class StrategyScreenState extends State<StrategyScreen>
                         ),
                       ),
                     ],
-                    if (statsLine != null) ...[
+                    if (statsLine != null && statsLine.isNotEmpty) ...[
                       const SizedBox(width: 8),
-                      Text(
-                        statsLine,
-                        style: TextStyle(
-                          fontSize: 11,
-                          color: Colors.grey.shade700,
-                          fontFeatures: const [FontFeature.tabularFigures()],
+                      // 成績は Expanded で「残り幅をすべて」確保する。
+                      // 名前と成績の両方が Flexible(flex:1) だと残り幅を等分してしまい、
+                      // 数値が2-3桁になった時に成績が ellipsis で切れる一方、名前側に
+                      // 使われない余白が出る。Expanded にすると名前は中身の幅で済み、
+                      // 残りすべてが成績欄になるので、数字が伸びても余白を有効活用できる。
+                      Expanded(
+                        child: Text(
+                          statsLine,
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: Colors.grey.shade700,
+                            fontFeatures: const [FontFeature.tabularFigures()],
+                          ),
+                          overflow: TextOverflow.ellipsis,
                         ),
                       ),
                     ],
@@ -855,8 +865,11 @@ class StrategyScreenState extends State<StrategyScreen>
           ),
           // 守備位置は shortName (1文字: 投/捕/一/二/三/遊/左/中/右) で表示。
           // 適性のない位置（cantField）はオレンジ + 警告アイコンで知らせる。
+          // 中身は最大でもアイコン + 1文字なので 28px に詰める。余ったぶんは
+          // 成績欄（Expanded）に自動で流れて、後半シーズンで数値が2-3桁になっても
+          // 切れにくくなる。
           SizedBox(
-            width: 50,
+            width: 28,
             child: InkWell(
               onTap: slot.player == null ? null : () => _pickPosition(index),
               child: Container(
@@ -1546,70 +1559,82 @@ String _handednessLabel(Player p) {
   }
 }
 
-/// 野手の主要成績（picker subtitle 用）。
-/// 通常は当季成績のみ。**Day 1（開幕直前 = `currentDay == 0`）の編成画面のみ**、
-/// 当季試合が無いため代わりに前年成績を括弧書きで表示する。
-/// Day 2 以降は当季成績だけで判断する（前年情報はノイズになる）。
+/// 野手の主要成績（picker subtitle 用）。スタメン行と同じコンパクト形式で表示し、
+/// 開幕日（Day 1）のみ前年成績を括弧書きでフォールバックする。当季出場も前年も
+/// ないなら「記録なし」。
 String _fielderStatsLine(SeasonController c, Player p) {
-  final cur = c.batterStats[p.id];
-  if (cur != null && cur.games > 0) return _formatBatterLine(cur);
-  // 当季出場ゼロ。Day 1 のみ前年成績を表示。
-  if (c.currentDay == 0) {
-    final prev = c.previousBatterStatsOf(p.id);
-    if (prev != null && prev.games > 0) {
-      return '(前年 ${_formatBatterLine(prev)})';
-    }
-  }
-  return '記録なし';
+  final compact = _fielderStatsCompact(c, p);
+  return compact.isEmpty ? '記録なし' : compact;
 }
 
-String _formatBatterLine(BatterSeasonStats s) {
-  final ba = s.atBats == 0
-      ? '-.---'
-      : '.${(s.battingAverage * 1000).round().toString().padLeft(3, '0')}';
-  return '打率 $ba / 本 ${s.homeRuns} / 点 ${s.rbi} / 盗 ${s.stolenBases}';
-}
-
-/// 投手の主要成績（picker subtitle 用）。野手と同じ「Day 1 のみ前年表示」方式。
+/// 投手の主要成績（picker subtitle 用）。野手と同じく compact 形式を流用しつつ、
+/// 末尾にロール表示 `[先発]` 等を付ける。ロール表示はピッカーで先発候補を選ぶ
+/// 時の手がかり（試合結果から推測したロールが正しいか即見える）。
 String _pitcherStatsLine(SeasonController c, Player p) {
   final role =
       p.pitcherRole != null ? p.pitcherRole!.displayName : '先発';
+  final compact = _pitcherStatsCompact(c, p);
+  return compact.isEmpty ? '記録なし [$role]' : '$compact [$role]';
+}
+
+/// 野手のコンパクト版（スタメン行で名前の隣に 1 行で表示）。
+/// 例: ".267 本3 点11 盗2 失1"
+/// 推測ゲームの手がかりを最低限揃えつつ、1 行で切れない長さに収める:
+/// 打撃 4 項目（打率/本/点/盗）+ 守備の手がかり（失策）。出場数・四球・三振は
+/// チーム成績画面側で確認する想定。
+///
+/// **Day 1（開幕直前 = `currentDay == 0`）は当季試合が無いため、前年成績を
+/// 括弧書きで表示**。これがないと開幕日に「全員 .--- 本0 ...」だけになって
+/// スタメン編成の手がかりが失われる。Day 2 以降は当季成績のみ。
+String _fielderStatsCompact(SeasonController c, Player p) {
+  final cur = c.batterStats[p.id];
+  if (cur != null && cur.games > 0) {
+    return _formatBatterCompact(cur);
+  }
+  if (c.currentDay == 0) {
+    final prev = c.previousBatterStatsOf(p.id);
+    if (prev != null && prev.games > 0) {
+      // 「前年」ラベルは省略。括弧書き自体が前年表示の合図として機能する。
+      return '(${_formatBatterCompact(prev)})';
+    }
+  }
+  return '';
+}
+
+String _formatBatterCompact(BatterSeasonStats s) {
+  final ba = s.atBats == 0
+      ? '-.---'
+      : '.${(s.battingAverage * 1000).round().toString().padLeft(3, '0')}';
+  // 「打率」ラベルは省略。"." で始まる小数は文脈で打率と分かる + ReorderableListView
+  // 由来の右側余白で表示幅が限られるため、文字数を切り詰めて切れを回避。
+  return '$ba 本${s.homeRuns} 点${s.rbi} '
+      '盗${s.stolenBases} 失${s.errors}';
+}
+
+/// 投手のコンパクト版（スタメン行で名前の隣に 1 行で表示）。
+/// 例: "3.00 勝3 負1 S2 H5"
+/// 野手と同程度の長さに揃える: 防率/勝/負/S/H。
+/// セーブ・ホールドを並べておくことで、起用ロール（先発/抑え/中継ぎ）を試合結果
+/// から推測しやすくする。Day 1 のみ前年成績にフォールバック。
+String _pitcherStatsCompact(SeasonController c, Player p) {
   final cur = c.pitcherStats[p.id];
   if (cur != null && cur.games > 0) {
-    return '${_formatPitcherLine(cur)} [$role]';
+    return _formatPitcherCompact(cur);
   }
   if (c.currentDay == 0) {
     final prev = c.previousPitcherStatsOf(p.id);
     if (prev != null && prev.games > 0) {
-      return '(前年 ${_formatPitcherLine(prev)}) [$role]';
+      return '(${_formatPitcherCompact(prev)})';
     }
   }
-  return '記録なし [$role]';
+  return '';
 }
 
-String _formatPitcherLine(PitcherSeasonStats s) {
+String _formatPitcherCompact(PitcherSeasonStats s) {
   final era = s.outsRecorded == 0 ? '-.--' : s.era.toStringAsFixed(2);
-  return '防率 $era / 勝 ${s.wins} / 負 ${s.losses} / S ${s.saves}';
-}
-
-/// 野手のコンパクト版（スタメン行で名前の隣に表示する）。
-/// 例: "打率 .267 本3 点11 盗2"
-String _fielderStatsCompact(SeasonController c, Player p) {
-  final s = c.batterStats[p.id];
-  if (s == null) return '';
-  final ba = s.atBats == 0
-      ? '-.---'
-      : '.${(s.battingAverage * 1000).round().toString().padLeft(3, '0')}';
-  return '打率 $ba 本${s.homeRuns} 点${s.rbi} 盗${s.stolenBases}';
-}
-
-/// 投手のコンパクト版（スタメン行で名前の隣に表示する）。
-/// 例: "防率 3.00 勝3 負1 S2"
-String _pitcherStatsCompact(SeasonController c, Player p) {
-  final s = c.pitcherStats[p.id];
-  if (s == null) return '';
-  final era = s.outsRecorded == 0 ? '-.--' : s.era.toStringAsFixed(2);
-  return '防率 $era 勝${s.wins} 負${s.losses} S${s.saves}';
+  // 「防率」ラベルは省略（先頭の小数で防御率と分かる）。野手と同じく切れ回避優先。
+  return '$era 勝${s.wins} 負${s.losses} '
+      'S${s.saves} H${s.holds}';
 }
 
 /// コンディションに応じた色（80↑=緑 / 60↑=橙 / それ以下=赤）
