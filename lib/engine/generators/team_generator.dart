@@ -88,12 +88,13 @@ class TeamGenerator {
     // rotation[0] からスタートすると「常に A0 が B のローテ位置 X 番目と
     // 当たる」という固定マッチアップになってしまう。シャッフルすることで
     // チーム間の cycle phase がズレ、対戦カードに変化が生まれる。
+    // 外国人先発 1人（当たり外れ大、球速 +、制球 -）。新規チームなので teamSurnames は空。
+    final foreignStarter = _playerGen.generateForeignPitcher(
+      number: nextNumber(),
+      pitcherRole: PitcherRole.starter,
+    );
     final rotation = <Player>[
-      // 外国人先発 1人（当たり外れ大、球速 +、制球 -）
-      _playerGen.generateForeignPitcher(
-        number: nextNumber(),
-        pitcherRole: PitcherRole.starter,
-      ),
+      foreignStarter,
       for (int i = 1; i < 6; i++)
         _playerGen.generateStartingPitcher(number: nextNumber()),
     ];
@@ -163,7 +164,11 @@ class TeamGenerator {
           number: nextNumber(),
           positions: benchCombos[i],
         ),
-      _playerGen.generateForeignFielder(number: nextNumber()),
+      // 外国人野手は同チームの外国人先発と同苗字にならないように除外して抽選。
+      _playerGen.generateForeignFielder(
+        number: nextNumber(),
+        teamSurnames: {foreignSurnameOf(foreignStarter.name)},
+      ),
     ];
 
     return Team(

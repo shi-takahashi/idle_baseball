@@ -252,13 +252,23 @@ class TeamRebuilder {
 
     for (final f in foreigners) {
       if (_random.nextDouble() >= foreignDepartureChance) continue;
-      // 離脱 → 新外国人で同じ枠を補充
+      // 離脱 → 新外国人で同じ枠を補充。
+      // 残るチーム内外国人と同苗字にならないよう、現役外国人の苗字を渡す。
+      final remainingSurnames = <String>{
+        for (final other in foreigners)
+          if (other.id != f.id && !retiredIds.contains(other.id))
+            foreignSurnameOf(other.name),
+      };
       final newForeign = f.isPitcher
           ? playerGen.generateForeignPitcher(
               number: f.number,
               pitcherRole: f.pitcherRole ?? PitcherRole.starter,
+              teamSurnames: remainingSurnames,
             )
-          : playerGen.generateForeignFielder(number: f.number);
+          : playerGen.generateForeignFielder(
+              number: f.number,
+              teamSurnames: remainingSurnames,
+            );
       _replacePlayerInTeam(team, f, newForeign);
       retiredIds.add(f.id);
     }

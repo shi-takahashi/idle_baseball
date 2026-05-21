@@ -752,7 +752,10 @@ class PlayerGenerator {
   /// 外国人野手を生成する。
   /// 能力フラット分布 + 長打プラス（+1.5）/ 走力・守備マイナス（-1）。
   /// 守備位置は 1 つだけ（NPB の外国人野手のユーティリティ性は低い）。
-  Player generateForeignFielder({required int number}) {
+  Player generateForeignFielder({
+    required int number,
+    Set<String> teamSurnames = const <String>{},
+  }) {
     final primary = _foreignFielderPrimary();
     final fielding = <DefensePosition, int>{
       primary: _foreignAbility(mean: 4.0), // 守備力は弱め
@@ -769,7 +772,7 @@ class PlayerGenerator {
     final arm = _foreignAbility(mean: 5.0);
     return Player(
       id: _newId(),
-      name: _uniqueForeignName(),
+      name: _uniqueForeignName(teamSurnames),
       number: number,
       age: _foreignAge(),
       meet: meet,
@@ -796,6 +799,7 @@ class PlayerGenerator {
     required int number,
     bool isStarter = true,
     PitcherRole? pitcherRole,
+    Set<String> teamSurnames = const <String>{},
   }) {
     // 球速: 平均 +3 km/h で 142〜158 km/h レンジ、sd 4 で当たり外れ
     final avgSpeed =
@@ -849,7 +853,7 @@ class PlayerGenerator {
 
     return Player(
       id: _newId(),
-      name: _uniqueForeignName(),
+      name: _uniqueForeignName(teamSurnames),
       number: number,
       age: _foreignAge(),
       averageSpeed: avgSpeed,
@@ -892,14 +896,25 @@ class PlayerGenerator {
     throw StateError('一意な名前を生成できませんでした（名前データが不足している可能性）');
   }
 
-  /// 外国人選手用の重複しない名前を生成。「名 苗字」の順（NPB の登録名慣習に近い）。
-  String _uniqueForeignName() {
-    for (int i = 0; i < 1000; i++) {
-      final name = '${_r.pick(NameData.foreignGivenNames)}・'
-          '${_r.pick(NameData.foreignSurnames)}';
-      if (_usedNames.add(name)) return name;
-    }
-    throw StateError(
-        '一意な外国人名を生成できませんでした（名前データが不足している可能性）');
+  /// 外国人選手の名前を生成（苗字単独）。NPB の登録名慣習に倣う（例: ベラスケス）。
+  /// 同チームに既に居る苗字は候補から除外して抽選するので、チーム内では衝突しない。
+  /// 別チーム同士の同苗字（フェニックスのローズ vs ブリザーズのローズ）は許容。
+  ///
+  /// [teamSurnames] は同チーム既存外国人の苗字セット（[foreignSurnameOf] で抽出）。
+  String _uniqueForeignName(Set<String> teamSurnames) {
+    final available = [
+      for (final s in NameData.foreignSurnames)
+        if (!teamSurnames.contains(s)) s,
+    ];
+    final pool = available.isEmpty ? NameData.foreignSurnames : available;
+    return pool[_r.random.nextInt(pool.length)];
   }
+}
+
+/// 外国人選手の名前から苗字部分を抜き出す。
+/// 「ベラスケス」「スティーブ・ベラスケス」のいずれでも "ベラスケス" を返す。
+/// 同チームに同苗字の外国人が居るかどうかの判定に使う。
+String foreignSurnameOf(String name) {
+  final i = name.lastIndexOf('・');
+  return i < 0 ? name : name.substring(i + 1);
 }
