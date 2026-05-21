@@ -202,6 +202,13 @@ class SeasonController {
   /// `advanceDay` で自チームが試合をした瞬間に消費（クリア）される。
   NextGameStrategy? _myStrategy;
 
+  /// 前シーズン最終試合での自チーム打順スナップショット（id ベース）。
+  /// 次シーズン Day 1 の `suggestedStrategyForMyTeam` でこれを優先して復元するため、
+  /// commitOffseason で _myStrategy をクリアする直前に保存する。
+  /// 引退者・移籍者は復元時にスキップして、控えで穴埋めする。
+  /// 投手スロットは中4日ゲートのため毎日選び直す必要があるので含めない（位置のみ記録）。
+  List<_LineupSlotSnapshot>? _lastSeasonFinalLineup;
+
   /// 新人選手生成用の長寿命ジェネレータ。シーズン跨ぎでも id・名前が衝突しないよう
   /// 各 Team 構築時に既存選手から復元される。
   late PlayerGenerator _playerGen;
@@ -387,12 +394,117 @@ class SeasonController {
     // 野手側は中立選定 + 中立打順。
     final active = _selectActiveRoster(team, neutral: true);
     final game = _withGameLineup(active, sp, neutralOrder: true);
+
+    // Day 1 のときは前シーズン最終スタメンを優先して復元する（あれば）。
+    // ユーザーが前年に組んだ打順を引き継ぐので、毎年同じスタメン編成を組み直す
+    // 手間が無くなる。引退・移籍で抜けた選手は中立な穴埋めを行う。投手スロットは
+    // 中4日ゲートのため毎日選び直す必要があり、ここでも `sp`（中立提案）で固定。
+    if (_currentDay == 0 && _lastSeasonFinalLineup != null) {
+      final restored = _restoreLineupFromSnapshot(team, sp);
+      if (restored != null) {
+        return NextGameStrategy(
+          lineup: restored.lineup,
+          alignment: restored.alignment,
+          // 復元した打順に入った選手は当日ベンチ入りから除外する。
+          activeBench: [
+            for (final p in game.bench)
+              if (!restored.lineup.any((s) => s.id == p.id)) p,
+          ],
+          activeBullpen: activeBullpen,
+        );
+      }
+    }
+
     return NextGameStrategy(
       lineup: game.players,
       alignment: game.defenseAlignment!,
       activeBench: game.bench,
       activeBullpen: activeBullpen,
     );
+  }
+
+  /// 前シーズン最終スタメン snapshot を、現在のロスターに適用して打順と守備配置を
+  /// 復元する。引退・移籍で抜けた選手は、その守備位置を守れる現役選手から
+  /// 背番号順（中立）で穴埋め。投手スロットは渡された [sp] で固定。
+  ///
+  /// すべて埋められなかった場合や、選手数が足りない場合は null を返して、
+  /// 呼び出し側で中立提案にフォールバックさせる。
+  ({List<Player> lineup, Map<FieldPosition, Player> alignment})?
+      _restoreLineupFromSnapshot(Team team, Player sp) {
+    final snapshot = _lastSeasonFinalLineup;
+    if (snapshot == null || snapshot.length != 9) return null;
+
+    // チーム所属の全選手プール（id 集合）。引退・移籍チェックに使う。
+    final rosterIds = <String>{
+      for (final p in [
+        ...team.players,
+        ...team.bench,
+        ...team.startingRotation,
+        ...team.bullpen,
+      ]) p.id,
+    };
+
+    final lineup = List<Player?>.filled(9, null);
+    final alignment = <FieldPosition, Player>{};
+    final usedIds = <String>{};
+
+    // 1パス目: ID マッチで復元
+    for (int i = 0; i < 9; i++) {
+      final slot = snapshot[i];
+      if (slot.position == FieldPosition.pitcher) {
+        lineup[i] = sp;
+        alignment[FieldPosition.pitcher] = sp;
+        usedIds.add(sp.id);
+        continue;
+      }
+      final p = findPlayerById(slot.playerId);
+      if (p == null || !rosterIds.contains(p.id) || usedIds.contains(p.id)) {
+        continue; // 引退・移籍・重複 → 後で穴埋め
+      }
+      // 守備適性確認
+      final defPos = slot.position.defensePosition;
+      if (defPos == null || p.isPitcher || !p.canPlay(defPos)) {
+        continue; // 適性消失（衰え等）→ 後で穴埋め
+      }
+      lineup[i] = p;
+      alignment[slot.position] = p;
+      usedIds.add(p.id);
+    }
+
+    // 2パス目: 穴を背番号順で埋める（同位置適性のある現役野手から）
+    final allFielders = [
+      for (final p in [...team.players, ...team.bench])
+        if (!p.isPitcher) p,
+    ]..sort((a, b) => a.number.compareTo(b.number));
+
+    for (int i = 0; i < 9; i++) {
+      if (lineup[i] != null) continue;
+      final position = snapshot[i].position;
+      final defPos = position.defensePosition;
+      if (defPos == null) return null;
+
+      Player? replacement;
+      // 優先: 守れる選手
+      for (final p in allFielders) {
+        if (usedIds.contains(p.id)) continue;
+        if (p.canPlay(defPos)) {
+          replacement = p;
+          break;
+        }
+      }
+      // フォールバック: 適性無視で背番号最小
+      replacement ??= allFielders.firstWhere(
+        (p) => !usedIds.contains(p.id),
+        orElse: () => allFielders.first,
+      );
+
+      lineup[i] = replacement;
+      alignment[position] = replacement;
+      usedIds.add(replacement.id);
+    }
+
+    if (lineup.any((p) => p == null)) return null;
+    return (lineup: lineup.cast<Player>(), alignment: alignment);
   }
 
   /// 自チームの次の予定試合（明日の試合）。シーズン終了時は null。
@@ -922,6 +1034,29 @@ class SeasonController {
     if (gamesPerTeam != null) {
       _gamesPerTeam = gamesPerTeam;
     }
+    // 前シーズン最終スタメンのスナップショットを取る（次シーズン Day 1 で復元用）。
+    // 必ず最終試合直後の状態である `_myStrategy.lineup/alignment` から取る。
+    // _myStrategy は試合後の SP 自動差し替えで最終試合のあと「次の試合用」に
+    // 更新されているが、野手の打順・守備位置は試合中の代打・代走では書き換えず、
+    // 翌試合用の初期打順を維持しているため、ここから取ればシーズン終了時点の
+    // ユーザー編集を反映できる。
+    final lastStrategy = _myStrategy;
+    if (lastStrategy != null) {
+      _lastSeasonFinalLineup = [
+        for (final p in lastStrategy.lineup)
+          _LineupSlotSnapshot(
+            p.id,
+            lastStrategy.alignment.entries
+                .firstWhere((e) => e.value.id == p.id)
+                .key,
+          ),
+      ];
+    } else {
+      // オート編成のままシーズンを終えた場合は前年継続の意味が薄いのでクリア。
+      // 次シーズンも中立提案にフォールバックする。
+      _lastSeasonFinalLineup = null;
+    }
+
     _schedule = const ScheduleGenerator()
         .generateForGamesPerTeam(teams, _gamesPerTeam);
     _aggregator = SeasonAggregator(teams);
@@ -1480,6 +1615,11 @@ class SeasonController {
       },
       'batterConditions': _batterConditions.exportStates(),
       if (_myStrategy != null) 'myStrategy': _myStrategy!.toJson(),
+      // 前年最終スタメンの snapshot（次年 Day 1 で打順継承するため）。
+      if (_lastSeasonFinalLineup != null)
+        'lastSeasonFinalLineup': [
+          for (final s in _lastSeasonFinalLineup!) s.toJson(),
+        ],
       // シーズン終了 → 編成画面確定 の間でアプリ再起動しても同じ候補が表示される
       // ように、保留中の編成プランを永続化（リセマラ防止）。
       if (_pendingOffseasonPlan != null)
@@ -1605,6 +1745,15 @@ class SeasonController {
     controller._myStrategy =
         ms == null ? null : NextGameStrategy.fromJson(ms, playerById);
 
+    // 5g'. 前年最終スタメン snapshot
+    final lastLineup = json['lastSeasonFinalLineup'] as List?;
+    controller._lastSeasonFinalLineup = lastLineup == null
+        ? null
+        : [
+            for (final s in lastLineup)
+              _LineupSlotSnapshot.fromJson(s as Map<String, dynamic>),
+          ];
+
     // 5h. 保留中の編成プラン（リセマラ防止用キャッシュ）
     final planJson = json['pendingOffseasonPlan'] as Map<String, dynamic>?;
     controller._pendingOffseasonPlan = planJson == null
@@ -1625,4 +1774,22 @@ class SeasonController {
 
     return controller;
   }
+}
+
+/// 前シーズン最終スタメンの 1 スロットを id + 守備位置で保持する軽量レコード。
+class _LineupSlotSnapshot {
+  final String playerId;
+  final FieldPosition position;
+  const _LineupSlotSnapshot(this.playerId, this.position);
+
+  Map<String, dynamic> toJson() => {
+        'playerId': playerId,
+        'position': position.index,
+      };
+
+  factory _LineupSlotSnapshot.fromJson(Map<String, dynamic> json) =>
+      _LineupSlotSnapshot(
+        json['playerId'] as String,
+        FieldPosition.values[json['position'] as int],
+      );
 }
