@@ -25,10 +25,10 @@ class TeamRebuilder {
   static const double foreignDepartureChance = 0.20;
 
   /// 1 チームに常時配置する外国人選手の理想枠（SPEC §4.1）。
-  /// 投手 1（先発ローテ）+ 野手 1（控え）= 計 2 名。
+  /// 投手 2（先発ローテ）+ 野手 2（控え）= 計 4 名。NPB の通常運用に近づける。
   /// `_applyForeignChanges` で「現状 - 離脱 + 獲得 = この枠数」を満たす整合性を要求する。
-  static const int targetForeignPitchers = 1;
-  static const int targetForeignFielders = 1;
+  static const int targetForeignPitchers = 2;
+  static const int targetForeignFielders = 2;
 
   /// 引退候補に入る最低年齢（これ未満は能力が低くても引退しない）
   static const int minRetirementAge = 26;
@@ -695,15 +695,16 @@ class TeamRebuilder {
           ...remainingSurnames,
           for (final c in candidates) foreignSurnameOf(c.name),
         };
-    // 投手 2 + 野手 2
-    for (int i = 0; i < 2; i++) {
+    // 投手 3 + 野手 3。想定枠 2+2 を満たすぶんに加えて、ユーザーが選択する
+    // 余地として 1 名ずつ余裕を持たせる。
+    for (int i = 0; i < 3; i++) {
       candidates.add(playerGen.generateForeignPitcher(
         number: 0,
         pitcherRole: PitcherRole.starter,
         teamSurnames: currentSurnames(),
       ));
     }
-    for (int i = 0; i < 2; i++) {
+    for (int i = 0; i < 3; i++) {
       candidates.add(playerGen.generateForeignFielder(
         number: 0,
         teamSurnames: currentSurnames(),
@@ -751,15 +752,20 @@ class TeamRebuilder {
     // 3. 投手枠 / 野手枠が想定枠数（[targetForeignPitchers] / [targetForeignFielders]）
     //    を満たしているか（現状 - 離脱 + 獲得 = 想定）。離脱より獲得が多いケース
     //    （= チームに既に空席があって新規追加でそれを埋める）も許容する。
-    final currentForeigners = [
-      for (final p in [
-        ...team.players,
-        ...team.startingRotation,
-        ...team.bullpen,
-        ...team.bench,
-      ])
-        if (p.isForeign) p,
-    ];
+    // 重複排除: players[8] と startingRotation[0] が同じ投手を参照する作りに
+    // なっているので、id で一意化してから数える。
+    final seenForeignIds = <String>{};
+    final currentForeigners = <Player>[];
+    for (final p in [
+      ...team.players,
+      ...team.startingRotation,
+      ...team.bullpen,
+      ...team.bench,
+    ]) {
+      if (!p.isForeign) continue;
+      if (!seenForeignIds.add(p.id)) continue;
+      currentForeigners.add(p);
+    }
     final currentPitchers =
         currentForeigners.where((p) => p.isPitcher).length;
     final currentFielders =

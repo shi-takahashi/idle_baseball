@@ -5,6 +5,131 @@
 
 ---
 
+## 2026-05-22 作戦画面磨き込み + 前年スタメン継承 + 外国人手動入替 + 外国人枠 2+2 化
+
+`dart analyze` クリーン、test_persist / test_next_season / test_offseason_user /
+test_rebuild すべて PASS。
+
+### 1. デフォルト先発投手の選定をピッカー順に統一
+
+**動機:** 作戦画面でデフォルト先発として中継ぎロールの投手が選ばれてしまい、
+ピッカーで上に並んでいる先発ロール投手と乖離していた。
+
+**変更:**
+- `PitcherRole.starterPriority` を `enums.dart` に追加（先発 → ロング → 中継ぎ
+  → 敗戦処理 → ワンポイント → セットアッパー → 抑え。null は最低）
+- `SeasonController.suggestedStrategyForMyTeam`（初回オート提案）と
+  `_pickNextStarter`（試合後の SP 自動差し替え）の両方で、投手を
+  「ロール優先度 → 体力降順 → 背番号」の順でソートし、`canStartNextGame=true`
+  な先頭を採用
+- `strategy_screen` の投手スロットピッカーのソートも同じヘルパーを参照に
+
+### 2. 作戦画面の成績表示拡充
+
+**変更:**
+- 野手 1 行に「.267 本3 点11 盗2 失1」を表示（守備の手がかりに失策を追加）
+- 投手 1 行に「3.00 勝3 負1 S2 H5」（セーブ + ホールドでロール推測）
+- 守備位置の固定幅 50px → 28px に詰め、成績側を `Expanded` で残り全幅に
+- Day 1（当季成績ゼロ）は前年成績を `(.269 本20 点61 盗2 失0)` の括弧表示で
+  フォールバック
+- ピッカー subtitle 用の `_fielderStatsLine` / `_pitcherStatsLine` も同じ
+  compact 形式を流用に統一
+
+### 3. 前年最終スタメン・ベンチ入りの継承（Day 1）
+
+**動機:** 次シーズン Day 1 で打順が背番号順にリセットされて、前年に組んだ打順が
+失われる UX 問題。
+
+**変更:**
+- `SeasonController` に `_lastSeasonFinalLineup` / `_lastSeasonActiveBenchIds` /
+  `_lastSeasonActiveBullpenIds` を追加（id ベース snapshot）
+- `commitOffseason` で `_myStrategy` をクリアする直前に保存
+- 公開 getter（`previousLineupSnapshot` 等）から作戦画面が参照
+- `strategy_screen._loadFromCurrent` で「`myStrategy == null` + Day 1 + snapshot
+  あり」のとき snapshot から `_Slot` を構築
+- 引退者は `player: null`（空白スロット）として残し、既存の「N 番打者の選手が
+  未選択です」バリデーションが補完を促す
+- ベンチ入り野手・投手も同様に id 解決、引退者ぶんは不足状態のまま表示
+- 投手スロットは中4日ゲートのため snapshot 無視で中立 SP を初期値に
+- JSON 永続化対応
+
+### 4. 外国人選手の名前を苗字単独に
+
+**動機:** 「スティーブ・ベラスケス」のようなフルネームが UI で切れる。NPB 登録名
+慣習に倣い苗字単独で。
+
+**変更:**
+- `_uniqueForeignName(Set<String> teamSurnames)`: チーム内既存苗字を除外して
+  抽選 → チーム内では衝突しない（別チーム同苗字は許容、リアル感）
+- `foreignSurnameOf(name)` ヘルパー: 「スティーブ・ベラスケス」「ベラスケス」
+  どちらからも "ベラスケス" を取得
+- `team_generator` / `team_rebuilder` で生成時に teamSurnames を渡す
+- 苗字リスト 72 → 200 種（ヒスパニック 100 + 英語圏 100）に拡張
+- 候補年齢の上限を 40 → 35（NPB 新規獲得は中堅が中心、35+ は稀）
+
+### 5. 外国人手動入替 UI（オフシーズン編成画面）
+
+**動機:** これまで「強制離脱 → 即自動補充」が静かに走るだけで、ユーザーが
+外国人入替に関与できなかった。NPB の外国人獲得感を出す。
+
+**変更:**
+- `OffseasonPlan` に `foreignDepartures`（強制離脱対象）と `foreignCandidates`
+  （新候補）を追加。前者は id 保存、後者は Player 丸ごと保存
+- `OffseasonSelection` に `foreignReleaseIds`（任意カット）と `foreignAcquireIds`
+  （獲得）を追加
+- `TeamRebuilder.prepareForeignChangesForMyTeam`: 強制離脱判定 + 候補生成
+- `TeamRebuilder._applyForeignChanges`: 「強制離脱 + 任意カット」と「獲得」を
+  ペアリングし、ペアできるぶんは in-place 置換、ペアできない獲得はチームに
+  新規追加で空席を補充
+- 旧 `applyForeignDeparturesToMyTeam`（即時自動補充）は撤去
+- `OffseasonScreen` に外国人セクション追加: 現役選手の `[離脱]`/`[解除]`/
+  `[継続]` バッジ + 契約解除ボタン、候補は能力非表示で守備位置・年齢・名前のみ
+- 整合性「現状 − 離脱 − カット + 獲得 = 想定枠」を UI / engine 両方で検証
+
+### 6. オフシーズン編成画面のタブ化
+
+**動機:** 縦長になりすぎてスタメン 9 番が見えない。
+
+**変更:**
+- 「野手 / 投手」の 2 タブに分割（外国人タブは廃止）
+- 野手タブに「日本人引退 + 日本人新人 + 外国人野手」を統合
+- 投手タブに「日本人引退 + 日本人新人 + 外国人投手」を統合
+- イントロカード（試合数選択）はタブ外、ボトムバー（サマリー + 「次シーズン
+  開始」）もタブ外で常時表示
+- タブが分かれることで「投手解除 → 野手獲得」のような枠跨ぎが UI 上不可能
+  （ゲームルール = 野手 22 / 投手 18 固定 と一致）
+
+### 7. Tile に利き手表示追加
+
+**変更:** 各 Tile の subtitle に利き手（野手は打席「右/左/両」、投手は投げる
+手「右/左」）を年齢の隣に表示。`_handednessLabel(Player)` ヘルパー追加。
+
+### 8. 外国人枠を 1+1 → 2+2 = 4 名に拡張
+
+**動機:** NPB 通常運用に近づける（外国人投手 2 + 外国人野手 2）。
+
+**変更:**
+- `TeamRebuilder.targetForeignPitchers/Fielders` を 1 → 2 に
+- `TeamGenerator.generateLeague`: 先発ローテに外国人投手 2 名、ベンチに外国人
+  野手 2 名を生成（同チーム内同苗字は除外）
+- `prepareForeignChangesForMyTeam`: 候補を投手 3 + 野手 3 = 6 に拡張
+- `OffseasonSelection.recommended`: 「離脱と同数を自動補充」に修正（複数同時
+  離脱に対応）
+- `_applyForeignChanges` の現役外国人カウントで重複排除を追加（`players[8]` と
+  `startingRotation[0]` が同じ投手を二重参照する作りのため、id ベースで一意化）
+- `_foreignValid` / `_buildForeignSlotStatusFor` の定数も 2 に同期
+
+### 9. 関連バグ修正
+
+- `_pickNextStarter`（試合後 SP 差し替え）が「背番号順 + canStartNextGame」で
+  ロール無視だったため、先発全員疲労時に中継ぎがデフォルト先発になっていた
+  → ピッカーと同じソート順で解消
+- 外国人投手 1 / 野手 0 のセーブを修復可能に: `_applyForeignChanges` の整合性
+  チェックを「離脱数 == 獲得数」から「現状 − 離脱 + 獲得 = 想定枠」に変更し、
+  ペアできない獲得はチームに新規追加で空席を埋める形に
+
+---
+
 ## 2026-05-21 外国人選手の導入
 
 各チーム 1+1（先発rotation 1 / bench 1 = リーグ計 12 名）の外国人選手を配置。

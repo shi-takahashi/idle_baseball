@@ -79,7 +79,7 @@ class TeamGenerator {
       ));
     }
 
-    // ---- 先発ローテ 6人（うち 1 人は外国人）----
+    // ---- 先発ローテ 6人（うち 2 人は外国人）----
     // players[8]（=9番打者枠）には rotation[0] を初期値として入れておく（最初の試合の先発）。
     // 以降は SeasonController が日々選んで差し替える。
     //
@@ -88,14 +88,21 @@ class TeamGenerator {
     // rotation[0] からスタートすると「常に A0 が B のローテ位置 X 番目と
     // 当たる」という固定マッチアップになってしまう。シャッフルすることで
     // チーム間の cycle phase がズレ、対戦カードに変化が生まれる。
-    // 外国人先発 1人（当たり外れ大、球速 +、制球 -）。新規チームなので teamSurnames は空。
-    final foreignStarter = _playerGen.generateForeignPitcher(
+    // 外国人先発 2人（当たり外れ大、球速 +、制球 -）。新規チームなので
+    // 1 人目の teamSurnames は空。2 人目は 1 人目と同苗字を避ける。
+    final foreignStarter1 = _playerGen.generateForeignPitcher(
       number: nextNumber(),
       pitcherRole: PitcherRole.starter,
     );
+    final foreignStarter2 = _playerGen.generateForeignPitcher(
+      number: nextNumber(),
+      pitcherRole: PitcherRole.starter,
+      teamSurnames: {foreignSurnameOf(foreignStarter1.name)},
+    );
     final rotation = <Player>[
-      foreignStarter,
-      for (int i = 1; i < 6; i++)
+      foreignStarter1,
+      foreignStarter2,
+      for (int i = 2; i < 6; i++)
         _playerGen.generateStartingPitcher(number: nextNumber()),
     ];
     rotation.shuffle(_random);
@@ -157,18 +164,30 @@ class TeamGenerator {
         DefensePosition.outfield,
       ],
     ];
-    // 控え 14 のうち最後の 1 枠は外国人野手（守備位置抽選、当たり外れ大）
+    // 控え 14 のうち最後の 2 枠は外国人野手（守備位置抽選、当たり外れ大）
+    final teamSurnamesAfterPitchers = {
+      foreignSurnameOf(foreignStarter1.name),
+      foreignSurnameOf(foreignStarter2.name),
+    };
+    final foreignFielder1 = _playerGen.generateForeignFielder(
+      number: nextNumber(),
+      teamSurnames: teamSurnamesAfterPitchers,
+    );
+    final foreignFielder2 = _playerGen.generateForeignFielder(
+      number: nextNumber(),
+      teamSurnames: {
+        ...teamSurnamesAfterPitchers,
+        foreignSurnameOf(foreignFielder1.name),
+      },
+    );
     final bench = <Player>[
-      for (int i = 0; i < benchCombos.length - 1; i++)
+      for (int i = 0; i < benchCombos.length - 2; i++)
         _playerGen.generateBenchFielder(
           number: nextNumber(),
           positions: benchCombos[i],
         ),
-      // 外国人野手は同チームの外国人先発と同苗字にならないように除外して抽選。
-      _playerGen.generateForeignFielder(
-        number: nextNumber(),
-        teamSurnames: {foreignSurnameOf(foreignStarter.name)},
-      ),
+      foreignFielder1,
+      foreignFielder2,
     ];
 
     return Team(

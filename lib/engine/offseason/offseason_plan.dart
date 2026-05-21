@@ -200,30 +200,27 @@ class OffseasonSelection {
   );
 
   /// プランから推奨選択を作る。
-  /// 外国人入替の推奨はシンプル: 強制離脱した枠だけ候補から自動補充（投手枠は
-  /// 候補の投手から、野手枠は候補の野手から、それぞれ先頭を採用）。
+  /// 外国人入替の推奨: 強制離脱したぶんだけ候補から先頭順で自動補充（投手枠は
+  /// 候補の投手から、野手枠は候補の野手から、それぞれ離脱人数と同数を取る）。
   factory OffseasonSelection.recommended(OffseasonPlan plan) {
     final acquire = <String>[];
-    final hasDepartingPitcher = plan.foreignDepartures.any((p) => p.isPitcher);
-    final hasDepartingFielder =
-        plan.foreignDepartures.any((p) => !p.isPitcher);
-    if (hasDepartingPitcher) {
-      final c = plan.foreignCandidates.firstWhere(
-        (p) => p.isPitcher,
-        orElse: () => plan.foreignCandidates.isEmpty
-            ? Player(id: '', name: '', number: 0, age: 0)
-            : plan.foreignCandidates.first,
-      );
-      if (c.id.isNotEmpty) acquire.add(c.id);
+    final departingPitchers =
+        plan.foreignDepartures.where((p) => p.isPitcher).length;
+    final departingFielders =
+        plan.foreignDepartures.where((p) => !p.isPitcher).length;
+    final candidatePitchers =
+        plan.foreignCandidates.where((p) => p.isPitcher).toList();
+    final candidateFielders =
+        plan.foreignCandidates.where((p) => !p.isPitcher).toList();
+    for (int i = 0;
+        i < departingPitchers && i < candidatePitchers.length;
+        i++) {
+      acquire.add(candidatePitchers[i].id);
     }
-    if (hasDepartingFielder) {
-      final c = plan.foreignCandidates.firstWhere(
-        (p) => !p.isPitcher,
-        orElse: () => plan.foreignCandidates.isEmpty
-            ? Player(id: '', name: '', number: 0, age: 0)
-            : plan.foreignCandidates.first,
-      );
-      if (c.id.isNotEmpty) acquire.add(c.id);
+    for (int i = 0;
+        i < departingFielders && i < candidateFielders.length;
+        i++) {
+      acquire.add(candidateFielders[i].id);
     }
     return OffseasonSelection(
       retireFielderIds: List.of(plan.recommendedRetireFielderIds),

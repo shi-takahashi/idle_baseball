@@ -138,8 +138,8 @@ class _OffseasonScreenState extends State<OffseasonScreen>
         fielderAcquire++;
       }
     }
-    const targetPitchers = 1; // TeamRebuilder.targetForeignPitchers と同じ
-    const targetFielders = 1;
+    const targetPitchers = 2; // TeamRebuilder.targetForeignPitchers と同じ
+    const targetFielders = 2;
     return (currentPitchers - pitcherDepart + pitcherAcquire) ==
             targetPitchers &&
         (currentFielders - fielderDepart + fielderAcquire) == targetFielders;
@@ -415,11 +415,13 @@ class _OffseasonScreenState extends State<OffseasonScreen>
     );
   }
 
-  /// 空席がある時だけ表示するオレンジの警告チップ。埋まっていれば何も出さない。
+  /// 空席がある時だけ表示するオレンジの警告チップ。想定枠 2 を満たしていれば
+  /// 何も出さない。強制離脱もユーザーが見落とさないよう、ここで空席数を出す。
   Widget _buildForeignSlotStatusFor({required bool isPitcher}) {
-    final hasCurrent =
-        _currentForeigners.any((p) => p.isPitcher == isPitcher);
-    if (hasCurrent) return const SizedBox.shrink();
+    final current =
+        _currentForeigners.where((p) => p.isPitcher == isPitcher).length;
+    const target = 2;
+    if (current >= target) return const SizedBox.shrink();
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
       child: Container(
@@ -430,7 +432,7 @@ class _OffseasonScreenState extends State<OffseasonScreen>
           border: Border.all(color: Colors.orange.shade300),
         ),
         child: Text(
-          '空席があります。候補から獲得してください。',
+          '空席が ${target - current} 名あります。候補から獲得してください。',
           style: TextStyle(
             fontSize: 12,
             color: Colors.orange.shade900,

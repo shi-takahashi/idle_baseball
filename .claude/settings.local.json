@@ -30,7 +30,8 @@
       "Bash(awk 'NR>=13 && /^  static const List<String> surnames/,/^  \\\\];/' /Users/takahashi-sh/Project/idle_baseball/lib/engine/generators/name_data.dart)",
       "Bash(awk 'NR>=42 && /^  static const List<String> givenNames/,/^  \\\\];/' /Users/takahashi-sh/Project/idle_baseball/lib/engine/generators/name_data.dart)",
       "Bash(awk '/foreignSurnames = \\\\[/,/^  \\\\];/' /Users/takahashi-sh/Project/idle_baseball/lib/engine/generators/name_data.dart)",
-      "Bash(awk '/foreignGivenNames = \\\\[/,/^  \\\\];/' /Users/takahashi-sh/Project/idle_baseball/lib/engine/generators/name_data.dart)"
+      "Bash(awk '/foreignGivenNames = \\\\[/,/^  \\\\];/' /Users/takahashi-sh/Project/idle_baseball/lib/engine/generators/name_data.dart)",
+      "Bash(awk 'NR>=225 && NR<=265' /Users/takahashi-sh/Project/idle_baseball/docs/SPEC.md)"
     ]
   }
 }
