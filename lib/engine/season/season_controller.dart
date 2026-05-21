@@ -347,7 +347,8 @@ class SeasonController {
   /// すべて中立（能力序列を出さない）— 推測ゲームの最適解バレを避けるため
   /// （SPEC §コンセプト）。ユーザーが作戦画面で観察に基づき組み替える。
   ///
-  /// - 先発: 全18投手から、登板間隔（中4日）+ 体力100% の空いた最も背番号の若い投手
+  /// - 先発: 全18投手から、作戦画面の投手ピッカーと同じ並び
+  ///   （ロール優先度→体力降順→背番号）で `canStartNextGame` な先頭の投手
   /// - ベンチ入り救援: 先発ロールの投手を除き、中継ぎ等のロールから背番号順で8人
   /// - 打順・守備: 背番号順の中立編成（[_withGameLineup] neutralOrder）
   ///
@@ -356,11 +357,23 @@ class SeasonController {
     if (isSeasonOver) return null;
     final team = teams.firstWhere((t) => t.id == myTeamId);
     if (team.players.length < 9) return null;
-    // 先発: 全18投手（先発ローテ + 救援）から、登板間隔の空いた背番号最小の投手。
+    // 先発: 全18投手（先発ローテ + 救援）を作戦画面の投手ピッカーと同じ順で並べ、
+    // 登板可能（中4日 + 体力100%）な先頭の投手を選ぶ。
+    //   ロール優先度（先発 → ロング → 中継ぎ → …）→ 体力降順 → 背番号
+    // ピッカー先頭がそのままデフォルト先発になるよう揃えてある（推測ゲームの中立性を
+    // 保ちつつ、ピッカー上で「最も先発に近い」と提示している投手と一致させる狙い）。
     final allPitchers = <Player>[
       ...team.startingRotation,
       ...team.bullpen,
-    ]..sort((a, b) => a.number.compareTo(b.number));
+    ]..sort((a, b) {
+        final ra = pitcherRoleStarterPriority(a.pitcherRole);
+        final rb = pitcherRoleStarterPriority(b.pitcherRole);
+        if (ra != rb) return ra.compareTo(rb);
+        final fa = pitcherFreshness(a.id);
+        final fb = pitcherFreshness(b.id);
+        if (fa != fb) return fb.compareTo(fa);
+        return a.number.compareTo(b.number);
+      });
     final sp = allPitchers.firstWhere(
       (p) => canStartNextGame(p.id),
       orElse: () => allPitchers.first,
@@ -705,15 +718,26 @@ class SeasonController {
   }
 
   /// 次の試合用の先発を中立に選ぶ（試合後の SP 自動差し替え用）。
-  /// 全18投手のうち「ベンチ入り救援に入れておらず、登板間隔（中4日）+ 体力100%
-  /// を満たす最も背番号の若い投手」。能力で選ばないので推測ゲームのヒントにならない。
-  /// 該当者がいなければ登板間隔の空いた者、それも無ければ背番号最小にフォールバック。
+  /// 並び順は作戦画面の投手ピッカーと同じ:
+  ///   ロール優先度（先発 → ロング → 中継ぎ → …）→ 体力降順 → 背番号。
+  /// その上で「ベンチ入り救援に入れておらず、登板間隔（中4日）+ 体力100%」な
+  /// 先頭の投手を選ぶ。能力で選ばないので推測ゲームのヒントにならない。
+  /// 該当者がいなければベンチ縛りを外して同並び順で再試行、それも無ければ先頭に
+  /// フォールバック。
   Player _pickNextStarter(Team team, NextGameStrategy current) {
     final benchedIds = current.activeBullpen.map((p) => p.id).toSet();
     final pitchers = <Player>[
       ...team.startingRotation,
       ...team.bullpen,
-    ]..sort((a, b) => a.number.compareTo(b.number));
+    ]..sort((a, b) {
+        final ra = pitcherRoleStarterPriority(a.pitcherRole);
+        final rb = pitcherRoleStarterPriority(b.pitcherRole);
+        if (ra != rb) return ra.compareTo(rb);
+        final fa = pitcherFreshness(a.id);
+        final fb = pitcherFreshness(b.id);
+        if (fa != fb) return fb.compareTo(fa);
+        return a.number.compareTo(b.number);
+      });
     if (pitchers.isEmpty) return team.pitcher;
     for (final p in pitchers) {
       if (benchedIds.contains(p.id)) continue;

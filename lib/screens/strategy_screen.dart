@@ -934,8 +934,8 @@ class StrategyScreenState extends State<StrategyScreen>
       final gb = groupOf(b);
       if (ga != gb) return ga.compareTo(gb);
       if (isPitcherSlot && a.isPitcher && b.isPitcher) {
-        final ra = _pitcherSlotRoleOrder(a.pitcherRole);
-        final rb = _pitcherSlotRoleOrder(b.pitcherRole);
+        final ra = pitcherRoleStarterPriority(a.pitcherRole);
+        final rb = pitcherRoleStarterPriority(b.pitcherRole);
         if (ra != rb) return ra.compareTo(rb);
         final fa = widget.controller.pitcherFreshness(a.id);
         final fb = widget.controller.pitcherFreshness(b.id);
@@ -1617,32 +1617,6 @@ Color _freshnessColor(int freshness) {
   if (freshness >= 80) return Colors.green.shade700;
   if (freshness >= 60) return Colors.orange.shade700;
   return Colors.red.shade700;
-}
-
-/// 投手スロットの選手ピッカー内で投手を並べる時のロール優先度。
-/// 「先発として起用する可能性が高い順」で並べる:
-///   先発 → ロング → 中継ぎ → 敗戦処理 → ワンポイント → セットアッパー → 抑え。
-/// 抑え指名の投手を先発に持ってくることは普通ないので最下段、ロングは先発の
-/// 早期降板を埋める役なのでまだ転用しやすい、という発想。
-int _pitcherSlotRoleOrder(PitcherRole? role) {
-  switch (role) {
-    case PitcherRole.starter:
-      return 0;
-    case PitcherRole.long:
-      return 1;
-    case PitcherRole.middle:
-      return 2;
-    case PitcherRole.mopUp:
-      return 3;
-    case PitcherRole.situational:
-      return 4;
-    case PitcherRole.setup:
-      return 5;
-    case PitcherRole.closer:
-      return 6;
-    case null:
-      return 7;
-  }
 }
 
 class _PositionTile extends StatelessWidget {

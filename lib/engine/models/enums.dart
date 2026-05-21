@@ -70,7 +70,36 @@ extension PitcherRoleExtension on PitcherRole {
         return '敗戦処理';
     }
   }
+
+  /// 「先発として起用する可能性が高い順」の並び順:
+  /// 先発 → ロング → 中継ぎ → 敗戦処理 → ワンポイント → セットアッパー → 抑え。
+  /// 抑えを先発に持ってくることは普通ないので最下段、ロングは先発の早期降板を
+  /// 埋める役なのでまだ転用しやすい、という発想。投手スロットのピッカー並びと
+  /// デフォルト先発の選定で共有する。
+  int get starterPriority {
+    switch (this) {
+      case PitcherRole.starter:
+        return 0;
+      case PitcherRole.long:
+        return 1;
+      case PitcherRole.middle:
+        return 2;
+      case PitcherRole.mopUp:
+        return 3;
+      case PitcherRole.situational:
+        return 4;
+      case PitcherRole.setup:
+        return 5;
+      case PitcherRole.closer:
+        return 6;
+    }
+  }
 }
+
+/// nullable な PitcherRole にも `starterPriority` を生やす。
+/// ロール未設定は最低優先（7）。
+int pitcherRoleStarterPriority(PitcherRole? role) =>
+    role?.starterPriority ?? 7;
 
 extension HandednessExtension on Handedness {
   String get displayName {
