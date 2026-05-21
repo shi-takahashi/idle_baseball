@@ -548,9 +548,10 @@ class TeamRebuilder {
     Team team, {
     int rookieCandidatesPerType = 2,
   }) {
-    // 外国人選手は自動離脱ロジック（commitOffseason 内の
-    // applyForeignDeparturesToMyTeam）で別途処理されるので、引退候補リストには
-    // 含めない。混ぜると日本人新人で置き換わって外国人枠が消失してしまう。
+    // 外国人選手は別ロジック（prepareForeignChangesForMyTeam で生成・
+    // applyUserSelection 内の _applyForeignChanges で適用）で処理されるので、
+    // 引退候補リストには含めない。混ぜると日本人新人で置き換わって外国人枠が
+    // 消失してしまう。
     final fielders = <Player>[
       ...team.players.where((p) => !p.isPitcher && !p.isForeign),
       ...team.bench.where((p) => !p.isForeign),
@@ -605,6 +606,10 @@ class TeamRebuilder {
       return sorted.take(count).toList();
     }
 
+    // 自チームの外国人入替の候補生成（強制離脱判定 + 投手2+野手2 の新候補）。
+    // 結果は plan に格納して、commitOffseason で applyUserSelection が適用する。
+    final foreignChanges = prepareForeignChangesForMyTeam(team);
+
     return OffseasonPlan(
       retireCandidateFielders: fielders,
       retireCandidatePitchers: pitchers,
@@ -622,6 +627,8 @@ class TeamRebuilder {
               rookiePitchers, recommendedRetirePitchers.length)
           .map((c) => c.id)
           .toList(),
+      foreignDepartures: foreignChanges.departures,
+      foreignCandidates: foreignChanges.candidates,
     );
   }
 
@@ -645,11 +652,138 @@ class TeamRebuilder {
   /// 引退・新人のペアリングは順序ベース:
   /// `selection.retireFielderIds[i]` を引退させ、`selection.takeFielderIds[i]` を加入させる。
   /// 新人は引退者の背番号と先発／救援ロールを引き継ぐ。
-  /// 自チームに対して外国人選手の強制離脱と新外国人での補充を実行する。
-  /// CPU と同じロジック（[_handleForeignDepartures]）を public 露出したもの。
-  /// 戻り値は離脱した外国人選手の id リスト（UI で「離脱: ○○」と通知する用）。
-  List<String> applyForeignDeparturesToMyTeam(Team team) {
-    return _handleForeignDepartures(team);
+  /// 自チームの外国人入替の **候補生成のみ** を行う（チームには触らない）。
+  /// オフシーズン開始時に [SeasonController.prepareOffseason] から呼ばれて、
+  /// 強制離脱判定と新候補（投手 2 + 野手 2）を OffseasonPlan に格納する。
+  ///
+  /// 実際の入替は [applyUserSelection] で plan + selection を見て [_applyForeignChanges]
+  /// が行う。CPU は依然として [_handleForeignDepartures] で即時自動補充。
+  ({List<Player> departures, List<Player> candidates})
+      prepareForeignChangesForMyTeam(Team team) {
+    final seen = <String>{};
+    final foreigners = <Player>[];
+    for (final p in [
+      ...team.players,
+      ...team.startingRotation,
+      ...team.bullpen,
+      ...team.bench,
+    ]) {
+      if (!p.isForeign) continue;
+      if (!seen.add(p.id)) continue;
+      foreigners.add(p);
+    }
+
+    final departures = <Player>[
+      for (final f in foreigners)
+        if (_random.nextDouble() < foreignDepartureChance) f,
+    ];
+
+    // チームに残る現役外国人と同苗字にならないよう除外して候補を生成。
+    // 候補同士も同苗字にならないよう、生成済み候補の苗字を追加していく。
+    final remainingSurnames = <String>{
+      for (final f in foreigners)
+        if (!departures.contains(f)) foreignSurnameOf(f.name),
+    };
+    final candidates = <Player>[];
+    Set<String> currentSurnames() => {
+          ...remainingSurnames,
+          for (final c in candidates) foreignSurnameOf(c.name),
+        };
+    // 投手 2 + 野手 2
+    for (int i = 0; i < 2; i++) {
+      candidates.add(playerGen.generateForeignPitcher(
+        number: 0,
+        pitcherRole: PitcherRole.starter,
+        teamSurnames: currentSurnames(),
+      ));
+    }
+    for (int i = 0; i < 2; i++) {
+      candidates.add(playerGen.generateForeignFielder(
+        number: 0,
+        teamSurnames: currentSurnames(),
+      ));
+    }
+    return (departures: departures, candidates: candidates);
+  }
+
+  /// 強制離脱 + ユーザー任意カット + 候補から獲得 を team に in-place 適用。
+  /// 投手枠と野手枠で順序ペアリングし、離脱者の背番号・ロールを新候補が引き継ぐ。
+  void _applyForeignChanges(
+    Team team,
+    OffseasonPlan plan,
+    OffseasonSelection selection,
+  ) {
+    // 1. team から外す対象（強制離脱 + ユーザー任意カット）を集める
+    final removeTargets = <Player>[
+      ...plan.foreignDepartures,
+    ];
+    for (final id in selection.foreignReleaseIds) {
+      // 強制離脱と重複しても加算しない
+      if (removeTargets.any((p) => p.id == id)) continue;
+      final p = _findForeignInTeam(team, id);
+      if (p != null) removeTargets.add(p);
+    }
+    final removePitchers = removeTargets.where((p) => p.isPitcher).toList();
+    final removeFielders = removeTargets.where((p) => !p.isPitcher).toList();
+
+    // 2. 獲得候補を投手・野手で分ける
+    final acquirePitchers = <Player>[];
+    final acquireFielders = <Player>[];
+    for (final id in selection.foreignAcquireIds) {
+      final c = plan.foreignCandidates.firstWhere(
+        (p) => p.id == id,
+        orElse: () =>
+            throw ArgumentError('外国人候補に存在しない id: $id'),
+      );
+      if (c.isPitcher) {
+        acquirePitchers.add(c);
+      } else {
+        acquireFielders.add(c);
+      }
+    }
+
+    // 3. 投手枠 / 野手枠の数が一致しているか
+    if (removePitchers.length != acquirePitchers.length) {
+      throw ArgumentError(
+        '外国人投手の入替数が一致していません: '
+        '${removePitchers.length} 離脱 / ${acquirePitchers.length} 獲得',
+      );
+    }
+    if (removeFielders.length != acquireFielders.length) {
+      throw ArgumentError(
+        '外国人野手の入替数が一致していません: '
+        '${removeFielders.length} 離脱 / ${acquireFielders.length} 獲得',
+      );
+    }
+
+    // 4. 順序ペアで in-place 置換（離脱者の背番号を新候補に引き継ぐ）
+    for (int i = 0; i < removePitchers.length; i++) {
+      final old = removePitchers[i];
+      final newP = _withNumberAndRole(
+        acquirePitchers[i],
+        old.number,
+        old.pitcherRole ?? PitcherRole.starter,
+      );
+      _replacePlayerInTeam(team, old, newP);
+    }
+    for (int i = 0; i < removeFielders.length; i++) {
+      final old = removeFielders[i];
+      final newP = _withNumber(acquireFielders[i], old.number);
+      _replacePlayerInTeam(team, old, newP);
+    }
+  }
+
+  /// チーム内（players/rotation/bullpen/bench）から id で外国人を探す。見つからなければ null。
+  Player? _findForeignInTeam(Team team, String id) {
+    for (final p in [
+      ...team.players,
+      ...team.startingRotation,
+      ...team.bullpen,
+      ...team.bench,
+    ]) {
+      if (p.id == id) return p;
+    }
+    return null;
   }
 
   void applyUserSelection(
@@ -667,6 +801,15 @@ class TeamRebuilder {
         '${selection.takePitcherIds.length} take',
       );
     }
+    final foreignError = selection.validateForeign(plan);
+    if (foreignError != null) {
+      throw ArgumentError(foreignError);
+    }
+
+    // 外国人入替を先に処理する（引退・新人の処理に影響しないよう独立で実行）。
+    // 強制離脱 + ユーザー任意カット で対象選手を抽出し、投手枠・野手枠ごとに
+    // 獲得候補とペアリングしてチーム内で in-place 置換する。
+    _applyForeignChanges(team, plan, selection);
 
     Player findFielderRetiree(String id) =>
         plan.retireCandidateFielders.firstWhere(

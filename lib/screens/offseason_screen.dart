@@ -30,6 +30,12 @@ class _OffseasonScreenState extends State<OffseasonScreen> {
   final _takeFielderSelected = <String>{};
   final _takePitcherSelected = <String>{};
 
+  /// 外国人入替の選択状態。
+  /// release: 現役外国人のうちユーザーが任意で切るもの（強制離脱とは別）。
+  /// acquire: 候補から獲得するもの。投手枠と野手枠で個別に整合性を検証する。
+  final _foreignReleaseSelected = <String>{};
+  final _foreignAcquireSelected = <String>{};
+
   /// 次シーズンの試合数（30 / 90 / 150）。デフォルトは前シーズンの試合数。
   late int _nextGamesPerTeam;
 
@@ -49,14 +55,84 @@ class _OffseasonScreenState extends State<OffseasonScreen> {
       _retirePitcherSelected.clear();
       _takeFielderSelected.clear();
       _takePitcherSelected.clear();
+      _foreignReleaseSelected.clear();
+      _foreignAcquireSelected.clear();
     });
   }
 
-  /// 引退と新人の数が両方とも揃っていれば true。
-  /// 0+0 でも valid（自チーム無編集で次シーズンへ）。
+  /// チーム内の現役外国人選手（一意収集、id ベース）。
+  List<Player> get _currentForeigners {
+    final seen = <String>{};
+    final result = <Player>[];
+    final t = widget.controller.myTeam;
+    for (final p in [
+      ...t.players,
+      ...t.startingRotation,
+      ...t.bullpen,
+      ...t.bench,
+    ]) {
+      if (!p.isForeign) continue;
+      if (!seen.add(p.id)) continue;
+      result.add(p);
+    }
+    return result;
+  }
+
+  /// 「強制離脱されるか」の判定（plan.foreignDepartures に含まれているか）。
+  bool _isForcedDeparture(String id) =>
+      _plan.foreignDepartures.any((p) => p.id == id);
+
+  /// 外国人入替の整合性チェック。投手枠 / 野手枠ごとに「離脱+カット = 獲得数」が
+  /// 一致しているか。
+  bool get _foreignValid {
+    int pitcherCount = 0;
+    int fielderCount = 0;
+    // 強制離脱
+    for (final p in _plan.foreignDepartures) {
+      if (p.isPitcher) {
+        pitcherCount++;
+      } else {
+        fielderCount++;
+      }
+    }
+    // ユーザー任意カット
+    for (final id in _foreignReleaseSelected) {
+      final p = _currentForeigners.firstWhere(
+        (x) => x.id == id,
+        orElse: () => Player(id: '', name: '', number: 0, age: 0),
+      );
+      if (p.id.isEmpty) continue;
+      if (p.isPitcher) {
+        pitcherCount++;
+      } else {
+        fielderCount++;
+      }
+    }
+    // 獲得候補
+    int pitcherAcquire = 0;
+    int fielderAcquire = 0;
+    for (final id in _foreignAcquireSelected) {
+      final c = _plan.foreignCandidates.firstWhere(
+        (x) => x.id == id,
+        orElse: () => Player(id: '', name: '', number: 0, age: 0),
+      );
+      if (c.id.isEmpty) continue;
+      if (c.isPitcher) {
+        pitcherAcquire++;
+      } else {
+        fielderAcquire++;
+      }
+    }
+    return pitcherCount == pitcherAcquire && fielderCount == fielderAcquire;
+  }
+
+  /// 引退・新人 + 外国人入替の両方が valid なら true。
+  /// 0+0 でも valid（自チーム無編集で次シーズンへ。ただし強制離脱があると
+  /// その分の獲得が必要）。
   bool get _isValid =>
       _retireFielderSelected.length == _takeFielderSelected.length &&
-      _retirePitcherSelected.length == _takePitcherSelected.length;
+      _retirePitcherSelected.length == _takePitcherSelected.length &&
+      _foreignValid;
 
   /// 「○ 名引退 / ○ 名加入」の説明テキスト
   String get _summaryText {
@@ -64,8 +140,14 @@ class _OffseasonScreenState extends State<OffseasonScreen> {
     final rp = _retirePitcherSelected.length;
     final tf = _takeFielderSelected.length;
     final tp = _takePitcherSelected.length;
+    final forcedDepart = _plan.foreignDepartures.length;
+    final voluntaryRelease = _foreignReleaseSelected.length;
+    final acquire = _foreignAcquireSelected.length;
+    final foreignNote = (forcedDepart + voluntaryRelease + acquire) > 0
+        ? '   外: 離脱$forcedDepart 解除$voluntaryRelease 獲得$acquire'
+        : '';
     return '引退: 野手 $rf 名 / 投手 $rp 名   '
-        '加入: 野手 $tf 名 / 投手 $tp 名';
+        '加入: 野手 $tf 名 / 投手 $tp 名$foreignNote';
   }
 
   Future<void> _confirmAndCommit() async {
@@ -110,11 +192,18 @@ class _OffseasonScreenState extends State<OffseasonScreen> {
       retirePitcherIds: _retirePitcherSelected.toList(),
       takeFielderIds: _takeFielderSelected.toList(),
       takePitcherIds: _takePitcherSelected.toList(),
+      foreignReleaseIds: _foreignReleaseSelected.toList(),
+      foreignAcquireIds: _foreignAcquireSelected.toList(),
     );
 
-    // 引退・新人どちらも 0 件なら selection を渡さない（自チーム無編集）。
-    if (selection.retireFielderIds.isEmpty &&
-        selection.retirePitcherIds.isEmpty) {
+    // 引退・新人 + 外国人入替がすべて 0 件なら selection を渡さない（自チーム無編集）。
+    // 外国人の強制離脱がある場合は plan を渡して acquire を反映させる必要がある。
+    final hasAnyChange = selection.retireFielderIds.isNotEmpty ||
+        selection.retirePitcherIds.isNotEmpty ||
+        selection.foreignReleaseIds.isNotEmpty ||
+        selection.foreignAcquireIds.isNotEmpty ||
+        _plan.foreignDepartures.isNotEmpty;
+    if (!hasAnyChange) {
       c.commitOffseason(gamesPerTeam: _nextGamesPerTeam);
     } else {
       c.commitOffseason(
@@ -239,11 +328,75 @@ class _OffseasonScreenState extends State<OffseasonScreen> {
                   });
                 },
               )),
+          const SizedBox(height: 16),
+          ..._buildForeignSection(),
           const SizedBox(height: 80), // bottom bar との余白
         ],
       ),
       bottomNavigationBar: _buildBottomBar(),
     );
+  }
+
+  /// 外国人入替セクション（現役 2 人 + 新候補 4 人）。
+  /// 強制離脱・任意カットで空いた枠ぶんを候補から獲得する。
+  /// 投手枠/野手枠を別々に整合させる必要があるが、ユーザーには「合計数を合わせる」
+  /// 感覚で操作してもらえるよう、候補側にタイプバッジで投手/野手を明示する。
+  List<Widget> _buildForeignSection() {
+    final foreigners = _currentForeigners;
+    return [
+      _SectionHeader(
+        title: '外国人選手',
+        subtitle: 'シーズン終了時に一部が強制離脱します（運要素）。\n'
+            '残った選手は任意で「契約解除」もできます。空いた枠ぶんを候補から獲得してください。\n'
+            '※ 候補の能力は非表示です。守備位置・年齢・名前だけが事前情報です。',
+      ),
+      // 現在の外国人 (継続/離脱)
+      if (foreigners.isEmpty)
+        const Padding(
+          padding: EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+          child: Text(
+            '現役の外国人選手がいません',
+            style: TextStyle(fontSize: 12, color: Colors.grey),
+          ),
+        )
+      else
+        ...foreigners.map((p) => _ForeignCurrentTile(
+              player: p,
+              controller: widget.controller,
+              forcedDeparture: _isForcedDeparture(p.id),
+              voluntaryRelease: _foreignReleaseSelected.contains(p.id),
+              onToggleRelease: () {
+                setState(() {
+                  if (_foreignReleaseSelected.contains(p.id)) {
+                    _foreignReleaseSelected.remove(p.id);
+                  } else {
+                    _foreignReleaseSelected.add(p.id);
+                  }
+                });
+              },
+            )),
+      const SizedBox(height: 12),
+      const Padding(
+        padding: EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+        child: Text(
+          '新外国人候補',
+          style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+        ),
+      ),
+      ..._plan.foreignCandidates.map((c) => _ForeignCandidateTile(
+            player: c,
+            selected: _foreignAcquireSelected.contains(c.id),
+            onToggle: () {
+              setState(() {
+                if (_foreignAcquireSelected.contains(c.id)) {
+                  _foreignAcquireSelected.remove(c.id);
+                } else {
+                  _foreignAcquireSelected.add(c.id);
+                }
+              });
+            },
+          )),
+    ];
   }
 
   Widget _buildIntro() {
@@ -705,4 +858,201 @@ String _fielderPositions(Player p) {
       if ((f[dp] ?? 0) > 0) dp.shortName,
   ].join('・');
   return positions.isEmpty ? '-' : positions;
+}
+
+/// 現役外国人 1 名の行。
+/// 強制離脱した選手は赤系で `[離脱]` バッジ、任意カット可能な選手は青系で
+/// 「切る」チェックを持つ。当季成績も表示する（ユーザーが「外れか」を判断する材料）。
+class _ForeignCurrentTile extends StatelessWidget {
+  final Player player;
+  final SeasonController controller;
+  final bool forcedDeparture;
+  final bool voluntaryRelease;
+  final VoidCallback onToggleRelease;
+
+  const _ForeignCurrentTile({
+    required this.player,
+    required this.controller,
+    required this.forcedDeparture,
+    required this.voluntaryRelease,
+    required this.onToggleRelease,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final stats = player.isPitcher
+        ? _pitcherSeasonLine(controller, player)
+        : _fielderSeasonLine(controller, player);
+    // 候補側と同じく、契約中の外国人にも「守備位置」を表示する。投手は「投手」、
+    // 野手は守れるポジションを羅列（_fielderPositions ヘルパー）。
+    final positions = player.isPitcher ? '投手' : _fielderPositions(player);
+    final cardColor = forcedDeparture
+        ? Colors.red.shade50
+        : voluntaryRelease
+            ? Colors.orange.shade50
+            : null;
+    return Card(
+      margin: const EdgeInsets.symmetric(vertical: 2),
+      color: cardColor,
+      child: InkWell(
+        onTap: forcedDeparture ? null : onToggleRelease,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+          child: Row(
+            children: [
+              if (forcedDeparture)
+                const _ForeignBadge(label: '離脱', color: Colors.red)
+              else if (voluntaryRelease)
+                const _ForeignBadge(label: '解除', color: Colors.orange)
+              else
+                const _ForeignBadge(label: '継続', color: Colors.teal),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      '#${player.number} ${player.name}',
+                      style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    Text(
+                      '${player.age}歳  $positions  $stats',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: Colors.grey.shade700,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 4),
+              if (forcedDeparture)
+                const Text(
+                  '強制',
+                  style: TextStyle(fontSize: 11, color: Colors.red),
+                )
+              else
+                TextButton(
+                  onPressed: onToggleRelease,
+                  style: TextButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 2,
+                    ),
+                    minimumSize: Size.zero,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                  child: Text(
+                    voluntaryRelease ? '契約解除を取消' : '契約解除',
+                    style: const TextStyle(fontSize: 12),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 新外国人候補 1 名の行。
+/// 能力は完全非表示。守備位置（投手 or 野手の主ポジ）と年齢、苗字（名前）だけが
+/// 事前情報。獲得後に試合結果で「当たり外れ」を判断する賭け体験。
+class _ForeignCandidateTile extends StatelessWidget {
+  final Player player;
+  final bool selected;
+  final VoidCallback onToggle;
+
+  const _ForeignCandidateTile({
+    required this.player,
+    required this.selected,
+    required this.onToggle,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final positions = player.isPitcher ? '投手' : _fielderPositions(player);
+    final typeLabel = player.isPitcher ? '投手' : '野手';
+    return Card(
+      margin: const EdgeInsets.symmetric(vertical: 2),
+      color: selected ? Colors.green.shade50 : null,
+      child: InkWell(
+        onTap: onToggle,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+          child: Row(
+            children: [
+              Checkbox(
+                value: selected,
+                onChanged: (_) => onToggle(),
+                visualDensity: VisualDensity.compact,
+              ),
+              _ForeignBadge(
+                label: typeLabel,
+                color: player.isPitcher ? Colors.deepPurple : Colors.indigo,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      player.name,
+                      style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    Text(
+                      '${player.age}歳  $positions',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: Colors.grey.shade700,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 4),
+              const Text(
+                '助っ人',
+                style: TextStyle(fontSize: 11, color: Colors.brown),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 外国人タイル用の小さなカラーバッジ（離脱 / カット / 継続 / 投手 / 野手）。
+class _ForeignBadge extends StatelessWidget {
+  final String label;
+  final MaterialColor color;
+  const _ForeignBadge({required this.label, required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: color.shade100,
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontSize: 11,
+          fontWeight: FontWeight.bold,
+          color: color.shade800,
+        ),
+      ),
+    );
+  }
 }

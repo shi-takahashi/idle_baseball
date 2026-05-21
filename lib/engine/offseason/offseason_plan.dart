@@ -53,6 +53,15 @@ class OffseasonPlan {
   /// 自動推奨で入団させる投手 id
   final List<String> recommendedTakePitcherIds;
 
+  /// 強制離脱が発動した自チーム外国人（UI で `[離脱]` 表示用）。
+  /// この id の選手は commit 時に必ずチームから除外される。
+  final List<Player> foreignDepartures;
+
+  /// 新外国人候補（投手 2 + 野手 2 が基本）。能力非表示・守備位置 + 年齢 + 苗字のみ
+  /// UI に出して「賭け」体験を演出する。commit で `foreignAcquireIds` に含まれた
+  /// 候補だけがチームに加わる。
+  final List<Player> foreignCandidates;
+
   const OffseasonPlan({
     required this.retireCandidateFielders,
     required this.retireCandidatePitchers,
@@ -62,6 +71,8 @@ class OffseasonPlan {
     required this.recommendedRetirePitcherIds,
     required this.recommendedTakeFielderIds,
     required this.recommendedTakePitcherIds,
+    this.foreignDepartures = const [],
+    this.foreignCandidates = const [],
   });
 
   /// 新人野手 id → タイプ の逆引き
@@ -80,8 +91,9 @@ class OffseasonPlan {
     return null;
   }
 
-  /// 永続化用。引退候補は id のみ保存（既存選手は controller の playerById で復元）、
-  /// 新人候補は Player を丸ごと保存する（commit までは controller に登録されていないため）。
+  /// 永続化用。引退候補・外国人離脱は id のみ保存（既存選手は controller の
+  /// playerById で復元）、新人候補・外国人候補は Player を丸ごと保存する
+  /// （commit までは controller に登録されていないため）。
   Map<String, dynamic> toJson() => {
         'retireFielderIds':
             [for (final p in retireCandidateFielders) p.id],
@@ -99,6 +111,10 @@ class OffseasonPlan {
             List.of(recommendedTakeFielderIds),
         'recommendedTakePitcherIds':
             List.of(recommendedTakePitcherIds),
+        'foreignDepartureIds':
+            [for (final p in foreignDepartures) p.id],
+        'foreignCandidates':
+            [for (final p in foreignCandidates) p.toJson()],
       };
 
   /// JSON からの復元。引退候補の Player は [playerById] で解決する
@@ -109,7 +125,9 @@ class OffseasonPlan {
     Map<String, Player> playerById,
   ) {
     List<Player> resolvePlayers(String key) {
-      final ids = (json[key] as List).cast<String>();
+      // 古いセーブとの後方互換: 新しく追加されたキー（foreignDepartureIds 等）が
+      // 存在しない可能性があるので null フォールバックを入れる。
+      final ids = (json[key] as List? ?? const []).cast<String>();
       return [
         for (final id in ids)
           if (playerById[id] != null) playerById[id]!,
@@ -136,6 +154,11 @@ class OffseasonPlan {
           (json['recommendedTakeFielderIds'] as List).cast<String>(),
       recommendedTakePitcherIds:
           (json['recommendedTakePitcherIds'] as List).cast<String>(),
+      foreignDepartures: resolvePlayers('foreignDepartureIds'),
+      foreignCandidates: [
+        for (final j in (json['foreignCandidates'] as List? ?? const []))
+          Player.fromJson(j as Map<String, dynamic>),
+      ],
     );
   }
 }
@@ -151,14 +174,24 @@ class OffseasonSelection {
   final List<String> takeFielderIds;
   final List<String> takePitcherIds;
 
+  /// ユーザーが任意でカットする外国人選手 id（強制離脱とは別）。
+  /// strong commit 時にチームから外れる。投手も野手も同じリストで持つ
+  /// （実装側で `Player.isPitcher` で振り分ける）。
+  final List<String> foreignReleaseIds;
+
+  /// 候補から獲得する外国人選手 id。strong commit 時にチームに加わる。
+  final List<String> foreignAcquireIds;
+
   const OffseasonSelection({
     required this.retireFielderIds,
     required this.retirePitcherIds,
     required this.takeFielderIds,
     required this.takePitcherIds,
+    this.foreignReleaseIds = const [],
+    this.foreignAcquireIds = const [],
   });
 
-  /// 何も入れ替えない選択（引退・加入 0 件）
+  /// 何も入れ替えない選択（引退・加入 0 件、外国人も全員継続）
   static const empty = OffseasonSelection(
     retireFielderIds: [],
     retirePitcherIds: [],
@@ -166,19 +199,61 @@ class OffseasonSelection {
     takePitcherIds: [],
   );
 
-  /// プランから推奨選択を作る
+  /// プランから推奨選択を作る。
+  /// 外国人入替の推奨はシンプル: 強制離脱した枠だけ候補から自動補充（投手枠は
+  /// 候補の投手から、野手枠は候補の野手から、それぞれ先頭を採用）。
   factory OffseasonSelection.recommended(OffseasonPlan plan) {
+    final acquire = <String>[];
+    final hasDepartingPitcher = plan.foreignDepartures.any((p) => p.isPitcher);
+    final hasDepartingFielder =
+        plan.foreignDepartures.any((p) => !p.isPitcher);
+    if (hasDepartingPitcher) {
+      final c = plan.foreignCandidates.firstWhere(
+        (p) => p.isPitcher,
+        orElse: () => plan.foreignCandidates.isEmpty
+            ? Player(id: '', name: '', number: 0, age: 0)
+            : plan.foreignCandidates.first,
+      );
+      if (c.id.isNotEmpty) acquire.add(c.id);
+    }
+    if (hasDepartingFielder) {
+      final c = plan.foreignCandidates.firstWhere(
+        (p) => !p.isPitcher,
+        orElse: () => plan.foreignCandidates.isEmpty
+            ? Player(id: '', name: '', number: 0, age: 0)
+            : plan.foreignCandidates.first,
+      );
+      if (c.id.isNotEmpty) acquire.add(c.id);
+    }
     return OffseasonSelection(
       retireFielderIds: List.of(plan.recommendedRetireFielderIds),
       retirePitcherIds: List.of(plan.recommendedRetirePitcherIds),
       takeFielderIds: List.of(plan.recommendedTakeFielderIds),
       takePitcherIds: List.of(plan.recommendedTakePitcherIds),
+      foreignAcquireIds: acquire,
     );
   }
 
-  /// バリデーション: 引退と新人の数が一致しているか。
-  /// 一致しないと commitOffseason 内で例外になる。
+  /// バリデーション: 引退と新人の数が一致しているか、外国人の解放と獲得の枠数が
+  /// タイプ別（投手/野手）で一致するか。一致しないと commitOffseason で例外になる。
+  ///
+  /// 外国人バリデーションは [validateForeign] で plan と照らし合わせて行う必要が
+  /// あるため、ここでは引退・新人の整合だけチェック（基本構造の妥当性のみ）。
   bool get isValid =>
       retireFielderIds.length == takeFielderIds.length &&
       retirePitcherIds.length == takePitcherIds.length;
+
+  /// 外国人入替の整合性チェック。「強制離脱 + ユーザー任意カット = 獲得数」を確認。
+  /// タイプ別（投手 / 野手）の数が合っているかは TeamRebuilder.applyUserSelection
+  /// 側でチームの実状況と照らし合わせて検証する。
+  String? validateForeign(OffseasonPlan plan) {
+    final totalDepart = plan.foreignDepartures.length;
+    final totalRelease = foreignReleaseIds.length;
+    final totalAcquire = foreignAcquireIds.length;
+    if (totalAcquire != totalDepart + totalRelease) {
+      return '外国人の入替数が一致していません'
+          '（離脱 $totalDepart + カット $totalRelease ≠ 獲得 $totalAcquire）';
+    }
+    return null;
+  }
 }

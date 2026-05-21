@@ -936,11 +936,12 @@ class SeasonController {
       );
       rebuilder.rebuildCpuTeams(teams, myTeamId);
 
-      // 3. 自チーム: 外国人の強制離脱と新外国人での補充（CPU と同じ確率で発動）。
-      //    日本人選手の引退・新人加入はユーザー選択ベースで別途行う。
-      rebuilder.applyForeignDeparturesToMyTeam(myTeam);
-
-      // 4. 自チーム: ユーザー選択を反映（プランが渡されたときのみ）
+      // 3. 自チーム: ユーザー選択を反映（プランが渡されたときのみ）。
+      //    外国人の強制離脱判定と新候補生成は prepareOffseason 内で済んでおり、
+      //    plan.foreignDepartures / plan.foreignCandidates + ユーザー選択を
+      //    applyUserSelection が一括で適用する。プラン無しケース（offseason 自動
+      //    進行で UI を経由しない）では外国人入替は発生しない（既存挙動と同じく
+      //    現状維持）。
       if (plan != null && selection != null) {
         rebuilder.applyUserSelection(
           myTeam,
