@@ -118,33 +118,89 @@ class StrategyScreenState extends State<StrategyScreen>
 
   /// 既存の作戦 or オート提案からフォームを初期化。
   /// 「元に戻す」が参照する初期スナップショットも同時に更新する。
+  ///
+  /// **Day 1 で前年の編成を継承する分岐**: 保存済み作戦が無く、エンジンに
+  /// 前年最終スタメン snapshot が残っていれば、その snapshot から `_Slot` を
+  /// 組み立てる。引退・移籍で抜けた選手は `player: null`（空白スロット）として
+  /// 残し、ユーザーに UI で補完してもらう（試合開始時の既存バリデーションが
+  /// 未補完を弾く）。同様にベンチ入り野手・投手も引退者を除外して足りない状態で
+  /// 起動し、ユーザーが補完する流れ。
   void _loadFromCurrent() {
-    // 保存済み作戦があればそれ、無ければオート提案（どちらも当日ベンチ入りを含む）。
-    final src = widget.controller.myStrategy ??
-        widget.controller.suggestedStrategyForMyTeam();
-    final List<_Slot> next;
-    if (src == null) {
-      next = List.generate(9, (_) => _Slot(id: _newSlotId()));
-      _activeBenchIds = {};
-      _activeBullpenIds = {};
+    final c = widget.controller;
+    if (c.myStrategy == null &&
+        c.currentDay == 0 &&
+        c.previousLineupSnapshot != null) {
+      _loadFromPreviousSnapshot();
     } else {
-      next = [
-        for (int i = 0; i < 9; i++)
-          _Slot(
-            id: _newSlotId(),
-            player: src.lineup[i],
-            position: _findPositionForPlayer(src.lineup[i], src.alignment),
-          ),
-      ];
-      _activeBenchIds = src.activeBench.map((p) => p.id).toSet();
-      _activeBullpenIds = src.activeBullpen.map((p) => p.id).toSet();
+      _loadFromStrategyOrAuto();
     }
-    _slots = next;
     // 「元に戻す」用のスナップショット。_Slot は immutable なのでシャローコピーで足りる。
-    _initialSlots = List.of(next);
+    _initialSlots = List.of(_slots);
     _initialActiveBenchIds = Set.of(_activeBenchIds);
     _initialActiveBullpenIds = Set.of(_activeBullpenIds);
-    _loadedForDay = widget.controller.currentDay;
+    _loadedForDay = c.currentDay;
+  }
+
+  /// 通常パス: 保存済み作戦 → オート提案の順で読み込む。
+  void _loadFromStrategyOrAuto() {
+    final src = widget.controller.myStrategy ??
+        widget.controller.suggestedStrategyForMyTeam();
+    if (src == null) {
+      _slots = List.generate(9, (_) => _Slot(id: _newSlotId()));
+      _activeBenchIds = {};
+      _activeBullpenIds = {};
+      return;
+    }
+    _slots = [
+      for (int i = 0; i < 9; i++)
+        _Slot(
+          id: _newSlotId(),
+          player: src.lineup[i],
+          position: _findPositionForPlayer(src.lineup[i], src.alignment),
+        ),
+    ];
+    _activeBenchIds = src.activeBench.map((p) => p.id).toSet();
+    _activeBullpenIds = src.activeBullpen.map((p) => p.id).toSet();
+  }
+
+  /// Day 1 限定: 前年最終 snapshot から `_Slot` を組み立てる。
+  /// 引退者は `player: null`（守備位置だけ保持して空白スロット表示）にする。
+  /// ベンチ入りも ID 解決して現役のみ残し、引退者ぶんは「不足」状態のまま。
+  void _loadFromPreviousSnapshot() {
+    final c = widget.controller;
+    final snapshot = c.previousLineupSnapshot!;
+    _slots = [
+      for (int i = 0; i < snapshot.length; i++)
+        _Slot(
+          id: _newSlotId(),
+          // 投手スロットは中4日ゲートのため毎日選び直す必要があり、前年最終の
+          // 投手をそのまま埋めても不適切。null（未選択）にしてユーザーに選ばせる
+          // のも 1 案だが、オート提案の SP を初期値として入れた方が操作量が
+          // 少なくなるので、ここでは中立提案を流用する。
+          player: snapshot[i].position == FieldPosition.pitcher
+              ? _suggestedStarter()
+              : c.findPlayerById(snapshot[i].playerId),
+          position: snapshot[i].position,
+        ),
+    ];
+    final benchIds = c.previousActiveBenchIds ?? const [];
+    _activeBenchIds = {
+      for (final id in benchIds)
+        if (c.findPlayerById(id) != null) id,
+    };
+    final bullpenIds = c.previousActiveBullpenIds ?? const [];
+    _activeBullpenIds = {
+      for (final id in bullpenIds)
+        if (c.findPlayerById(id) != null) id,
+    };
+  }
+
+  /// 中立提案の SP（投手スロットの初期値）。
+  /// `suggestedStrategyForMyTeam` の中で選ばれた投手をそのまま採用する。
+  Player? _suggestedStarter() {
+    final src = widget.controller.suggestedStrategyForMyTeam();
+    if (src == null) return null;
+    return src.alignment[FieldPosition.pitcher];
   }
 
   FieldPosition? _findPositionForPlayer(
