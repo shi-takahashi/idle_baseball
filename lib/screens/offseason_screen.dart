@@ -21,8 +21,10 @@ class OffseasonScreen extends StatefulWidget {
   State<OffseasonScreen> createState() => _OffseasonScreenState();
 }
 
-class _OffseasonScreenState extends State<OffseasonScreen> {
+class _OffseasonScreenState extends State<OffseasonScreen>
+    with SingleTickerProviderStateMixin {
   late final OffseasonPlan _plan;
+  late final TabController _tabController;
 
   /// 各候補の選択状態（id → 選択中か）
   final _retireFielderSelected = <String>{};
@@ -44,9 +46,16 @@ class _OffseasonScreenState extends State<OffseasonScreen> {
     super.initState();
     _plan = widget.controller.prepareOffseason();
     _nextGamesPerTeam = widget.controller.gamesPerTeam;
+    _tabController = TabController(length: 2, vsync: this);
     // 自動推奨はパラメータ非表示方針（SPEC §コンセプト）に反する（エンジンが
     // 能力で「引退すべき」を提示すると能力バレになる）ため適用しない。
     // ユーザーは年齢と当季成績を見て自分で選ぶ。
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
   }
 
   void _clearAll() {
@@ -82,17 +91,23 @@ class _OffseasonScreenState extends State<OffseasonScreen> {
   bool _isForcedDeparture(String id) =>
       _plan.foreignDepartures.any((p) => p.id == id);
 
-  /// 外国人入替の整合性チェック。投手枠 / 野手枠ごとに「離脱+カット = 獲得数」が
-  /// 一致しているか。
+  /// 外国人入替の整合性チェック。投手枠 / 野手枠ごとに
+  /// 「現状 - 離脱 - カット + 獲得 = 想定枠（1 / 1）」を満たすか。
+  /// 過去シーズンで何らかの経緯で空席ができている場合も、獲得だけで空席を
+  /// 埋められるよう「離脱より獲得が多い」状態を許容する。
   bool get _foreignValid {
-    int pitcherCount = 0;
-    int fielderCount = 0;
+    final currentPitchers =
+        _currentForeigners.where((p) => p.isPitcher).length;
+    final currentFielders =
+        _currentForeigners.where((p) => !p.isPitcher).length;
+    int pitcherDepart = 0;
+    int fielderDepart = 0;
     // 強制離脱
     for (final p in _plan.foreignDepartures) {
       if (p.isPitcher) {
-        pitcherCount++;
+        pitcherDepart++;
       } else {
-        fielderCount++;
+        fielderDepart++;
       }
     }
     // ユーザー任意カット
@@ -103,9 +118,9 @@ class _OffseasonScreenState extends State<OffseasonScreen> {
       );
       if (p.id.isEmpty) continue;
       if (p.isPitcher) {
-        pitcherCount++;
+        pitcherDepart++;
       } else {
-        fielderCount++;
+        fielderDepart++;
       }
     }
     // 獲得候補
@@ -123,7 +138,11 @@ class _OffseasonScreenState extends State<OffseasonScreen> {
         fielderAcquire++;
       }
     }
-    return pitcherCount == pitcherAcquire && fielderCount == fielderAcquire;
+    const targetPitchers = 1; // TeamRebuilder.targetForeignPitchers と同じ
+    const targetFielders = 1;
+    return (currentPitchers - pitcherDepart + pitcherAcquire) ==
+            targetPitchers &&
+        (currentFielders - fielderDepart + fielderAcquire) == targetFielders;
   }
 
   /// 引退・新人 + 外国人入替の両方が valid なら true。
@@ -133,6 +152,22 @@ class _OffseasonScreenState extends State<OffseasonScreen> {
       _retireFielderSelected.length == _takeFielderSelected.length &&
       _retirePitcherSelected.length == _takePitcherSelected.length &&
       _foreignValid;
+
+  /// _isValid が false の時、ボトムバーに出すエラー文。
+  /// 何が原因か（野手の人数 / 投手の人数 / 外国人枠）を伝える。
+  String get _validationMessage {
+    final issues = <String>[];
+    if (_retireFielderSelected.length != _takeFielderSelected.length) {
+      issues.add('野手の引退と新人の人数');
+    }
+    if (_retirePitcherSelected.length != _takePitcherSelected.length) {
+      issues.add('投手の引退と新人の人数');
+    }
+    if (!_foreignValid) {
+      issues.add('外国人の枠');
+    }
+    return '${issues.join("、")}を揃えてください';
+  }
 
   /// 「○ 名引退 / ○ 名加入」の説明テキスト
   String get _summaryText {
@@ -230,135 +265,198 @@ class _OffseasonScreenState extends State<OffseasonScreen> {
           ),
         ],
       ),
-      body: ListView(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      // 縦長問題への対処として、引退/新人/外国人を「野手 / 投手 / 外国人」
+      // タブに分けた。引退と新人は同じタブ内に並べて人数を揃える操作を一括化。
+      // イントロカード（試合数選択など）はタブ外に出して常時アクセス可能にする。
+      body: Column(
         children: [
-          _buildIntro(),
-          const SizedBox(height: 16),
-          _SectionHeader(
-            title: '引退する野手',
-            subtitle:
-                '年齢と今シーズンの成績を見て選んでください。引退人数 = 加入人数になるよう選択してください。',
+          Padding(
+            padding:
+                const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            child: _buildIntro(),
           ),
-          // engine 側は能力低下スコア順で並ぶが、それ自体が能力ヒントになるため
-          // 表示は背番号順に並べ直す（他の画面と一貫）。
-          ...(_plan.retireCandidateFielders.toList()
-                ..sort((a, b) => a.number.compareTo(b.number)))
-              .map((p) => _RetireFielderTile(
-                player: p,
-                controller: widget.controller,
-                selected: _retireFielderSelected.contains(p.id),
-                onToggle: () {
-                  setState(() {
-                    if (_retireFielderSelected.contains(p.id)) {
-                      _retireFielderSelected.remove(p.id);
-                    } else {
-                      if (_retireFielderSelected.length >= 4) return;
-                      _retireFielderSelected.add(p.id);
-                    }
-                  });
-                },
-              )),
-          const SizedBox(height: 16),
-          _SectionHeader(
-            title: '引退する投手',
-            subtitle:
-                '年齢と今シーズンの成績を見て選んでください。先発・救援どちらも候補に含まれます。',
+          TabBar(
+            controller: _tabController,
+            labelColor: Theme.of(context).colorScheme.primary,
+            tabs: const [
+              Tab(text: '野手'),
+              Tab(text: '投手'),
+            ],
           ),
-          ...(_plan.retireCandidatePitchers.toList()
-                ..sort((a, b) => a.number.compareTo(b.number)))
-              .map((p) => _RetirePitcherTile(
-                player: p,
-                controller: widget.controller,
-                isStarter: widget.controller.myTeam.startingRotation
-                    .any((sp) => sp.id == p.id),
-                selected: _retirePitcherSelected.contains(p.id),
-                onToggle: () {
-                  setState(() {
-                    if (_retirePitcherSelected.contains(p.id)) {
-                      _retirePitcherSelected.remove(p.id);
-                    } else {
-                      if (_retirePitcherSelected.length >= 4) return;
-                      _retirePitcherSelected.add(p.id);
-                    }
-                  });
-                },
-              )),
-          const SizedBox(height: 16),
-          _SectionHeader(
-            title: '入団する新人野手',
-            subtitle: '${_plan.rookieFielderCandidates.length} 名の候補から、'
-                '引退野手と同じ人数だけ選んでください。\n'
-                '※ 能力表示はスカウトの大雑把な評価です。'
-                '実際にどう活躍するかは入団後に確かめてください。',
+          Expanded(
+            child: TabBarView(
+              controller: _tabController,
+              children: [
+                _buildFielderTab(),
+                _buildPitcherTab(),
+              ],
+            ),
           ),
-          ..._plan.rookieFielderCandidates.map((c) => _RookieFielderTile(
-                candidate: c,
-                selected: _takeFielderSelected.contains(c.id),
-                onToggle: () {
-                  setState(() {
-                    if (_takeFielderSelected.contains(c.id)) {
-                      _takeFielderSelected.remove(c.id);
-                    } else {
-                      if (_takeFielderSelected.length >= 4) return;
-                      _takeFielderSelected.add(c.id);
-                    }
-                  });
-                },
-              )),
-          const SizedBox(height: 16),
-          _SectionHeader(
-            title: '入団する新人投手',
-            subtitle: '${_plan.rookiePitcherCandidates.length} 名の候補から、'
-                '引退投手と同じ人数だけ選んでください。\n'
-                '※ 能力表示はスカウトの大雑把な評価です。'
-                '実際にどう活躍するかは入団後に確かめてください。',
-          ),
-          ..._plan.rookiePitcherCandidates.map((c) => _RookiePitcherTile(
-                candidate: c,
-                selected: _takePitcherSelected.contains(c.id),
-                onToggle: () {
-                  setState(() {
-                    if (_takePitcherSelected.contains(c.id)) {
-                      _takePitcherSelected.remove(c.id);
-                    } else {
-                      if (_takePitcherSelected.length >= 4) return;
-                      _takePitcherSelected.add(c.id);
-                    }
-                  });
-                },
-              )),
-          const SizedBox(height: 16),
-          ..._buildForeignSection(),
-          const SizedBox(height: 80), // bottom bar との余白
         ],
       ),
       bottomNavigationBar: _buildBottomBar(),
     );
   }
 
-  /// 外国人入替セクション（現役 2 人 + 新候補 4 人）。
-  /// 強制離脱・任意カットで空いた枠ぶんを候補から獲得する。
-  /// 投手枠/野手枠を別々に整合させる必要があるが、ユーザーには「合計数を合わせる」
-  /// 感覚で操作してもらえるよう、候補側にタイプバッジで投手/野手を明示する。
-  List<Widget> _buildForeignSection() {
-    final foreigners = _currentForeigners;
+  /// 野手タブ: 引退候補（全選手）と新人野手候補を縦に並べる。
+  /// 同じタブ内に置くことで「引退人数 = 加入人数」を揃える操作が一画面で完結する。
+  Widget _buildFielderTab() {
+    return ListView(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      children: [
+        _SectionHeader(
+          title: '引退する野手',
+          subtitle:
+              '年齢と今シーズンの成績を見て選んでください。引退人数 = 加入人数になるよう選択してください。',
+        ),
+        // engine 側は能力低下スコア順で並ぶが、それ自体が能力ヒントになるため
+        // 表示は背番号順に並べ直す（他の画面と一貫）。
+        ...(_plan.retireCandidateFielders.toList()
+              ..sort((a, b) => a.number.compareTo(b.number)))
+            .map((p) => _RetireFielderTile(
+                  player: p,
+                  controller: widget.controller,
+                  selected: _retireFielderSelected.contains(p.id),
+                  onToggle: () {
+                    setState(() {
+                      if (_retireFielderSelected.contains(p.id)) {
+                        _retireFielderSelected.remove(p.id);
+                      } else {
+                        if (_retireFielderSelected.length >= 4) return;
+                        _retireFielderSelected.add(p.id);
+                      }
+                    });
+                  },
+                )),
+        const SizedBox(height: 16),
+        _SectionHeader(
+          title: '入団する新人野手',
+          subtitle: '${_plan.rookieFielderCandidates.length} 名の候補から、'
+              '引退野手と同じ人数だけ選んでください。\n'
+              '※ 能力表示はスカウトの大雑把な評価です。'
+              '実際にどう活躍するかは入団後に確かめてください。',
+        ),
+        ..._plan.rookieFielderCandidates.map((c) => _RookieFielderTile(
+              candidate: c,
+              selected: _takeFielderSelected.contains(c.id),
+              onToggle: () {
+                setState(() {
+                  if (_takeFielderSelected.contains(c.id)) {
+                    _takeFielderSelected.remove(c.id);
+                  } else {
+                    if (_takeFielderSelected.length >= 4) return;
+                    _takeFielderSelected.add(c.id);
+                  }
+                });
+              },
+            )),
+        const SizedBox(height: 16),
+        ..._buildForeignSectionFor(isPitcher: false),
+        const SizedBox(height: 80), // bottom bar との余白
+      ],
+    );
+  }
+
+  /// 投手タブ: 引退候補（全選手）と新人投手候補を縦に並べる。
+  Widget _buildPitcherTab() {
+    return ListView(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      children: [
+        _SectionHeader(
+          title: '引退する投手',
+          subtitle:
+              '年齢と今シーズンの成績を見て選んでください。先発・救援どちらも候補に含まれます。',
+        ),
+        ...(_plan.retireCandidatePitchers.toList()
+              ..sort((a, b) => a.number.compareTo(b.number)))
+            .map((p) => _RetirePitcherTile(
+                  player: p,
+                  controller: widget.controller,
+                  isStarter: widget.controller.myTeam.startingRotation
+                      .any((sp) => sp.id == p.id),
+                  selected: _retirePitcherSelected.contains(p.id),
+                  onToggle: () {
+                    setState(() {
+                      if (_retirePitcherSelected.contains(p.id)) {
+                        _retirePitcherSelected.remove(p.id);
+                      } else {
+                        if (_retirePitcherSelected.length >= 4) return;
+                        _retirePitcherSelected.add(p.id);
+                      }
+                    });
+                  },
+                )),
+        const SizedBox(height: 16),
+        _SectionHeader(
+          title: '入団する新人投手',
+          subtitle: '${_plan.rookiePitcherCandidates.length} 名の候補から、'
+              '引退投手と同じ人数だけ選んでください。\n'
+              '※ 能力表示はスカウトの大雑把な評価です。'
+              '実際にどう活躍するかは入団後に確かめてください。',
+        ),
+        ..._plan.rookiePitcherCandidates.map((c) => _RookiePitcherTile(
+              candidate: c,
+              selected: _takePitcherSelected.contains(c.id),
+              onToggle: () {
+                setState(() {
+                  if (_takePitcherSelected.contains(c.id)) {
+                    _takePitcherSelected.remove(c.id);
+                  } else {
+                    if (_takePitcherSelected.length >= 4) return;
+                    _takePitcherSelected.add(c.id);
+                  }
+                });
+              },
+            )),
+        const SizedBox(height: 16),
+        ..._buildForeignSectionFor(isPitcher: true),
+        const SizedBox(height: 80),
+      ],
+    );
+  }
+
+  /// 空席がある時だけ表示するオレンジの警告チップ。埋まっていれば何も出さない。
+  Widget _buildForeignSlotStatusFor({required bool isPitcher}) {
+    final hasCurrent =
+        _currentForeigners.any((p) => p.isPitcher == isPitcher);
+    if (hasCurrent) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+        decoration: BoxDecoration(
+          color: Colors.orange.shade50,
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(color: Colors.orange.shade300),
+        ),
+        child: Text(
+          '空席があります。候補から獲得してください。',
+          style: TextStyle(
+            fontSize: 12,
+            color: Colors.orange.shade900,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// タブ内の外国人セクション。投手タブには投手枠、野手タブには野手枠だけが出る。
+  List<Widget> _buildForeignSectionFor({required bool isPitcher}) {
+    final foreigners =
+        _currentForeigners.where((p) => p.isPitcher == isPitcher).toList();
+    final candidates =
+        _plan.foreignCandidates.where((c) => c.isPitcher == isPitcher).toList();
+    final label = isPitcher ? '外国人投手' : '外国人野手';
     return [
       _SectionHeader(
-        title: '外国人選手',
-        subtitle: 'シーズン終了時に一部が強制離脱します（運要素）。\n'
-            '残った選手は任意で「契約解除」もできます。空いた枠ぶんを候補から獲得してください。\n'
-            '※ 候補の能力は非表示です。守備位置・年齢・名前だけが事前情報です。',
+        title: label,
+        subtitle: 'シーズン終了時に強制離脱することがあります。\n'
+            '残った選手は任意で「契約解除」もできます。',
       ),
-      // 現在の外国人 (継続/離脱)
+      _buildForeignSlotStatusFor(isPitcher: isPitcher),
       if (foreigners.isEmpty)
-        const Padding(
-          padding: EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-          child: Text(
-            '現役の外国人選手がいません',
-            style: TextStyle(fontSize: 12, color: Colors.grey),
-          ),
-        )
+        const SizedBox.shrink()
       else
         ...foreigners.map((p) => _ForeignCurrentTile(
               player: p,
@@ -375,15 +473,18 @@ class _OffseasonScreenState extends State<OffseasonScreen> {
                 });
               },
             )),
-      const SizedBox(height: 12),
-      const Padding(
-        padding: EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+      const SizedBox(height: 8),
+      Padding(
+        padding: const EdgeInsets.only(left: 4, bottom: 4),
         child: Text(
-          '新外国人候補',
-          style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+          '新候補',
+          style: TextStyle(
+            fontSize: 12,
+            color: Colors.grey.shade700,
+          ),
         ),
       ),
-      ..._plan.foreignCandidates.map((c) => _ForeignCandidateTile(
+      ...candidates.map((c) => _ForeignCandidateTile(
             player: c,
             selected: _foreignAcquireSelected.contains(c.id),
             onToggle: () {
@@ -464,7 +565,7 @@ class _OffseasonScreenState extends State<OffseasonScreen> {
                   ),
                   if (!valid)
                     Text(
-                      '引退と新人の人数を揃えてください',
+                      _validationMessage,
                       style: TextStyle(
                         fontSize: 11,
                         color: Colors.red.shade700,
@@ -544,7 +645,7 @@ class _RetireFielderTile extends StatelessWidget {
       selected: selected,
       onTap: onToggle,
       title: '#${player.number} ${player.name}',
-      subtitle: '${player.age}歳  $stats',
+      subtitle: '${player.age}歳 ${_handednessLabel(player)}  $stats',
       trailing: positions,
     );
   }
@@ -576,7 +677,7 @@ class _RetirePitcherTile extends StatelessWidget {
       selected: selected,
       onTap: onToggle,
       title: '#${player.number} ${player.name}',
-      subtitle: '${player.age}歳  $stats',
+      subtitle: '${player.age}歳 ${_handednessLabel(player)}  $stats',
       trailing: role,
     );
   }
@@ -604,7 +705,7 @@ class _RookieFielderTile extends StatelessWidget {
       onTap: onToggle,
       badge: candidate.type,
       title: p.name,
-      subtitle: '${p.age}歳  $stats',
+      subtitle: '${p.age}歳 ${_handednessLabel(p)}  $stats',
       trailing: positions,
     );
   }
@@ -633,7 +734,7 @@ class _RookiePitcherTile extends StatelessWidget {
       onTap: onToggle,
       badge: candidate.type,
       title: p.name,
-      subtitle: '${p.age}歳  $stats',
+      subtitle: '${p.age}歳 ${_handednessLabel(p)}  $stats',
       trailing: '新人',
     );
   }
@@ -848,6 +949,22 @@ String _pitcherSeasonLine(SeasonController c, Player p) {
   return '登${s.games} 防率$era 勝${s.wins} 負${s.losses} 回${s.inningsPitchedDisplay}';
 }
 
+/// 利き手 / 打席のラベル。野手は「打席（右/左/両）」、投手は「投げる手（右/左）」。
+/// オフシーズン編成画面のタイル subtitle で年齢の隣に表示する。
+String _handednessLabel(Player p) {
+  final h = p.isPitcher ? p.throws : p.bats;
+  switch (h) {
+    case Handedness.right:
+      return '右';
+    case Handedness.left:
+      return '左';
+    case Handedness.both:
+      return '両';
+    case null:
+      return '-';
+  }
+}
+
 /// 野手が守れるポジション（位置名のみ。守備力の数値は隠す: SPEC §2.0）。
 /// 並び順は enum 順（捕→一→二→三→遊→外）に統一し、選手ごとの揺らぎを排除する。
 String _fielderPositions(Player p) {
@@ -920,7 +1037,7 @@ class _ForeignCurrentTile extends StatelessWidget {
                       ),
                     ),
                     Text(
-                      '${player.age}歳  $positions  $stats',
+                      '${player.age}歳 ${_handednessLabel(player)}  $positions  $stats',
                       style: TextStyle(
                         fontSize: 11,
                         color: Colors.grey.shade700,
@@ -1009,7 +1126,7 @@ class _ForeignCandidateTile extends StatelessWidget {
                       ),
                     ),
                     Text(
-                      '${player.age}歳  $positions',
+                      '${player.age}歳 ${_handednessLabel(player)}  $positions',
                       style: TextStyle(
                         fontSize: 11,
                         color: Colors.grey.shade700,

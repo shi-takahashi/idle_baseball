@@ -731,10 +731,11 @@ class PlayerGenerator {
     return _r.normalInt(mean: mean, sd: 1.6);
   }
 
-  /// 外国人選手の年齢分布: mean 28 / sd 5 / 22〜40。
-  /// NPB の外国人選手は経験豊富な中堅〜ベテランが多いことを反映。
+  /// 新規獲得時の外国人選手の年齢分布: mean 27 / sd 3.5 / 22〜35。
+  /// NPB の外国人選手獲得は中堅（27〜30 歳）中心で、35 歳以上の新規獲得は
+  /// 実例が稀（チーム所属で加齢して 35+ になるのは別問題、これは初期生成のみ）。
   int _foreignAge() {
-    return _r.normalInt(mean: 28.0, sd: 5.0, min: 22, max: 40);
+    return _r.normalInt(mean: 27.0, sd: 3.5, min: 22, max: 35);
   }
 
   /// 外国人野手の主ポジションを抽選（捕手なし、一塁・外野中心）。

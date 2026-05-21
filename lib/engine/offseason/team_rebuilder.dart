@@ -24,6 +24,12 @@ class TeamRebuilder {
   /// 1/5 = キャリア平均 5 年で離脱する目安。優秀な選手も含めて確率は一律。
   static const double foreignDepartureChance = 0.20;
 
+  /// 1 チームに常時配置する外国人選手の理想枠（SPEC §4.1）。
+  /// 投手 1（先発ローテ）+ 野手 1（控え）= 計 2 名。
+  /// `_applyForeignChanges` で「現状 - 離脱 + 獲得 = この枠数」を満たす整合性を要求する。
+  static const int targetForeignPitchers = 1;
+  static const int targetForeignFielders = 1;
+
   /// 引退候補に入る最低年齢（これ未満は能力が低くても引退しない）
   static const int minRetirementAge = 26;
 
@@ -742,34 +748,97 @@ class TeamRebuilder {
       }
     }
 
-    // 3. 投手枠 / 野手枠の数が一致しているか
-    if (removePitchers.length != acquirePitchers.length) {
+    // 3. 投手枠 / 野手枠が想定枠数（[targetForeignPitchers] / [targetForeignFielders]）
+    //    を満たしているか（現状 - 離脱 + 獲得 = 想定）。離脱より獲得が多いケース
+    //    （= チームに既に空席があって新規追加でそれを埋める）も許容する。
+    final currentForeigners = [
+      for (final p in [
+        ...team.players,
+        ...team.startingRotation,
+        ...team.bullpen,
+        ...team.bench,
+      ])
+        if (p.isForeign) p,
+    ];
+    final currentPitchers =
+        currentForeigners.where((p) => p.isPitcher).length;
+    final currentFielders =
+        currentForeigners.where((p) => !p.isPitcher).length;
+    final newPitchers =
+        currentPitchers - removePitchers.length + acquirePitchers.length;
+    final newFielders =
+        currentFielders - removeFielders.length + acquireFielders.length;
+    if (newPitchers != targetForeignPitchers) {
       throw ArgumentError(
-        '外国人投手の入替数が一致していません: '
-        '${removePitchers.length} 離脱 / ${acquirePitchers.length} 獲得',
+        '外国人投手の枠が合いません: '
+        '現状$currentPitchers - 離脱${removePitchers.length} '
+        '+ 獲得${acquirePitchers.length} = $newPitchers ≠ $targetForeignPitchers',
       );
     }
-    if (removeFielders.length != acquireFielders.length) {
+    if (newFielders != targetForeignFielders) {
       throw ArgumentError(
-        '外国人野手の入替数が一致していません: '
-        '${removeFielders.length} 離脱 / ${acquireFielders.length} 獲得',
+        '外国人野手の枠が合いません: '
+        '現状$currentFielders - 離脱${removeFielders.length} '
+        '+ 獲得${acquireFielders.length} = $newFielders ≠ $targetForeignFielders',
       );
     }
 
-    // 4. 順序ペアで in-place 置換（離脱者の背番号を新候補に引き継ぐ）
-    for (int i = 0; i < removePitchers.length; i++) {
-      final old = removePitchers[i];
-      final newP = _withNumberAndRole(
-        acquirePitchers[i],
-        old.number,
-        old.pitcherRole ?? PitcherRole.starter,
-      );
-      _replacePlayerInTeam(team, old, newP);
+    // 4. ペアできるぶん（離脱と獲得が揃っているぶん）は in-place 置換で背番号と
+    //    ロールを引き継ぐ。ペアできない獲得（離脱より獲得が多い）はチームの
+    //    該当リストに新規追加して空席を埋める。
+    final usedNumbers = <int>{
+      for (final p in [
+        ...team.players,
+        ...team.startingRotation,
+        ...team.bullpen,
+        ...team.bench,
+      ])
+        p.number,
+    };
+    int allocateNumber() {
+      for (int n = 1; n <= 40; n++) {
+        if (!usedNumbers.contains(n)) {
+          usedNumbers.add(n);
+          return n;
+        }
+      }
+      int n = 41;
+      while (usedNumbers.contains(n)) {
+        n++;
+      }
+      usedNumbers.add(n);
+      return n;
     }
-    for (int i = 0; i < removeFielders.length; i++) {
-      final old = removeFielders[i];
-      final newP = _withNumber(acquireFielders[i], old.number);
-      _replacePlayerInTeam(team, old, newP);
+
+    for (int i = 0; i < acquirePitchers.length; i++) {
+      if (i < removePitchers.length) {
+        final old = removePitchers[i];
+        final newP = _withNumberAndRole(
+          acquirePitchers[i],
+          old.number,
+          old.pitcherRole ?? PitcherRole.starter,
+        );
+        _replacePlayerInTeam(team, old, newP);
+      } else {
+        // 空席に新規追加（先発ローテに加える）
+        final newP = _withNumberAndRole(
+          acquirePitchers[i],
+          allocateNumber(),
+          PitcherRole.starter,
+        );
+        team.startingRotation.add(newP);
+      }
+    }
+    for (int i = 0; i < acquireFielders.length; i++) {
+      if (i < removeFielders.length) {
+        final old = removeFielders[i];
+        final newP = _withNumber(acquireFielders[i], old.number);
+        _replacePlayerInTeam(team, old, newP);
+      } else {
+        // 空席に新規追加（ベンチに加える）
+        final newP = _withNumber(acquireFielders[i], allocateNumber());
+        team.bench.add(newP);
+      }
     }
   }
 

@@ -243,16 +243,17 @@ class OffseasonSelection {
       retireFielderIds.length == takeFielderIds.length &&
       retirePitcherIds.length == takePitcherIds.length;
 
-  /// 外国人入替の整合性チェック。「強制離脱 + ユーザー任意カット = 獲得数」を確認。
-  /// タイプ別（投手 / 野手）の数が合っているかは TeamRebuilder.applyUserSelection
-  /// 側でチームの実状況と照らし合わせて検証する。
+  /// 外国人入替の事前バリデーション。
+  /// 詳細な「枠数が合っているか」は [TeamRebuilder.applyUserSelection] 内で
+  /// チームの現状（空席含む）と照らし合わせて検証する。ここでは「候補に存在
+  /// しない id を獲得しようとしていないか」など、Plan 範囲内で可能な妥当性
+  /// チェックだけ行う。
   String? validateForeign(OffseasonPlan plan) {
-    final totalDepart = plan.foreignDepartures.length;
-    final totalRelease = foreignReleaseIds.length;
-    final totalAcquire = foreignAcquireIds.length;
-    if (totalAcquire != totalDepart + totalRelease) {
-      return '外国人の入替数が一致していません'
-          '（離脱 $totalDepart + カット $totalRelease ≠ 獲得 $totalAcquire）';
+    final candidateIds = {for (final c in plan.foreignCandidates) c.id};
+    for (final id in foreignAcquireIds) {
+      if (!candidateIds.contains(id)) {
+        return '外国人候補に存在しない id: $id';
+      }
     }
     return null;
   }
