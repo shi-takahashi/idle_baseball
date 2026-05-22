@@ -780,26 +780,35 @@ class PlayerGenerator {
   }
 
   /// 外国人野手を生成する。
-  /// 能力フラット分布 + 長打プラス（+1.5）/ 走力・守備マイナス（-1）。
+  /// 能力分布は中央集中 + 国籍別オフセット（ミート -0.5 / 長打 +0.5 /
+  /// 走力 -0.5 / 選眼・肩 同等）に加え、**ポジションオフセットも日本人と同じ
+  /// ロジックで適用**する（[_profileForPosition]）。
+  ///
+  /// 旧版は日本人だけにポジションオフセットがついていたため、日本人一塁手
+  /// （mean 5.0 + 1.5 = 6.5）が外国人一塁手（mean 5.5 フラット）より長打が
+  /// 強いという逆転構造になっていた（2026-05-23 修正、CHANGELOG 参照）。
   /// 守備位置は 1 つだけ（NPB の外国人野手のユーティリティ性は低い）。
   Player generateForeignFielder({
     required int number,
     Set<String> teamSurnames = const <String>{},
   }) {
     final primary = _foreignFielderPrimary();
+    final profile = _profileForPosition(primary);
     final fielding = <DefensePosition, int>{
       primary: _foreignAbility(mean: 4.0), // 守備力は弱め
     };
-    // 外国人野手の能力傾向（トータルは日本人と概ね均衡、強み・弱みの分布が違う）:
-    //   ミート: 細かいテクニックは日本人の方が上で、外国人はやや下（-0.5）
-    //   長打: パワー型が多いので日本人より +1
-    //   走力: 鈍足傾向で日本人より -0.5
-    //   選球眼・肩: 日本人と同じ
-    final meet = _foreignAbility(mean: 4.5);
-    final power = _foreignAbility(mean: 5.5);
-    final speed = _foreignAbility(mean: 4.5);
+    // 国籍別オフセット（日本人 mean 5.0 を基準とした増減）:
+    //   ミート: 細かいテクニックは日本人優位（-0.5）
+    //   長打: パワー型が多い（+0.5）
+    //   走力: 鈍足傾向（-0.5）
+    //   選球眼・肩: 同等（±0）
+    // これに [_profileForPosition] のポジションオフセットを加算する。
+    // 例: 一塁の外国人 power = 5.5 + 1.5 = 7.0、二塁の外国人 power = 5.5 - 1.0 = 4.5。
+    final meet = _foreignAbility(mean: 4.5 + profile.meet);
+    final power = _foreignAbility(mean: 5.5 + profile.power);
+    final speed = _foreignAbility(mean: 4.5 + profile.speed);
     final eye = _foreignAbility(mean: 5.0);
-    final arm = _foreignAbility(mean: 5.0);
+    final arm = _foreignAbility(mean: 5.0 + profile.arm);
     return Player(
       id: _newId(),
       name: _uniqueForeignName(teamSurnames),
