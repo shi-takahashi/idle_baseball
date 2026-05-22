@@ -93,16 +93,21 @@ class AtBatSimulator {
   static const int _fastballRidePerPoint = 2; // 伸び1ptあたりの実効球速底上げ(km/h)
   // 実効球速が閾値を超えたぶん（over、0〜6 にクランプ）ごとの空振り率ボーナス。
   // 後ろ寄り（凸）のカーブにして、閾値付近をかすめる投手にはほぼ効かせず、
-  // 真に実効球速の高い上位だけに劇的なボーナスを集中させる（リーグ全体の
-  // K率を膨らませないため）。
+  // 真に実効球速の高い上位だけに劇的なボーナスを集中させる。
+  //
+  // 2026-05-23 縮小: 旧 over=6 で +0.150 (15%pt) は過剰で、「球速 157 + 伸び 8 +
+  // 制球 3 + 弱い変化球」の投手が K/9 16.4 / 被打率 .163 になる構造になっていた。
+  // 「ストレートだけ速ければ抑えられる」のは NPB 実態と乖離するため、最大値を
+  // さらに縮小（同日 2 回目の調整）。剛速球ノーコン投手は ERA 4点台後半が妥当という
+  // ユーザー指摘を反映。球速の意味は残しつつ、制球・変化球の質との総合勝負を強める。
   static const List<double> _velocityWhiffBonusByOver = [
     0.0, // over 0（実効153以下）
-    0.002, // over 1（実効154）
-    0.008, // over 2（実効155）
-    0.022, // over 3（実効156）
-    0.050, // over 4（実効157）
-    0.095, // over 5（実効158）
-    0.150, // over 6+（実効159以上、頭打ち）
+    0.001, // over 1（実効154）
+    0.003, // over 2（実効155）
+    0.007, // over 3（実効156）
+    0.015, // over 4（実効157）
+    0.026, // over 5（実効158）
+    0.038, // over 6+（実効159以上、頭打ち）
   ];
 
   // 基準制球力（この制球力で基本確率になる）
@@ -111,9 +116,12 @@ class AtBatSimulator {
   // 制球力1あたりの補正率
   static const double _controlBallModifier = 0.015; // ボール確率補正
   // 被打率補正（アウト率への影響＝甘い球）。2026-05-17: 制球を投手の最重要
-  // ファクターにするため 0.01 → 0.025 に強化。制球が悪い投手は四球だけでなく
-  // 甘い球で打たれて防御率が悪化し、球速・伸び（ストレートの質）を上回る影響を持つ。
-  static const double _controlHitModifier = 0.025;
+  // ファクターにするため 0.01 → 0.025 に強化。
+  // 2026-05-23: 「弱点軸ペナルティ」（[pitcherWeaknessPenalty]）を別途導入したため、
+  // 二重カウントを避けつつ制球の独立効果は維持する水準（0.025 → 0.035）に。
+  // 制球3 で アウト率 -7%pt ＝ 被打率 +7%pt 相当。これに加えて、制球が 5 未満で
+  // 他軸（球速の質・決め球）にも弱点があると、弱点軸ペナルティが急増する。
+  static const double _controlHitModifier = 0.035;
 
   // 死球（HBP）関連。
   // NPB 目安: 1試合 1チームあたり 0.5 件前後（143 試合で 70〜80 件）。
@@ -196,7 +204,9 @@ class AtBatSimulator {
   // 2026-05-18: 変化球の配球比率を上げた（ストレート 50%→45%）ぶん、変化球の
   // 空振り寄与でリーグ K 率が上振れたため、空振りベースを 0.085→0.073 に再センタ。
   // 同日さらにシュート/カット/シンカーを追加し K 率が再び上振れたため 0.073→0.069。
-  static const double _baseProbStrikeSwinging = 0.069;
+  // 2026-05-23: リーグ K率がやや多い（20.3%）感覚に合わせて 0.069 → 0.063 に微減。
+  // 同時に球速空振りボーナスを縮小しているので、実機ではさらに下がる方向。
+  static const double _baseProbStrikeSwinging = 0.063;
   static const double _baseProbFoul = 0.195;
   // インプレー確率は残り（= 1 - 上記4つ = 0.24。旧 0.20 から引き上げ）
 
@@ -289,6 +299,13 @@ class AtBatSimulator {
   static const double _arsenalSwingBonus = 0.004; // 1球種あたりの空振り率補正
   static const double _arsenalOutBonus = 0.002;   // 1球種あたりのアウト率補正
 
+  // 弱点軸ペナルティの係数。弱点スコアの 2乗 × この係数 = アウト率減少 (=被打率増加)。
+  // 弱点 1 軸（例: 制球3 → weakness 2）で 4 × 0.010 = -4%pt
+  // 弱点 2 軸（例: 制球3 + 決め球3 → weakness 4）で 16 × 0.010 = -16%pt
+  // 弱点 3 軸（例: 全部 3 → weakness 6）で 36 × 0.010 = -36%pt
+  // → 「2軸欠点が重なると急激にペナルティが増える」非線形カーブ
+  static const double _weaknessPenaltyCoeff = 0.010;
+
   /// 球種パラメータ（質）の確率補正値。
   /// ストレート（伸び）は線形、変化球は非線形テーブル（footprint 強化）。
   static double _pitchParamScaling(PitchType pitchType, int paramValue) {
@@ -309,6 +326,54 @@ class AtBatSimulator {
     if (pitcher.cutter != null) n++;
     if (pitcher.sinker != null) n++;
     return n;
+  }
+
+  /// 投手の「弱点軸ペナルティ」。3軸（ストレートの質 / 制球 / 決め球）のうち
+  /// 5 未満の軸を「弱点」とみなし、弱点の合計（5未満のぶんの単純和）の **2乗**
+  /// にペナルティ係数を掛けて返す。これを被打率（アウト率の逆）に上乗せする。
+  ///
+  /// 設計意図（2026-05-23）:
+  /// - 弱点 1 軸（例: 制球3）なら他軸でカバーできるので weakness=2、ペナルティ
+  ///   は 4×0.010 = -4%pt 程度（軽微）
+  /// - 弱点 2 軸（例: 制球3 + 決め球3）になると weakness=4、ペナルティは
+  ///   16×0.010 = -16%pt と急増。「球速だけ速くて制球も決め球もダメな投手は
+  ///   プロで通用しない」を再現する
+  /// - 平均的な投手（全軸 ≥ 5）は weakness=0 でペナルティなし。リーグ全体への
+  ///   影響はない（ピンポイント補正）
+  ///
+  /// 軸の定義:
+  /// - fb_axis: ストレートの質を 1-10 にマッピング。`(球速 - 140) × 0.5 + 伸び`
+  ///   を round して clamp。球速145+伸び5 → 7.5、球速140+伸び5 → 5、
+  ///   球速135+伸び3 → 5.5 - これも 5 以下なら弱点
+  /// - control_axis: 制球 1-10
+  /// - best_breaking_axis: 持っている変化球の最大質。持っていない変化球は
+  ///   除外（0扱い）
+  static double pitcherWeaknessPenalty(Player pitcher) {
+    final speed = pitcher.averageSpeed ?? 145;
+    final fastball = pitcher.fastball ?? 5;
+    final fbAxisRaw = (speed - 140) * 0.5 + fastball;
+    final fbAxis = fbAxisRaw.round().clamp(1, 10);
+    final controlAxis = pitcher.control ?? 5;
+    // 持っている変化球の中の最大質。持っていなければ 0（「決め球なし」最大ペナルティ）
+    final qualities = <int>[
+      if (pitcher.slider != null) pitcher.slider!,
+      if (pitcher.curve != null) pitcher.curve!,
+      if (pitcher.splitter != null) pitcher.splitter!,
+      if (pitcher.changeup != null) pitcher.changeup!,
+      if (pitcher.shoot != null) pitcher.shoot!,
+      if (pitcher.cutter != null) pitcher.cutter!,
+      if (pitcher.sinker != null) pitcher.sinker!,
+    ];
+    final bestBreaking = qualities.isEmpty
+        ? 0
+        : qualities.reduce((a, b) => a > b ? a : b);
+
+    int weakness = 0;
+    if (fbAxis < 5) weakness += (5 - fbAxis);
+    if (controlAxis < 5) weakness += (5 - controlAxis);
+    if (bestBreaking < 5) weakness += (5 - bestBreaking);
+
+    return weakness * weakness * _weaknessPenaltyCoeff;
   }
 
   // 球種ごとの特性定義
@@ -922,6 +987,7 @@ class AtBatSimulator {
     BattedBallType? battedBallType,
     FieldPosition? fieldPosition,
     int arsenalSize = 4,
+    double weaknessPenalty = 0.0,
   }) {
     // 球種に応じた実効疲労度を計算
     final effectiveFatigue = _getEffectiveFatigue(fatigue, pitchType);
@@ -986,7 +1052,10 @@ class AtBatSimulator {
     // 持ち球数ボーナス（球種が多いほど打者が絞れず打ち損じ＝アウト増）
     final arsenalOut = (arsenalSize - _baseArsenalSize) * _arsenalOutBonus;
 
-    // アウト率: 球種固有 + 球速（ストレートのみ）+ パラメータ + 制球力 + 守備力 + リード - 疲労 + ミート + プラトーン + 持ち球数
+    // アウト率: 球種固有 + 球速（ストレートのみ）+ パラメータ + 制球力 + 守備力 +
+    // リード - 疲労 + ミート + プラトーン + 持ち球数 - 弱点軸ペナルティ
+    // 弱点軸ペナルティ（[pitcherWeaknessPenalty]）は「3軸のうち2軸以上に欠点が
+    // あるとプロでは通用しない」非線形効果。投手の全打席に一律で乗る。
     final outModifier = pitchOutModifier +
         speedModifier +
         paramScaling +
@@ -996,7 +1065,8 @@ class AtBatSimulator {
         fatigueOutDecrease +
         meetOutAdjustment +
         platoonOut +
-        arsenalOut;
+        arsenalOut -
+        weaknessPenalty;
     var probOut = (_baseProbOut + outModifier).clamp(0.45, 0.85);
 
     // 打球タイプ × 方向によるアウト率の上書き補正
@@ -1180,6 +1250,7 @@ class AtBatSimulator {
     bool isLeftBatter = false,
     bool isFielderForcedPlacement = false,
     int arsenalSize = 4,
+    double weaknessPenalty = 0.0,
   }) {
     final fieldingValue = fielding ?? _baseFielding;
     final catcherFieldingValue = catcherFielding ?? _baseFielding;
@@ -1201,6 +1272,7 @@ class AtBatSimulator {
       isPlatoonDisadvantage: isPlatoonDisadvantage,
       battedBallType: battedBallType,
       fieldPosition: fieldPosition,
+      weaknessPenalty: weaknessPenalty,
     );
 
     // 5つの確率を合算して正規化したうえでロール判定する。
@@ -1336,6 +1408,8 @@ class AtBatSimulator {
     final control = ((pitcher.control ?? 5) + condition.controlModifier).clamp(1, 10);
     // 投手の持ち球数（球種が多いほど打者が待ち球を絞れず、わずかに有利）
     final arsenalSize = _arsenalSize(pitcher);
+    // 投手の弱点軸ペナルティ（3軸2軸欠点で急増する非線形ペナルティ）
+    final weaknessPenalty = pitcherWeaknessPenalty(pitcher);
     // 打者のミート力（設定されていなければ5）+ 調子補正（1〜10の範囲内）
     final meet = ((batter.meet ?? 5) + batterConditionModifier).clamp(1, 10);
     // 打者の長打力（設定されていなければ5）+ 調子補正
@@ -1575,6 +1649,7 @@ class AtBatSimulator {
         isPlatoonDisadvantage: isPlatoonDisadvantage,
         isLeftBatter: isLeftBatter,
         arsenalSize: arsenalSize,
+        weaknessPenalty: weaknessPenalty,
       );
 
       if (atBatEndCheck.isEnded) {
@@ -2017,6 +2092,7 @@ class AtBatSimulator {
     bool isPlatoonDisadvantage = false,
     bool isLeftBatter = false,
     int arsenalSize = 4,
+    double weaknessPenalty = 0.0,
   }) {
     switch (pitch.type) {
       case PitchResultType.ball:
@@ -2062,6 +2138,7 @@ class AtBatSimulator {
           fatigue: fatigue,
           isPlatoonDisadvantage: isPlatoonDisadvantage,
           isLeftBatter: isLeftBatter,
+          weaknessPenalty: weaknessPenalty,
           isFielderForcedPlacement: isFielderForced,
           arsenalSize: arsenalSize,
         );
