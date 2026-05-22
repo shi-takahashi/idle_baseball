@@ -79,62 +79,61 @@ class TeamGenerator {
       ));
     }
 
-    // ---- 先発ローテ 6人（うち 2 人は外国人）----
-    // players[8]（=9番打者枠）には rotation[0] を初期値として入れておく（最初の試合の先発）。
-    // 以降は SeasonController が日々選んで差し替える。
+    // ---- 投手 18人（日本人 16 + 外国人 2、役割なしフラット生成 → 能力ベース割り当て） ----
+    // 設計（2026-05-23）:
+    // 旧版は生成時に「先発6 / 抑え1 / セットアッパー2 / 中継ぎ4 / ...」と役割別に
+    // 能力 boost をつけて生成していた（reliefSpec）。さらに外国人 2 人は両方 starter
+    // で固定生成 → 「外国人投手が全員先発」という不自然な構造になっていた。
     //
-    // 並び順をランダムにシャッフルする狙い:
-    // チームごとのローテ周期は 6日で同期しているため、もし全チームが
-    // rotation[0] からスタートすると「常に A0 が B のローテ位置 X 番目と
-    // 当たる」という固定マッチアップになってしまう。シャッフルすることで
-    // チーム間の cycle phase がズレ、対戦カードに変化が生まれる。
-    // 外国人先発 2人（当たり外れ大、球速 +、制球 -）。新規チームなので
-    // 1 人目の teamSurnames は空。2 人目は 1 人目と同苗字を避ける。
-    final foreignStarter1 = _playerGen.generateForeignPitcher(
-      number: nextNumber(),
-      pitcherRole: PitcherRole.starter,
-    );
-    final foreignStarter2 = _playerGen.generateForeignPitcher(
-      number: nextNumber(),
-      pitcherRole: PitcherRole.starter,
-      teamSurnames: {foreignSurnameOf(foreignStarter1.name)},
-    );
-    final rotation = <Player>[
-      foreignStarter1,
-      foreignStarter2,
-      for (int i = 2; i < 6; i++)
-        _playerGen.generateStartingPitcher(number: nextNumber()),
-    ];
-    rotation.shuffle(_random);
+    // 新版は 18 人を全員フラット (mean=5 / role なし) で生成し、能力スコア順に
+    // ロールを割り当てる。日本人・外国人の区別なく、能力に応じた役割になる:
+    //   1位     → 先発エース
+    //   2-6位   → 先発ローテ
+    //   7位     → 抑え（最強の救援）
+    //   8-9位   → セットアッパー
+    //   10-13位 → 中継ぎ 4 人
+    //   14-15位 → ロング 2 人
+    //   16位    → ワンポイント（左投手いれば優先、なければ右投手）
+    //   17-18位 → 敗戦処理 2 人
+    // 外国人投手は球速 +3 km/h 等の生成バフがあるので、自然と先発・抑え寄りに
+    // 割り当てられやすい。ただしハズレ外国人（能力ガチャ次第）は敗戦処理に
+    // 回ることもある。これが「外国人だけ特別扱いせず、能力ベースで役割を決める」設計。
+    //
+    // 自チームについては SeasonController.newSeason で「中立な初期ロール
+    // （先発6→starter / 救援12→middle）」に上書きされる（推測ゲームのリーク防止、
+    // [feedback_no_ability_based_auto_assignment]）。CPU 5 球団はこの能力割り当てを
+    // そのまま使う。
+    final pitcherPool = <Player>[];
 
-    // ---- 救援投手 12人（ロール別構成） ----
-    //   抑え 1 / セットアッパー 2 / 中継ぎ 4 / ワンポイント 1 / ロング 2 / 敗戦処理 2
-    // ロールごとに能力ブースト・利き腕を調整して生成。
-    // 試合に出るのはこのうち当日ベンチ入りした 8 人（SeasonController が選定）。
-    // ワンポイント（左投手）の指定がある以外は (role, boost) のリストで宣言的に生成。
-    const reliefSpec = <({PitcherRole role, double boost, bool forceLeft})>[
-      (role: PitcherRole.closer, boost: 1.5, forceLeft: false),
-      (role: PitcherRole.setup, boost: 1.0, forceLeft: false),
-      (role: PitcherRole.setup, boost: 1.0, forceLeft: false),
-      (role: PitcherRole.middle, boost: 0.5, forceLeft: false),
-      (role: PitcherRole.middle, boost: 0.5, forceLeft: false),
-      (role: PitcherRole.middle, boost: 0.5, forceLeft: false),
-      (role: PitcherRole.middle, boost: 0.5, forceLeft: false),
-      (role: PitcherRole.situational, boost: 0.0, forceLeft: true),
-      (role: PitcherRole.long, boost: 0.0, forceLeft: false),
-      (role: PitcherRole.long, boost: 0.0, forceLeft: false),
-      (role: PitcherRole.mopUp, boost: -0.5, forceLeft: false),
-      (role: PitcherRole.mopUp, boost: -0.5, forceLeft: false),
-    ];
-    final bullpen = <Player>[
-      for (final s in reliefSpec)
-        _playerGen.generateReliefPitcher(
-          number: nextNumber(),
-          pitcherRole: s.role,
-          abilityBoost: s.boost,
-          forcedThrows: s.forceLeft ? Handedness.left : null,
-        ),
-    ];
+    // 外国人投手 2 人を生成（苗字重複回避）。pitcherRole は後で割り当てるので null。
+    final foreignSurnamesUsed = <String>{};
+    for (int i = 0; i < 2; i++) {
+      final fp = _playerGen.generateForeignPitcher(
+        number: nextNumber(),
+        pitcherRole: null,
+        teamSurnames: foreignSurnamesUsed,
+      );
+      pitcherPool.add(fp);
+      foreignSurnamesUsed.add(foreignSurnameOf(fp.name));
+    }
+
+    // 日本人投手 16 人をフラット生成
+    for (int i = 0; i < 16; i++) {
+      pitcherPool.add(_playerGen.generatePitcher(number: nextNumber()));
+    }
+
+    // 能力スコア順に並べてロール割り当て
+    _assignPitcherRoles(pitcherPool);
+
+    // rotation 6 (starter) と bullpen 12 (それ以外) に振り分け
+    // rotation は登板順序をランダムシャッフル（チーム間の cycle phase をずらす）
+    final rotation = pitcherPool
+        .where((p) => p.pitcherRole == PitcherRole.starter)
+        .toList()
+      ..shuffle(_random);
+    final bullpen = pitcherPool
+        .where((p) => p.pitcherRole != PitcherRole.starter)
+        .toList();
 
     // ---- 控え野手 14人 ----
     // 当日ベンチ入りするのはこのうち 9 人（SeasonController が選定）。
@@ -165,18 +164,14 @@ class TeamGenerator {
       ],
     ];
     // 控え 14 のうち最後の 2 枠は外国人野手（守備位置抽選、当たり外れ大）
-    final teamSurnamesAfterPitchers = {
-      foreignSurnameOf(foreignStarter1.name),
-      foreignSurnameOf(foreignStarter2.name),
-    };
     final foreignFielder1 = _playerGen.generateForeignFielder(
       number: nextNumber(),
-      teamSurnames: teamSurnamesAfterPitchers,
+      teamSurnames: foreignSurnamesUsed,
     );
     final foreignFielder2 = _playerGen.generateForeignFielder(
       number: nextNumber(),
       teamSurnames: {
-        ...teamSurnamesAfterPitchers,
+        ...foreignSurnamesUsed,
         foreignSurnameOf(foreignFielder1.name),
       },
     );
@@ -200,5 +195,105 @@ class TeamGenerator {
       bench: bench,
       primaryColorValue: color,
     );
+  }
+
+  /// 18 人の投手をフラット生成した後、能力スコア順にロールを割り当てる。
+  ///
+  /// 割り当て規則（能力スコア降順）:
+  ///   1-6位   → starter（先発ローテ 6 人）
+  ///   7位     → closer（抑え 1 人）
+  ///   8-9位   → setup（セットアッパー 2 人）
+  ///   10-13位 → middle（中継ぎ 4 人）
+  ///   14-15位 → long（ロング 2 人）
+  ///   16位    → situational（ワンポイント、左投手優先）
+  ///   17-18位 → mopUp（敗戦処理 2 人）
+  ///
+  /// situational は左投手としての特殊起用なので、能力順位 16 位ぴったりの
+  /// 投手より「中継ぎ系の中で能力が比較的下位の左投手」を優先する。
+  /// 左投手がいなければ右投手のまま situational に割り当てる。
+  /// long も球速の遅い投手の方が適性が高いが、本実装では能力順のみで割り当てる
+  /// （シンプル化、必要なら後で球速ソートを足す）。
+  void _assignPitcherRoles(List<Player> pitchers) {
+    // 能力スコア降順でソート
+    final sorted = [...pitchers]
+      ..sort((a, b) =>
+          _pitcherAbilityScore(b).compareTo(_pitcherAbilityScore(a)));
+
+    // 順位 → 役割の割当
+    const roleByRank = <PitcherRole>[
+      PitcherRole.starter, // 1
+      PitcherRole.starter, // 2
+      PitcherRole.starter, // 3
+      PitcherRole.starter, // 4
+      PitcherRole.starter, // 5
+      PitcherRole.starter, // 6
+      PitcherRole.closer, // 7
+      PitcherRole.setup, // 8
+      PitcherRole.setup, // 9
+      PitcherRole.middle, // 10
+      PitcherRole.middle, // 11
+      PitcherRole.middle, // 12
+      PitcherRole.middle, // 13
+      PitcherRole.long, // 14
+      PitcherRole.long, // 15
+      PitcherRole.situational, // 16
+      PitcherRole.mopUp, // 17
+      PitcherRole.mopUp, // 18
+    ];
+
+    // situational 用に左投手を優先選択する。割当 16 位の投手が右投手の場合、
+    // bullpen 圏内（7〜18位）の左投手と入れ替えてその左投手を situational に。
+    // 入れ替えで動く相手の元ロールを 16 位だった投手に渡す。
+    final situationalIdx = roleByRank.indexOf(PitcherRole.situational);
+    if (sorted[situationalIdx].effectiveThrows != Handedness.left) {
+      // 7〜18 位の中から左投手を探す（先発エース層は崩さない）
+      int? leftIdx;
+      for (int i = 6; i < sorted.length; i++) {
+        if (i == situationalIdx) continue;
+        if (sorted[i].effectiveThrows == Handedness.left) {
+          leftIdx = i;
+          break;
+        }
+      }
+      if (leftIdx != null) {
+        // 順序を swap（能力スコア順は崩れるが、situational に左投手を割り当てる方を優先）
+        final tmp = sorted[situationalIdx];
+        sorted[situationalIdx] = sorted[leftIdx];
+        sorted[leftIdx] = tmp;
+      }
+    }
+
+    // ロールを書き換えて、元の pitchers リストに反映
+    for (int i = 0; i < sorted.length; i++) {
+      final updated = sorted[i].withPitcherRole(roleByRank[i]);
+      final idx = pitchers.indexWhere((p) => p.id == sorted[i].id);
+      if (idx >= 0) pitchers[idx] = updated;
+    }
+  }
+
+  /// 投手の能力スコア（高いほど強い）。
+  /// 球速・伸び・制球・最強変化球の質の平均で評価する。
+  /// [TeamRebuilder._abilityScore] と同じ式（共通化はしていないが式は一致）。
+  static double _pitcherAbilityScore(Player p) {
+    final speed = (p.averageSpeed ?? 145).toDouble();
+    final speedScale = ((speed - 130) / 30.0 * 10).clamp(1.0, 10.0);
+    final values = <double>[
+      speedScale,
+      (p.fastball ?? 5).toDouble(),
+      (p.control ?? 5).toDouble(),
+    ];
+    final pitches = <int>[
+      if (p.slider != null) p.slider!,
+      if (p.curve != null) p.curve!,
+      if (p.splitter != null) p.splitter!,
+      if (p.changeup != null) p.changeup!,
+      if (p.shoot != null) p.shoot!,
+      if (p.cutter != null) p.cutter!,
+      if (p.sinker != null) p.sinker!,
+    ];
+    if (pitches.isNotEmpty) {
+      values.add(pitches.reduce((a, b) => a > b ? a : b).toDouble());
+    }
+    return values.reduce((a, b) => a + b) / values.length;
   }
 }

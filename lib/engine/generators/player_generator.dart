@@ -120,6 +120,20 @@ class PlayerGenerator {
     return _generatePitcher(number: number, isStarter: true);
   }
 
+  /// 役割なしのフラット投手を生成する。リーグ生成時に「18人をフラット生成
+  /// → 能力ベースでロール割り当て」する用途で使う。
+  ///
+  /// `isStarter` は球種選択等のロジックには影響しないが、生成時に
+  /// `pitcherRole` を null にしておき、呼び出し側で能力スコアを見て
+  /// 後からロールを割り当てる前提。
+  Player generatePitcher({required int number}) {
+    return _generatePitcher(
+      number: number,
+      isStarter: true,
+      pitcherRole: null,
+    );
+  }
+
   /// 救援投手を生成
   ///
   /// - [pitcherRole]: 救援ロール（指定すれば Player.pitcherRole にセットされる）
