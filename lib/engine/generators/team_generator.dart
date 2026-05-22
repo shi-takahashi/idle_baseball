@@ -102,7 +102,7 @@ class TeamGenerator {
     }
 
     // 能力スコア順に並べてロール割り当て
-    _assignPitcherRoles(pitcherPool);
+    assignPitcherRoles(pitcherPool);
 
     // rotation 6 (starter) と bullpen 12 (それ以外) に振り分け
     // rotation は登板順序をランダムシャッフル（チーム間の cycle phase をずらす）
@@ -217,7 +217,10 @@ class TeamGenerator {
   /// 左投手がいなければ右投手のまま situational に割り当てる。
   /// long も球速の遅い投手の方が適性が高いが、本実装では能力順のみで割り当てる
   /// （シンプル化、必要なら後で球速ソートを足す）。
-  void _assignPitcherRoles(List<Player> pitchers) {
+  ///
+  /// オフシーズン後の再評価（[TeamRebuilder]）からも static で呼べるよう公開。
+  /// 入力リストの要素を `withPitcherRole` で差し替える破壊的更新。
+  static void assignPitcherRoles(List<Player> pitchers) {
     // 能力スコア降順でソート
     final sorted = [...pitchers]
       ..sort((a, b) =>

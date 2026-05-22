@@ -1,6 +1,7 @@
 import 'dart:math';
 
 import '../generators/player_generator.dart';
+import '../generators/team_generator.dart';
 import '../models/models.dart';
 import '../season/player_season_stats.dart';
 import 'offseason_plan.dart';
@@ -92,7 +93,7 @@ class TeamRebuilder {
       retired.addAll(_retireAndReplaceFielders(team));
       retired.addAll(_retireAndReplacePitchers(team));
       _rebalanceStarters(team, previousStarterIds);
-      _reorganizeBullpenRoles(team);
+      _reassignPitcherRoles(team);
     }
     return retired;
   }
@@ -257,7 +258,7 @@ class TeamRebuilder {
     }
 
     for (final f in foreigners) {
-      if (_random.nextDouble() >= foreignDepartureChance) continue;
+      if (_random.nextDouble() >= _cpuForeignReleaseChance(f)) continue;
       // 離脱 → 新外国人で同じ枠を補充。
       // 残るチーム内外国人と同苗字にならないよう、現役外国人の苗字を渡す。
       final remainingSurnames = <String>{
@@ -265,10 +266,12 @@ class TeamRebuilder {
           if (other.id != f.id && !retiredIds.contains(other.id))
             foreignSurnameOf(other.name),
       };
+      // 新外国人はロール未割り当てで生成。後の `_reassignPitcherRoles` で
+      // 18 名全体を能力スコア順にロール再評価するため、ここではロールを固定しない。
       final newForeign = f.isPitcher
           ? playerGen.generateForeignPitcher(
               number: f.number,
-              pitcherRole: f.pitcherRole ?? PitcherRole.starter,
+              pitcherRole: null,
               teamSurnames: remainingSurnames,
             )
           : playerGen.generateForeignFielder(
@@ -279,6 +282,42 @@ class TeamRebuilder {
       retiredIds.add(f.id);
     }
     return retiredIds;
+  }
+
+  /// CPU チームでの外国人離脱判定確率（強制離脱 + チーム契約解除の合算）。
+  ///
+  /// 旧版は一律 [foreignDepartureChance] = 20% の強制離脱のみで、CPU 球団でも
+  /// 平均 5 年在籍になっていた。NPB の現実は外国人在籍 1〜2 年が中心で、
+  /// 「CPU 球団が成績の出ない外国人を契約解除する」ケースが多い。これを再現するため:
+  ///
+  /// - 強制離脱（怪我・帰国・引退）: [foreignDepartureChance] = 20%（自チームと共通）
+  /// - チーム契約解除（CPU 都合、能力ベース）: ハズレ外国人ほど高確率で解除
+  ///   - 能力スコア 4.5 未満（ハズレ）: 70%
+  ///   - 4.5〜5.5: 45%
+  ///   - 5.5〜6.5: 20%
+  ///   - 6.5〜7.5: 5%
+  ///   - 7.5+（エース級）: 2%
+  ///
+  /// 合算離脱率は独立試行モデル: 1 - (1-強制) × (1-解除)。
+  /// 平均能力 5.3 程度のリーグ全体で約 50% 離脱率 ≒ 平均在籍 2 年。
+  ///
+  /// 自チームでは [prepareOffseason] が `foreignDepartureChance` のみで「強制離脱」
+  /// を表示し、契約解除はユーザー自身が UI で選ぶ（CPU 自動判定とは経路が違う）。
+  double _cpuForeignReleaseChance(Player p) {
+    final score = _abilityScore(p);
+    final double releaseChance;
+    if (score < 4.5) {
+      releaseChance = 0.70;
+    } else if (score < 5.5) {
+      releaseChance = 0.45;
+    } else if (score < 6.5) {
+      releaseChance = 0.20;
+    } else if (score < 7.5) {
+      releaseChance = 0.05;
+    } else {
+      releaseChance = 0.02;
+    }
+    return 1.0 - (1.0 - foreignDepartureChance) * (1.0 - releaseChance);
   }
 
   // ---------------------------------------------------
@@ -398,13 +437,16 @@ class TeamRebuilder {
       retiredIds.add(candidate.id);
     }
 
+    // 新人投手は **ロール未割り当て** で生成する（旧版は引退者の wasStarter/role を
+     // 継承していたため、能力に関係なく役割が固定されていた）。
+     // この後の `_reassignPitcherRoles` で 18 名全体を能力スコア順に再評価し、
+     // 新人でも能力が高ければ先発・抑えに上がる、衰えた既存先発は救援に落ちる、
+     // という流動が起きる。
     for (final retiredPlayer in retiredPlayers) {
-      final wasStarter = team.startingRotation
-          .any((p) => p.id == retiredPlayer.id);
       final rookie = playerGen.generateRookiePitcher(
         number: retiredPlayer.number,
-        isStarter: wasStarter,
-        pitcherRole: wasStarter ? null : retiredPlayer.pitcherRole,
+        isStarter: false, // 役割なしフラット生成
+        pitcherRole: null,
         type: _pickCpuRookieType(),
       );
       _replacePlayerInTeam(team, retiredPlayer, rookie);
@@ -414,50 +456,72 @@ class TeamRebuilder {
   }
 
   // ---------------------------------------------------
-  // 投手ロール再編（ブルペン内で能力順に再アサイン）
+  // 投手ロール再評価（18 名全体を能力スコア順に再アサイン）
   // ---------------------------------------------------
 
-  /// ブルペン投手を能力スコア順にソートし、ロールを再アサインする。
-  /// 12 人ブルペンのロール構成: closer 1 / setup 2 / long 2 / situational 1 /
-  /// middle 4 / mopUp 残り（標準12人なら2）。TeamGenerator の生成構成に揃える。
-  /// situational（ワンポイント）は左投手を優先、いなければスキップして他のロールに回す。
-  /// 能力上位から closer → setup → long の順に充て、中継ぎは残りの上位から埋める。
-  /// ブルペンが12人未満（旧データ・テスト）の場合は枠が埋まらないだけで破綻しない。
-  void _reorganizeBullpenRoles(Team team) {
-    if (team.bullpen.length < 2) return;
+  /// 投手 18 名（先発ローテ 6 + ブルペン 12）を **全体で** 能力スコア順にロール
+  /// 再アサインする。`TeamGenerator.assignPitcherRoles` と同じロジックを使い、
+  /// 初期生成・オフシーズン再評価で配置基準を統一する。
+  ///
+  /// 旧版 `_reorganizeBullpenRoles` はブルペン 12 人内でしか再評価せず、衰えた
+  /// 先発エースは先発のまま、強い新人救援は救援のまま、と能力との乖離が
+  /// 蓄積する構造だった。新版は先発↔救援の入れ替えも発生し、毎オフシーズン
+  /// 「最強 6 名が先発、次点が抑え/セットアッパー、能力低位が敗戦処理」
+  /// という配置が再構築される。
+  ///
+  /// 自チームは `rebuildCpuTeams` の対象外なので、ユーザーが手動でロールを
+  /// 維持できる。
+  void _reassignPitcherRoles(Team team) {
+    final allPitchers = <Player>[
+      ...team.startingRotation,
+      ...team.bullpen,
+    ];
+    if (allPitchers.length < 6) return;
 
-    final remaining = [...team.bullpen]
-      ..sort((a, b) => _abilityScore(b).compareTo(_abilityScore(a)));
-    final assignments = <Player, PitcherRole>{};
+    // assignPitcherRoles は入力リストの要素を新インスタンス（pitcherRole 更新済み）
+    // で差し替える破壊的更新。終了後、allPitchers が最新インスタンスを保持。
+    TeamGenerator.assignPitcherRoles(allPitchers);
 
-    // 能力上位から quota 人ぶん role を割り当てるヘルパ。
-    void assignTop(PitcherRole role, int quota) {
-      for (int i = 0; i < quota && remaining.isNotEmpty; i++) {
-        assignments[remaining.removeAt(0)] = role;
+    // チームの players / startingRotation / bullpen / bench を全て更新（id 一致で置換）
+    final updatedById = <String, Player>{
+      for (final p in allPitchers) p.id: p,
+    };
+    // role 変更が起きた選手だけ team 全体に in-place で差し替え
+    for (final original in [
+      ...team.startingRotation,
+      ...team.bullpen,
+      ...team.players,
+    ]) {
+      final updated = updatedById[original.id];
+      if (updated == null) continue;
+      if (identical(updated, original)) continue;
+      _replacePlayerInTeam(team, original, updated);
+    }
+
+    // 新ロールに基づいて rotation / bullpen を再構成
+    // （先発 → 救援に降格した選手、救援 → 先発に昇格した選手が混じるため）
+    final newRotation = allPitchers
+        .where((p) => p.pitcherRole == PitcherRole.starter)
+        .toList()
+      ..shuffle(_random);
+    final newBullpen = allPitchers
+        .where((p) => p.pitcherRole != PitcherRole.starter)
+        .toList();
+    team.startingRotation
+      ..clear()
+      ..addAll(newRotation);
+    team.bullpen
+      ..clear()
+      ..addAll(newBullpen);
+
+    // 投手スロット（players[8]）が現在の rotation に含まれていなければ
+    // rotation の先頭で置き換える（救援に降格した投手は試合先発しない）
+    if (team.players.length >= 9) {
+      final players8 = team.players[8];
+      if (!newRotation.any((p) => p.id == players8.id) &&
+          newRotation.isNotEmpty) {
+        team.players[8] = newRotation.first;
       }
-    }
-
-    assignTop(PitcherRole.closer, 1); // 1位 = 抑え
-    assignTop(PitcherRole.setup, 2); // 2〜3位 = セットアッパー
-    assignTop(PitcherRole.long, 2); // 次点2人 = ロング
-    // ワンポイント: 残りの左投手を優先（いなければ枠を空けたまま中継ぎに回す）
-    final sitIdx =
-        remaining.indexWhere((p) => p.effectiveThrows == Handedness.left);
-    if (sitIdx >= 0) {
-      assignments[remaining.removeAt(sitIdx)] = PitcherRole.situational;
-    }
-    assignTop(PitcherRole.middle, 4); // 中継ぎ4人（残りの上位）
-    // 残り全員 = 敗戦処理
-    for (final p in remaining) {
-      assignments[p] = PitcherRole.mopUp;
-    }
-
-    // ロール変更が発生する場合のみ Player を差し替え（id 維持、pitcherRole のみ変える）
-    for (final entry in assignments.entries) {
-      final p = entry.key;
-      final newRole = entry.value;
-      if (p.pitcherRole == newRole) continue;
-      _replacePlayerInTeam(team, p, p.withPitcherRole(newRole));
     }
   }
 
