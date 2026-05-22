@@ -35,33 +35,44 @@ class PlayerGenerator {
   final Set<String> _usedNames;
   int _idCounter;
 
-  // ---- ポテンシャル算出パラメータ ----
-  // 仮実装: 全能力で同じ値。将来「素質型 / 練習型」に応じて能力ごとに変える想定。
-  static const double _potentialBaseMargin = 2.0; // デフォルトの伸びしろ
-  static const double _potentialSd = 1.0; // 個人差（晩成・期待外れ）
+  // ---- ポテンシャル算出パラメータ（素質ガチャ方式） ----
+  //
+  // 設計: 「線形に initial + 一律マージン」ではなく、能力ごとに **素質レベル** を
+  // 独立抽選して非線形に伸びしろを決める。
+  //
+  //   普通型 70%: cap = round(initial + gauss(mean=0.4, sd=0.4))、cap上限 = 7
+  //     → 入団時の能力でほぼ確定、プロでもほとんど伸びない大多数の選手
+  //   中位型 25%: cap = round(initial + gauss(mean=1.5, sd=0.6))、cap上限 = 8
+  //     → 中堅レベルまで伸びる選手。「7 で優秀」の層に入る可能性
+  //   素質型  5%: cap = round(initial + gauss(mean=3.0, sd=0.8))、cap上限 = 9
+  //     → 一握りの「9 に届く可能性のある」素質型。それでも initial が低いと届かない
+  //
+  // 9 に届くには「素質型(5%) × initial 6 以上(~55%) × 成長運」が必要。
+  // リーグ 132 野手で素質型 ≈ 7 人、その中で initial 6+ ≈ 4 人。さらに成長カーブの
+  // 確率性で実際に 9 まで伸びるのはその一部 → 平衡で 0〜2 人 / リーグ。
+  static const double _talentMiddleChance = 0.30;
+  static const double _talentEliteChance = 0.05;
 
-  /// 能力ごとの成長マージン（伸びしろ）。プロ入り後にどれだけ伸びうるかは
-  /// 能力の性質によって差がある。実際の現実観に近づけるための非対称設定:
-  ///   - 走力 / 肩: 先天的要素が強く、入団後ほぼ変わらない（+1）
-  ///   - 長打 / 選球眼: 中間。筋トレ・経験で多少伸びるが頭打ちは早い（+2）
-  ///   - ミート / 守備力: 技術的要素が大きく、練習で大きく伸びうる（+3）
-  ///   - 投手系（球速以外）: デフォルト（+2）
-  /// 球速は別スケール（_speedBaseMargin、km/h ベース）で扱う。
-  static const Map<String, double> _abilityGrowthMargin = {
-    'speed': 1.0,
-    'arm': 1.0,
-    'power': 2.0,
-    'eye': 2.0,
-    'meet': 3.0,
-    // 投手能力（fastball / control / 各変化球）は明示しない → デフォルト 2.0
+  /// 素質レベル別の成長マージン平均 / sd / cap上限。
+  /// key: 'normal' / 'middle' / 'elite'
+  ///
+  /// cap の設計:
+  ///   normal: cap=7 → 大多数の選手は 7 までで頭打ち
+  ///   middle: cap=8 → 中位の選手は 8 まで届きうる（「タイトル争いの 8」を支える層）
+  ///   elite:  cap=9 → 一握りの素質型だけが 9 に届きうる
+  ///
+  /// 中位/素質型の比率はリーグの「8 が常時 3〜5 人」を維持するよう調整。
+  /// 確率の和: normal 65% + middle 30% + elite 5% = 100%。
+  static const Map<String, ({double mean, double sd, int cap})> _talentTiers = {
+    'normal': (mean: 0.4, sd: 0.4, cap: 7),
+    'middle': (mean: 1.5, sd: 0.6, cap: 8),
+    'elite': (mean: 3.0, sd: 0.8, cap: 9),
   };
 
-  /// 守備力（fielding map 内の各ポジション値）の成長マージン。
-  /// 練習で大きく伸びうる技術系のため +3。
-  static const double _fieldingGrowthMargin = 3.0;
-  // 1〜10 能力の上限。10 は基本的に出現しない方針 → 生成時に initial=10 だった
-  // 選手のみそのまま 10、それ以外は最大 9 に制限。
-  static const int _abilityCeiling = 9;
+  /// 守備力（fielding map 内の各ポジション値）も同じ素質ガチャ方式を使う。
+  /// 技術系で大きく伸びうる性質を残すため、素質型の確率を 8% に上げる。
+  static const double _fieldingTalentEliteChance = 0.08;
+  static const double _fieldingTalentMiddleChance = 0.30;
   // 球速 (km/h) のポテンシャル成長マージン。
   // 平均 +5 km/h、ガウス揺らぎ sd=2 で「+1 〜 +9 km/h」のレンジ。
   // 高卒 boost (+1.5 × 2 = +3 km/h) と組み合わせると「+4 〜 +12 km/h」になり、
@@ -181,7 +192,7 @@ class PlayerGenerator {
     // 表現する。質＝被打率・空振り、使用頻度＝投球割合、と役割を分離している。
     int? slider, curve, splitter, changeup, shoot, cutter, sinker;
     for (final t in chosen) {
-      final v = _r.normalInt(mean: 5.0 + abilityBoost);
+      final v = _r.abilityInt(mean: 5.0 + abilityBoost);
       switch (t) {
         case 'slider':
           slider = v;
@@ -211,8 +222,8 @@ class PlayerGenerator {
     final throws = forcedThrows ??
         (_r.chance(0.3) ? Handedness.left : Handedness.right);
 
-    final fastball = _r.normalInt(mean: 5.0 + abilityBoost);
-    final control = _r.normalInt(mean: 5.0 + abilityBoost);
+    final fastball = _r.abilityInt(mean: 5.0 + abilityBoost);
+    final control = _r.abilityInt(mean: 5.0 + abilityBoost);
     final meet = _r.normalInt(mean: 2.0, sd: 0.8);
     final power = _r.normalInt(mean: 1.5, sd: 0.7);
     final eye = _r.normalInt(mean: 2.5, sd: 0.8);
@@ -366,15 +377,15 @@ class PlayerGenerator {
     required DefensePosition primaryPosition,
   }) {
     final fielding = <DefensePosition, int>{
-      primaryPosition: _r.normalInt(mean: 6.5, sd: 1.5),
+      primaryPosition: _r.abilityInt(mean: 6.5),
     };
     _attachSecondaryPositions(fielding, primaryPosition);
     final profile = _profileForPosition(primaryPosition);
-    final meet = _r.normalInt(mean: 5.0 + profile.meet);
-    final power = _r.normalInt(mean: 5.0 + profile.power);
-    final speed = _r.normalInt(mean: 5.0 + profile.speed);
-    final eye = _r.normalInt();
-    final arm = _r.normalInt(mean: 5.0 + profile.arm);
+    final meet = _r.abilityInt(mean: 5.0 + profile.meet);
+    final power = _r.abilityInt(mean: 5.0 + profile.power);
+    final speed = _r.abilityInt(mean: 5.0 + profile.speed);
+    final eye = _r.abilityInt();
+    final arm = _r.abilityInt(mean: 5.0 + profile.arm);
     return Player(
       id: _newId(),
       name: _uniqueName(),
@@ -406,18 +417,18 @@ class PlayerGenerator {
   }) {
     final fielding = <DefensePosition, int>{};
     for (final pos in positions) {
-      fielding[pos] = _r.normalInt(mean: 4.5, sd: 1.5);
+      fielding[pos] = _r.abilityInt(mean: 4.5);
     }
     // 主ポジション（先頭）に紐づくサブポジションも低めの守備力で追加。
     // 既に positions に含まれている場合はスキップ（containsKey で吸収）。
     _attachSecondaryPositions(fielding, positions.first);
     // 守備傾向は主ポジション（positions の先頭）で決める
     final profile = _profileForPosition(positions.first);
-    final meet = _r.normalInt(mean: 4.5 + profile.meet);
-    final power = _r.normalInt(mean: 4.5 + profile.power);
-    final speed = _r.normalInt(mean: 5.0 + profile.speed);
-    final eye = _r.normalInt();
-    final arm = _r.normalInt(mean: 5.0 + profile.arm);
+    final meet = _r.abilityInt(mean: 4.5 + profile.meet);
+    final power = _r.abilityInt(mean: 4.5 + profile.power);
+    final speed = _r.abilityInt(mean: 5.0 + profile.speed);
+    final eye = _r.abilityInt();
+    final arm = _r.abilityInt(mean: 5.0 + profile.arm);
     return Player(
       id: _newId(),
       name: _uniqueName(),
@@ -531,17 +542,18 @@ class PlayerGenerator {
     // 1つ目（メイン）は若手平均、サブはやや低めにする
     for (int i = 0; i < positions.length; i++) {
       final mean = (i == 0 ? 5.5 : 4.5) + boost;
-      fielding[positions[i]] = _r.normalInt(mean: mean, sd: 1.5);
+      fielding[positions[i]] = _r.abilityInt(mean: mean);
     }
     // 主ポジションに紐づくサブポジションも低めで追加
     _attachSecondaryPositions(fielding, positions.first);
     // 守備傾向は主ポジション（positions の先頭）で決める
     final profile = _profileForPosition(positions.first);
-    final meet = _r.normalInt(mean: 5.0 + boost + profile.meet, sd: 1.8);
-    final power = _r.normalInt(mean: 5.0 + boost + profile.power, sd: 1.8);
-    final speed = _r.normalInt(mean: 5.5 + boost + profile.speed, sd: 1.5);
-    final eye = _r.normalInt(mean: 4.5 + boost, sd: 1.5);
-    final arm = _r.normalInt(mean: 5.0 + boost + profile.arm);
+    // 新人は能力のばらつきがやや大きい（sd 1.5）。abilityInt で max=8 + 9プロモート抽選
+    final meet = _r.abilityInt(mean: 5.0 + boost + profile.meet, sd: 1.5);
+    final power = _r.abilityInt(mean: 5.0 + boost + profile.power, sd: 1.5);
+    final speed = _r.abilityInt(mean: 5.5 + boost + profile.speed);
+    final eye = _r.abilityInt(mean: 4.5 + boost);
+    final arm = _r.abilityInt(mean: 5.0 + boost + profile.arm);
     return Player(
       id: _newId(),
       name: _uniqueName(),
@@ -588,23 +600,40 @@ class PlayerGenerator {
     );
   }
 
-  /// 1〜10 能力のポテンシャル上限を計算する。
-  /// initial が 10 のときはそのまま 10、それ以外は 9 をハードキャップとする。
-  /// [marginOverride] が指定されたときはそのマージンを使う（守備力用）。
-  /// それ以外は能力名 [key] から `_abilityGrowthMargin` を引く（未定義はデフォルト 2.0）。
+  /// 1〜10 能力のポテンシャル上限を計算する（素質ガチャ方式）。
+  ///
+  /// initial が 10 のときはそのまま 10 を返す（手動編集で 10 を作った選手の維持）。
+  /// それ以外は能力ごとに **素質レベル** を抽選し、tier に応じた margin / cap で
+  /// ポテンシャル上限を決める（[_talentTiers] 参照）。
+  ///
+  /// [isFielding] が true のときは fielding 用の確率配分を使う（素質型 8% で
+  /// 練習系の伸びを表現）。それ以外は [_talentEliteChance] / [_talentMiddleChance]。
+  ///
+  /// [bonus] は新人タイプ別の補正（高卒+1.5 等）で margin に加算される。
   int _potentialFor(
     int? initial, {
     String? key,
-    double? marginOverride,
+    bool isFielding = false,
     double bonus = 0.0,
   }) {
     if (initial == null) return 0;
     if (initial >= 10) return 10;
-    final margin = marginOverride ??
-        _abilityGrowthMargin[key] ??
-        _potentialBaseMargin;
-    final raw = initial + margin + bonus + _r.nextGaussian() * _potentialSd;
-    return raw.round().clamp(initial, _abilityCeiling);
+    final eliteCh =
+        isFielding ? _fieldingTalentEliteChance : _talentEliteChance;
+    final middleCh =
+        isFielding ? _fieldingTalentMiddleChance : _talentMiddleChance;
+    final roll = _r.random.nextDouble();
+    final tier = roll < eliteCh
+        ? _talentTiers['elite']!
+        : (roll < eliteCh + middleCh
+            ? _talentTiers['middle']!
+            : _talentTiers['normal']!);
+    // initial が tier.cap を上回るケース（例: 9 プロモートされた選手が普通型に
+    // 分類された）は initial をそのまま維持（成長は起きないが初期値は守られる）
+    if (initial >= tier.cap) return initial;
+    final raw =
+        initial + tier.mean + bonus + _r.nextGaussian() * tier.sd;
+    return raw.round().clamp(initial, tier.cap);
   }
 
   /// 球速 (km/h) のポテンシャル上限を計算する。
@@ -664,7 +693,7 @@ class PlayerGenerator {
       if (isPitcher && _breakingBallKeys.contains(key)) {
         if (_r.chance(_hiddenPitchPotentialChance)) {
           // 仮 initial を平均的な能力分布から作り、その上でポテンシャル算出
-          final virtualInitial = _r.normalInt();
+          final virtualInitial = _r.abilityInt();
           map[key] = _potentialFor(virtualInitial, key: key, bonus: bonus);
         }
       }
@@ -699,10 +728,10 @@ class PlayerGenerator {
       if (e.value == 0) {
         out[e.key] = 0;
       } else {
-        // 守備力は技術系で大きく伸びうるため +3 のマージンを使う
+        // 守備力は技術系で大きく伸びうるため fielding 用の素質ガチャを使う
         out[e.key] = _potentialFor(
           e.value,
-          marginOverride: _fieldingGrowthMargin,
+          isFielding: true,
           bonus: bonus,
         );
       }
@@ -723,12 +752,12 @@ class PlayerGenerator {
   // ===========================================================
 
   /// 外国人選手の能力値: 日本人より若干バラつくが、中央集中の傾向は維持。
-  /// 日本人 sd 1.5（9 が約 1%）に対して外国人は sd 1.8（9 が約 4%、リーグ
-  /// 24 人中 1 人程度の「数年に一人の逸材」感）。
-  /// 「7 で優秀」「8 でタイトル級」「9 は数年に1人」のレベル感を維持する。
+  /// 日本人 sd 1.2（abilityInt のデフォルト）に対して外国人は sd 1.4 でやや裾広め。
+  /// 9 への昇格抽選は通常より高め（0.3%）で「外国人は当たれば大砲」のニュアンス。
+  /// それでもリーグ 24 人 × 5 能力 × 0.3% = 0.36 人 / 年 程度なので、9 は依然として稀。
   /// 当たり外れ感は mean を主能力で動かすことで出す（パワー型は mean 5.5 など）。
   int _foreignAbility({double mean = 5.0}) {
-    return _r.normalInt(mean: mean, sd: 1.6);
+    return _r.abilityInt(mean: mean, sd: 1.4, promoteNineChance: 0.003);
   }
 
   /// 新規獲得時の外国人選手の年齢分布: mean 27 / sd 3.5 / 22〜35。

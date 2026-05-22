@@ -31,7 +31,11 @@
       "Bash(awk 'NR>=42 && /^  static const List<String> givenNames/,/^  \\\\];/' /Users/takahashi-sh/Project/idle_baseball/lib/engine/generators/name_data.dart)",
       "Bash(awk '/foreignSurnames = \\\\[/,/^  \\\\];/' /Users/takahashi-sh/Project/idle_baseball/lib/engine/generators/name_data.dart)",
       "Bash(awk '/foreignGivenNames = \\\\[/,/^  \\\\];/' /Users/takahashi-sh/Project/idle_baseball/lib/engine/generators/name_data.dart)",
-      "Bash(awk 'NR>=225 && NR<=265' /Users/takahashi-sh/Project/idle_baseball/docs/SPEC.md)"
+      "Bash(awk 'NR>=225 && NR<=265' /Users/takahashi-sh/Project/idle_baseball/docs/SPEC.md)",
+      "Bash(sed -n '70,90p' bin/test_rebuild.dart)",
+      "Bash(sed -n '15,30p' bin/test_foreign_players.dart)",
+      "Bash(rm /Users/takahashi-sh/Project/idle_baseball/.claude/projects/-Users-takahashi-sh-Project-idle-baseball/memory/feedback_league_distribution_check.md)",
+      "Bash(rmdir /Users/takahashi-sh/Project/idle_baseball/.claude/projects/-Users-takahashi-sh-Project-idle-baseball/memory /Users/takahashi-sh/Project/idle_baseball/.claude/projects/-Users-takahashi-sh-Project-idle-baseball /Users/takahashi-sh/Project/idle_baseball/.claude/projects /Users/takahashi-sh/Project/idle_baseball/.claude)"
     ]
   }
 }

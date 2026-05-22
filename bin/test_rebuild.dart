@@ -77,9 +77,10 @@ void main() {
     if (added.length != removed.length) {
       throw 'チーム ${t.shortName}: 加入数 ${added.length} != 引退数 ${removed.length}';
     }
-    // 日本人 6 名（野手3 + 投手3） + 外国人最大 2 名（野手1 + 投手1 が確率離脱）
-    // = 上限 8。離脱しないシーズンが多いので通常は 6-7 程度。
-    if (added.length > 8) {
+    // 日本人 6 名（野手3 + 投手3） + 外国人最大 4 名（野手2 + 投手2 が確率離脱、
+    // 2026-05-22 で外国人枠 2+2 化）= 上限 10。離脱しないシーズンが多いので
+    // 通常は 6-7 程度、外国人 1〜2 名離脱で 7-9 のシーズンもある。
+    if (added.length > 10) {
       throw 'チーム ${t.shortName}: 入れ替え数が多すぎ ${added.length}';
     }
     // ポジション制約

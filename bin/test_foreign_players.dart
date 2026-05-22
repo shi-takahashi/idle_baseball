@@ -18,12 +18,12 @@ void main() {
     final foreigners = allPlayers.where((p) => p.isForeign).toList();
     final foreignFielders = foreigners.where((p) => !p.isPitcher).length;
     final foreignPitchers = foreigners.where((p) => p.isPitcher).length;
-    if (foreignFielders != 1 || foreignPitchers != 1) {
+    if (foreignFielders != 2 || foreignPitchers != 2) {
       throw StateError(
-          '${team.name}: 外国人野手 $foreignFielders / 投手 $foreignPitchers (期待: 1/1)');
+          '${team.name}: 外国人野手 $foreignFielders / 投手 $foreignPitchers (期待: 2/2)');
     }
   }
-  print('OK: 各チームに外国人野手1人 + 投手1人');
+  print('OK: 各チームに外国人野手2人 + 投手2人');
 
   // 2. シーズンを 5 年回して、外国人の入替が起きているか確認
   final schedule = const ScheduleGenerator().generate(teams, halves: 2);
@@ -83,12 +83,12 @@ void main() {
     }
     final ff = allPlayers.where((p) => p.isForeign && !p.isPitcher).length;
     final fp = allPlayers.where((p) => p.isForeign && p.isPitcher).length;
-    if (ff != 1 || fp != 1) {
+    if (ff != 2 || fp != 2) {
       throw StateError(
-          '${team.name}: 5年後の外国人野手 $ff / 投手 $fp (期待: 1/1)');
+          '${team.name}: 5年後の外国人野手 $ff / 投手 $fp (期待: 2/2)');
     }
   }
-  print('OK: 5 シーズン後も各チームに外国人 1+1 維持');
+  print('OK: 5 シーズン後も各チームに外国人 2+2 維持');
 
   // 3. JSON 往復で isForeign が保持されるか
   final json = controller.toJson();
@@ -105,9 +105,9 @@ void main() {
     }
     return sum + allPlayers.where((p) => p.isForeign).length;
   });
-  if (restoredForeignCount != 12) {
+  if (restoredForeignCount != 24) {
     throw StateError(
-        '復元後の外国人数: $restoredForeignCount (期待: 6チーム×2 = 12)');
+        '復元後の外国人数: $restoredForeignCount (期待: 6チーム×4 = 24)');
   }
   print('OK: JSON 往復で isForeign 保持');
 

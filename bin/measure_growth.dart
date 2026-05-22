@@ -1,58 +1,77 @@
 import 'dart:math';
 import 'package:idle_baseball/engine/engine.dart';
 
-/// 数シーズン経過後にリーグ内の能力分布がどうなっているかを測る。
-/// 特に 9 / 10 の発生率がインフレしていないかを確認。
+/// 複数シーズン経過後にリーグ内の能力分布がどうなっているかを測る。
+/// 「9 = 数年に1人の逸材」が定常状態でも維持できているかを確認するのが主目的。
+///
+/// 目標分布（リーグ 132 野手中の各値の人数感）:
+///   9: 0〜2人 (~0.5%)  - 「いる年といない年がある」
+///   8: 3〜5人 (~3%)    - 「常時数人、タイトル争いができる」
+///   7: 10〜15人 (~9%)  - 「結構いる、優秀レベル」
+///   4-6: ~80%          - 「ほとんどここ」
+///   1-3: ~7%           - 「かなり少ない」
 void main() {
-  // 開幕直後 (シーズン 1 開始時) と、シーズン 5 開始時で比較。
-  // 全選手の meet / power / speed / eye / fastball / control を集計。
   final cats = ['meet', 'power', 'speed', 'eye', 'fastball', 'control'];
+  const snapshots = [1, 5, 10, 20];
 
   Map<String, Map<int, int>> emptyDist() => {
         for (final c in cats) c: {for (int v = 1; v <= 10; v++) v: 0},
       };
 
-  final dist1 = emptyDist();
-  final dist5 = emptyDist();
+  // snapshot 年ごとの分布
+  final dists = {for (final y in snapshots) y: emptyDist()};
 
-  for (int seed = 0; seed < 30; seed++) {
+  const numLeagues = 30;
+  for (int seed = 0; seed < numLeagues; seed++) {
     final c = SeasonController.newSeason(random: Random(seed));
-    _collect(c, dist1);
-    // 5 シーズン回す（advanceAll → commitOffseason × 4 で 5シーズン目突入時）
-    for (int s = 0; s < 4; s++) {
+    int year = 1;
+    if (snapshots.contains(year)) _collect(c, dists[year]!);
+    while (year < snapshots.last) {
       c.advanceAll();
-      c.commitOffseason();
+      // 自チームも CPU と同じ推奨引退/新人加入で進める（実機で UI から
+      // 「推奨どおりに進める」を選んだ場合と同じ状態）。引数なしで commitOffseason
+      // を呼ぶと自チームに引退が走らず、衰え選手が累積して 1〜3 が極端に
+      // インフレするので、リーグ全体の定常状態を測るためには必須。
+      final plan = c.prepareOffseason();
+      final selection = OffseasonSelection.recommended(plan);
+      c.commitOffseason(plan: plan, selection: selection);
+      year++;
+      if (snapshots.contains(year)) _collect(c, dists[year]!);
     }
-    _collect(c, dist5);
   }
 
-  print('シーズン 1 開幕時 vs シーズン 5 開幕時 の能力分布比較');
-  print('（30 リーグ × 全選手）\n');
+  print('--- 能力分布の経年変化 ($numLeagues リーグ × 全選手） ---\n');
   for (final cat in cats) {
-    print('--- $cat ---');
-    print('値 |  S1     |  S5     | 変化');
-    for (int v = 1; v <= 10; v++) {
-      final n1 = dist1[cat]![v]!;
-      final n5 = dist5[cat]![v]!;
-      final t1 = dist1[cat]!.values.fold<int>(0, (a, b) => a + b);
-      final t5 = dist5[cat]!.values.fold<int>(0, (a, b) => a + b);
-      final p1 = (n1 / t1 * 100);
-      final p5 = (n5 / t5 * 100);
-      final diff = p5 - p1;
-      final sign = diff >= 0 ? '+' : '';
-      print('  $v | ${p1.toStringAsFixed(2).padLeft(5)}%  |'
-          ' ${p5.toStringAsFixed(2).padLeft(5)}%  | $sign${diff.toStringAsFixed(2)}%');
+    print('=== $cat ===');
+    final header = StringBuffer('値 |');
+    for (final y in snapshots) {
+      header.write(' S${y.toString().padLeft(2)}    |');
     }
-    // 9-10 合計
-    final hi1 = (dist1[cat]![9]! + dist1[cat]![10]!) /
-        dist1[cat]!.values.fold<int>(0, (a, b) => a + b) *
-        100;
-    final hi5 = (dist5[cat]![9]! + dist5[cat]![10]!) /
-        dist5[cat]!.values.fold<int>(0, (a, b) => a + b) *
-        100;
-    print('  9-10合計: ${hi1.toStringAsFixed(2)}% → ${hi5.toStringAsFixed(2)}%  '
-        '(x${(hi5 / hi1).toStringAsFixed(1)})');
-    print('');
+    print(header.toString());
+    for (int v = 1; v <= 10; v++) {
+      final row = StringBuffer(' $v |');
+      for (final y in snapshots) {
+        final n = dists[y]![cat]![v]!;
+        final total = dists[y]![cat]!.values.fold<int>(0, (a, b) => a + b);
+        final p = total == 0 ? 0.0 : (n / total * 100);
+        row.write(' ${p.toStringAsFixed(2).padLeft(5)}% |');
+      }
+      print(row.toString());
+    }
+    // 9 単独・8 単独・7 単独の比較行（目標と比べやすく）
+    final summary = StringBuffer('1リーグ132野手換算で:\n');
+    for (final v in [9, 8, 7]) {
+      summary.write('  値$v ');
+      for (final y in snapshots) {
+        final n = dists[y]![cat]![v]!;
+        final total = dists[y]![cat]!.values.fold<int>(0, (a, b) => a + b);
+        final p = total == 0 ? 0.0 : (n / total);
+        final perLeague = (p * 132).toStringAsFixed(1);
+        summary.write('| S$y: ${perLeague.padLeft(4)}人 ');
+      }
+      summary.write('\n');
+    }
+    print(summary.toString());
   }
 }
 
@@ -71,7 +90,7 @@ void _collect(SeasonController c, Map<String, Map<int, int>> dist) {
         if (v == null) return;
         dist[key]![v] = dist[key]![v]! + 1;
       }
-      // 投手の打撃は除外したいので、投手は fastball/control のみ集計
+      // 投手の打撃は除外（meet/power 等は投手と野手で意味が違う）
       if (p.isPitcher) {
         add('fastball', p.fastball);
         add('control', p.control);
