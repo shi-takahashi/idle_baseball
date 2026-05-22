@@ -51,33 +51,12 @@ class TeamGenerator {
   }
 
   Team _generateTeam(String id, String name, String shortName, int color) {
-    // ---- スタメン野手8人（打順1〜8、players[0..7]の順序でデフォルト守備位置に対応） ----
-    // Teamのデフォルト配置:
-    // players[0]=捕 / [1]=一 / [2]=二 / [3]=三 / [4]=遊 / [5]=左 / [6]=中 / [7]=右
-    final starterPositions = [
-      DefensePosition.catcher,
-      DefensePosition.first,
-      DefensePosition.second,
-      DefensePosition.third,
-      DefensePosition.shortstop,
-      DefensePosition.outfield, // 左
-      DefensePosition.outfield, // 中
-      DefensePosition.outfield, // 右
-    ];
     // 背番号は 1〜40 をシャッフルして割り当てる（1チーム40人）。位置で固定
     // （捕手が必ず1番など）にすると全チーム同じ並びになり実在感が無いため。
     // 手動編集では 99 番なども可能だが、初期状態は 1〜40 に収める。
     final numberPool = [for (int i = 1; i <= 40; i++) i]..shuffle(_random);
     int numberIdx = 0;
     int nextNumber() => numberPool[numberIdx++];
-
-    final starters = <Player>[];
-    for (int i = 0; i < 8; i++) {
-      starters.add(_playerGen.generateStarterFielder(
-        number: nextNumber(),
-        primaryPosition: starterPositions[i],
-      ));
-    }
 
     // ---- 投手 18人（日本人 16 + 外国人 2、役割なしフラット生成 → 能力ベース割り当て） ----
     // 設計（2026-05-23）:
@@ -135,55 +114,80 @@ class TeamGenerator {
         .where((p) => p.pitcherRole != PitcherRole.starter)
         .toList();
 
-    // ---- 控え野手 14人 ----
-    // 当日ベンチ入りするのはこのうち 9 人（SeasonController が選定）。
-    //   控え捕手 2 / 内野UT 4 / 外野UT 8（外野系には万能UTを含む）
-    // 1B/3B は守備イマイチでも務まる、2B/SS は守備が得意な選手の組み合わせが多い。
-    final benchCombos = <List<DefensePosition>>[
-      // 控え捕手 2人（捕手は専門性が高いので兼任なし）
+    // ---- 野手 22人（日本人 20 + 外国人 2、全員フラット生成 → 能力ベースでスタメン選定） ----
+    // 設計（2026-05-23）:
+    // 旧版は「スタメン用 8 名 (mean 5.0) + 控え用 12 名 (mean 4.5) + 外国人 2 名」と、
+    // 生成時に役割（スタメン or 控え）と能力差を仕込んでいた。これは「最初から
+    // スタメン枠の選手」「最初から控え枠の選手」が固定される構造で、現実の
+    // プロ野球（22 人の選手がいて監督が能力で選ぶ）と乖離する。
+    //
+    // 新版は 22 人全員をフラット (mean 5.0) で生成し、能力スコア順にポジション別に
+    // スタメン 8 名を選定する。日本人・外国人の区別なく、能力が高い選手がスタメン、
+    // 能力が低い選手が控え → 当日ベンチ入り選定で外れて事実上ベンチ外、となる。
+    // 外国人野手は power +0.5 等の国籍別オフセットで結果的にスタメンに上がりやすいが、
+    // ハズレ外国人は控えに回る（NPB 実態に合致）。
+    //
+    // 自チームについては SeasonController.newSeason で背番号順に中立化される
+    // （推測ゲームのリーク防止、[feedback_no_ability_based_auto_assignment]）。
+    final fielderPool = <Player>[];
+
+    // 外国人野手 2 人を生成（守備位置抽選、苗字重複回避）
+    final foreignFielderSurnames = <String>{};
+    for (int i = 0; i < 2; i++) {
+      final ff = _playerGen.generateForeignFielder(
+        number: nextNumber(),
+        teamSurnames: foreignFielderSurnames,
+      );
+      fielderPool.add(ff);
+      foreignFielderSurnames.add(foreignSurnameOf(ff.name));
+    }
+
+    // 日本人野手 20 人をポジションパターン付きでフラット生成。
+    // 各ポジションを守れる選手数の最低ライン:
+    //   捕手 3 / 一塁 5+ / 二塁 4+ / 三塁 5+ / 遊撃 4+ / 外野 9+
+    // （これに外国人 2 名のポジション抽選結果が加わる）
+    const fielderPositionPatterns = <List<DefensePosition>>[
+      // 捕手 3 名（専門性が高いので兼任なし）
       [DefensePosition.catcher],
       [DefensePosition.catcher],
-      // 内野UT 4人
+      [DefensePosition.catcher],
+      // 内野手 8 名（一/三、二/遊 を兼任するパターンが多い）
+      [DefensePosition.first],
       [DefensePosition.first, DefensePosition.third],
       [DefensePosition.first, DefensePosition.third],
+      [DefensePosition.second],
       [DefensePosition.second, DefensePosition.shortstop],
       [DefensePosition.second, DefensePosition.shortstop],
-      // 外野UT 8人（外野は試合中の主役で控えも厚くする）
+      [DefensePosition.third],
+      [DefensePosition.shortstop],
+      // 外野手 9 名（外野単独 5、内外野兼任 3、万能UT 1）
+      [DefensePosition.outfield],
+      [DefensePosition.outfield],
       [DefensePosition.outfield],
       [DefensePosition.outfield],
       [DefensePosition.outfield],
       [DefensePosition.outfield, DefensePosition.first],
       [DefensePosition.outfield, DefensePosition.first],
       [DefensePosition.outfield, DefensePosition.third],
-      [DefensePosition.outfield, DefensePosition.third],
-      // 万能UT（内外野複数ポジション）
       [
         DefensePosition.second,
         DefensePosition.shortstop,
         DefensePosition.outfield,
       ],
     ];
-    // 控え 14 のうち最後の 2 枠は外国人野手（守備位置抽選、当たり外れ大）
-    final foreignFielder1 = _playerGen.generateForeignFielder(
-      number: nextNumber(),
-      teamSurnames: foreignSurnamesUsed,
-    );
-    final foreignFielder2 = _playerGen.generateForeignFielder(
-      number: nextNumber(),
-      teamSurnames: {
-        ...foreignSurnamesUsed,
-        foreignSurnameOf(foreignFielder1.name),
-      },
-    );
-    final bench = <Player>[
-      for (int i = 0; i < benchCombos.length - 2; i++)
-        _playerGen.generateBenchFielder(
-          number: nextNumber(),
-          positions: benchCombos[i],
-        ),
-      foreignFielder1,
-      foreignFielder2,
-    ];
+    for (final pattern in fielderPositionPatterns) {
+      fielderPool.add(_playerGen.generateFielder(
+        number: nextNumber(),
+        positions: pattern,
+      ));
+    }
+
+    // 能力ベースでポジション別にスタメン 8 名を選定（捕/一/二/三/遊/外/外/外）。
+    // 残り 14 名は bench に。
+    final starters = _selectFielderStarters(fielderPool);
+    final benchedFielders = fielderPool
+        .where((p) => !starters.contains(p))
+        .toList();
 
     return Team(
       id: id,
@@ -192,7 +196,7 @@ class TeamGenerator {
       players: [...starters, rotation[0]],
       startingRotation: rotation,
       bullpen: bullpen,
-      bench: bench,
+      bench: benchedFielders,
       primaryColorValue: color,
     );
   }
@@ -269,6 +273,73 @@ class TeamGenerator {
       final idx = pitchers.indexWhere((p) => p.id == sorted[i].id);
       if (idx >= 0) pitchers[idx] = updated;
     }
+  }
+
+  /// 22 名の野手プールから、能力スコア順にポジション別スタメン 8 名を選ぶ。
+  ///
+  /// 選定順序: 捕 → 一 → 二 → 三 → 遊 → 外 → 外 → 外
+  /// 各ポジションについて「そのポジションを守れる未選定の選手」の中で能力スコア
+  /// 最上位を選ぶ。ユーティリティ性のある選手（一/三や二/遊 兼任）は、後の
+  /// ポジションでの選定にも回せるため、捕手・専門性の高いポジションから順に
+  /// 確定させていく greedy 法。
+  ///
+  /// 万一そのポジションを守れる選手が枯渇した場合（外国人ガチャの結果に依る）は、
+  /// 残った中で能力スコア最上位を「強制配置」（守れないポジションに配置）する。
+  /// LineupPlanner と同じ挙動で、強制配置中はエラー率 ×3 のペナルティが乗る。
+  ///
+  /// 自チームは SeasonController.newSeason で「背番号順に中立化」されるため、
+  /// この能力ベース選定が反映されるのは CPU 5 球団のみ。
+  List<Player> _selectFielderStarters(List<Player> pool) {
+    const slotPositions = [
+      DefensePosition.catcher,
+      DefensePosition.first,
+      DefensePosition.second,
+      DefensePosition.third,
+      DefensePosition.shortstop,
+      DefensePosition.outfield,
+      DefensePosition.outfield,
+      DefensePosition.outfield,
+    ];
+    final starters = <Player>[];
+    final usedIds = <String>{};
+    for (final pos in slotPositions) {
+      final candidates = pool
+          .where((p) => !usedIds.contains(p.id) && p.canPlay(pos))
+          .toList()
+        ..sort((a, b) =>
+            _fielderAbilityScore(b).compareTo(_fielderAbilityScore(a)));
+      final chosen = candidates.isNotEmpty
+          ? candidates.first
+          : (pool
+                  .where((p) => !usedIds.contains(p.id))
+                  .toList()
+                ..sort((a, b) =>
+                    _fielderAbilityScore(b).compareTo(_fielderAbilityScore(a))))
+              .first;
+      starters.add(chosen);
+      usedIds.add(chosen.id);
+    }
+    return starters;
+  }
+
+  /// 野手の能力スコア（高いほど強い）。
+  /// 打撃 4 能力 + 走力 + 肩 + 主守備位置の守備力 の平均。
+  static double _fielderAbilityScore(Player p) {
+    final values = <double>[
+      (p.meet ?? 5).toDouble(),
+      (p.power ?? 5).toDouble(),
+      (p.eye ?? 5).toDouble(),
+      (p.speed ?? 5).toDouble(),
+      (p.arm ?? 5).toDouble(),
+    ];
+    // 主守備位置の守備力も加味（守れない場合は 0）
+    final bestFielding = (p.fielding ?? const {})
+        .values
+        .fold<int>(0, (a, b) => a > b ? a : b);
+    if (bestFielding > 0) {
+      values.add(bestFielding.toDouble());
+    }
+    return values.reduce((a, b) => a + b) / values.length;
   }
 
   /// 投手の能力スコア（高いほど強い）。

@@ -293,13 +293,14 @@ class SeasonController {
       offseasonProgressionEnabled: offseasonProgressionEnabled,
       random: random,
     );
-    // 自チームの投手ロールは推測ゲームの一部としてユーザーが試合結果から決める。
-    // 開幕時は能力で抑え等が割り当てられた状態にせず、中立な初期ロールで始める:
-    // 全18投手を背番号順に並べ、若い6人→「先発」、残り12人→「中継ぎ」。
-    // 先発/中継ぎの区分は以降ユーザーが自由に変えられる（先発・ベンチ入りとも
-    // 全18投手から選択）。CPU 5 球団は TeamGenerator のロールのまま
+    // 自チームの投手ロール・スタメン野手は推測ゲームの一部としてユーザーが
+    // 試合結果から決める。開幕時はエンジンが能力で配置した状態にせず、背番号順の
+    // 中立な初期配置で始める。CPU 5 球団は TeamGenerator の能力ベース配置のまま
     // （対戦相手の偵察は推測ゲームの一部）。
+    // [feedback_no_ability_based_auto_assignment]
     final my = controller.myTeam;
+
+    // ① 投手ロール: 全18投手を背番号順に並べ、若い6人→「先発」、残り12人→「中継ぎ」
     final pitchers = <Player>[...my.startingRotation, ...my.bullpen]
       ..sort((a, b) => a.number.compareTo(b.number));
     for (int i = 0; i < pitchers.length; i++) {
@@ -308,6 +309,51 @@ class SeasonController {
         controller.updatePlayer(pitchers[i].withPitcherRole(role));
       }
     }
+
+    // ② 野手スタメン: TeamGenerator が能力スコア順にポジション別スタメンを選んでいるが、
+    // それを「背番号順にポジション別スタメンを選ぶ」中立な配置に上書きする。
+    // 22 名（players[0..7] + bench、投手 players[8] を除く）を背番号順に並べ、
+    // ポジションごとに「守れる選手の中で背番号最小」を順に拾う。
+    const slotPositions = [
+      DefensePosition.catcher,
+      DefensePosition.first,
+      DefensePosition.second,
+      DefensePosition.third,
+      DefensePosition.shortstop,
+      DefensePosition.outfield,
+      DefensePosition.outfield,
+      DefensePosition.outfield,
+    ];
+    final fielderPool = <Player>[
+      ...my.players.take(8),
+      ...my.bench,
+    ]..sort((a, b) => a.number.compareTo(b.number));
+    final neutralStarters = <Player>[];
+    final usedIds = <String>{};
+    for (final pos in slotPositions) {
+      Player? chosen;
+      for (final p in fielderPool) {
+        if (usedIds.contains(p.id)) continue;
+        if (p.canPlay(pos)) {
+          chosen = p;
+          break;
+        }
+      }
+      chosen ??= fielderPool.firstWhere((p) => !usedIds.contains(p.id));
+      neutralStarters.add(chosen);
+      usedIds.add(chosen.id);
+    }
+    // 投手スロット（players[8]）はそのまま維持。スタメン野手 8 と残り bench を再構成。
+    final pitcherSlot = my.players[8];
+    final newBench =
+        fielderPool.where((p) => !usedIds.contains(p.id)).toList();
+    my.players
+      ..clear()
+      ..addAll([...neutralStarters, pitcherSlot]);
+    my.bench
+      ..clear()
+      ..addAll(newBench);
+
     return controller;
   }
 

@@ -385,61 +385,37 @@ class PlayerGenerator {
     }
   }
 
-  /// スタメン野手（主ポジション + ユーティリティ性のあるサブポジション）
-  Player generateStarterFielder({
+  /// 野手を生成する。フラット mean 5.0 で生成し、スタメン/控えの役割は呼び出し側で
+  /// 能力ベースで決める（[TeamGenerator] のスタメン選定）。
+  ///
+  /// 設計（2026-05-23 統合）:
+  /// 旧版は `generateStarterFielder`（mean 5.0）と `generateBenchFielder`（mean 4.5）
+  /// で生成時に「スタメン用は能力高め / 控え用は能力低め」と仕込んでいた。これだと
+  /// 「最初からスタメンと決まっている選手」「最初から控えと決まっている選手」が
+  /// 生成段階で固定され、現実のプロ野球（選手がいて監督が能力で選ぶ）と乖離する。
+  /// 22 人をフラットに生成すれば、能力ガチャの結果でスタメン/控えが自然に決まる。
+  ///
+  /// [positions] の第 1 要素を主守備位置（守備力 mean 6.5）、それ以降を
+  /// 追加で守れるポジション（mean 4.5）として登録する。主ポジションに紐づく
+  /// 典型的なサブポジション（[_secondaryFielding]）も確率的に付与される。
+  /// 主ポジションのプロファイル（一塁手は power +1.5、二遊は speed +1.5 等）を
+  /// 打撃・走力・肩の生成 mean に適用（これは「現実のポジションごとの傾向」を
+  /// 反映する自然な属性で、「役割を仕込む小細工」ではない）。
+  Player generateFielder({
     required int number,
-    required DefensePosition primaryPosition,
+    required List<DefensePosition> positions,
   }) {
+    final primaryPosition = positions.first;
     final fielding = <DefensePosition, int>{
       primaryPosition: _r.abilityInt(mean: 6.5),
     };
+    for (int i = 1; i < positions.length; i++) {
+      fielding[positions[i]] = _r.abilityInt(mean: 4.5);
+    }
     _attachSecondaryPositions(fielding, primaryPosition);
     final profile = _profileForPosition(primaryPosition);
     final meet = _r.abilityInt(mean: 5.0 + profile.meet);
     final power = _r.abilityInt(mean: 5.0 + profile.power);
-    final speed = _r.abilityInt(mean: 5.0 + profile.speed);
-    final eye = _r.abilityInt();
-    final arm = _r.abilityInt(mean: 5.0 + profile.arm);
-    return Player(
-      id: _newId(),
-      name: _uniqueName(),
-      number: number,
-      age: _generateAge(),
-      meet: meet,
-      power: power,
-      speed: speed,
-      eye: eye,
-      arm: arm,
-      bats: _batterHandedness(),
-      throws: _r.chance(0.15) ? Handedness.left : Handedness.right,
-      fielding: fielding,
-      potentials: _buildPotentials(
-        meet: meet,
-        power: power,
-        speed: speed,
-        eye: eye,
-        arm: arm,
-      ),
-      potentialFielding: _buildPotentialFielding(fielding),
-    );
-  }
-
-  /// 控え野手（複数ポジション守れる、能力は全体的にやや低め）
-  Player generateBenchFielder({
-    required int number,
-    required List<DefensePosition> positions,
-  }) {
-    final fielding = <DefensePosition, int>{};
-    for (final pos in positions) {
-      fielding[pos] = _r.abilityInt(mean: 4.5);
-    }
-    // 主ポジション（先頭）に紐づくサブポジションも低めの守備力で追加。
-    // 既に positions に含まれている場合はスキップ（containsKey で吸収）。
-    _attachSecondaryPositions(fielding, positions.first);
-    // 守備傾向は主ポジション（positions の先頭）で決める
-    final profile = _profileForPosition(positions.first);
-    final meet = _r.abilityInt(mean: 4.5 + profile.meet);
-    final power = _r.abilityInt(mean: 4.5 + profile.power);
     final speed = _r.abilityInt(mean: 5.0 + profile.speed);
     final eye = _r.abilityInt();
     final arm = _r.abilityInt(mean: 5.0 + profile.arm);
