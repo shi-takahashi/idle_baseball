@@ -164,31 +164,12 @@ class _PlayerRow extends StatelessWidget {
                 ),
               ),
             ),
-            // 名前（背番号のすぐ右）
+            // 名前（背番号のすぐ右）。外国人はカタカナ表記で識別できるため
+            // 「外」マークは表示しない。
             Text(
               player.name,
               style: const TextStyle(fontSize: 14),
             ),
-            // 外国人マーク（小さなチップで識別）
-            if (player.isForeign) ...[
-              const SizedBox(width: 6),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-                decoration: BoxDecoration(
-                  color: Colors.orange.shade100,
-                  borderRadius: BorderRadius.circular(3),
-                  border: Border.all(color: Colors.orange.shade400),
-                ),
-                child: const Text(
-                  '外',
-                  style: TextStyle(
-                    fontSize: 10,
-                    color: Color(0xFFC55A11),
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ),
-            ],
             const SizedBox(width: 12),
             // ポジション / 役割（名前のすぐ右に続けて表示）
             Text(

@@ -85,7 +85,7 @@ class PlayerDetailScreen extends StatelessWidget {
   Widget _buildHeader(BuildContext context, Player player) {
     final tags = <String>[];
     tags.add('${player.age}歳');
-    if (player.isForeign) tags.add('外国人');
+    // 外国人タグはカタカナ表記で識別できるため表示しない
     if (player.isPitcher) {
       tags.add(player.pitcherRole == null ? '先発' : '救援');
       if (player.pitcherRole != null) {
