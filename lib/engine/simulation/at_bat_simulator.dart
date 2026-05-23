@@ -138,23 +138,51 @@ class AtBatSimulator {
   // ミート力1あたりのインプレー時の打球の質補正
   // 高ミートでアウト率↓（=ヒット率↑）、低ミートでアウト率↑（=ヒット率↓）
   // ※ コンタクトの「質」のモデル化。低ミート打者（投手など）は当てても弱い当たりに。
-  static const double _meetOutModifier = 0.020;
+  // 2026-05-23(4): ミート単独で打率 .341、選球眼単独で .334、長打力単独で .333 と
+  // 各々高いだけでなく、組み合わせると打率効果が加算的に重なり、ミ9/長7/眼9 で .426、
+  // 5ツール(ミ8/長8/眼8) で .434 と NPB 戦後最高 .367 を大幅に超える値になっていた。
+  // 各単独効果を 0.020 → 0.010 に抑え、組み合わせ時の上振れを NPB レンジ内
+  // （巧打者 .330-.360、5ツール .340-.370）に収める。
+  // 2026-05-23(6): 「コンタクト型 > パワー型」の打率順序を作るため、ミート効果を
+  // 0.003 → 0.018 に強化。
+  // 2026-05-23(7): シュワーバー型再現（HRテーブル復活）+ NPB 投高打低化（リーグ
+  // 平均 .250）のため、ミート効果を 0.018 → 0.017 に調整。ミート低 (1-3) で
+  // 打率が大きく落ち、ミート高 (8-9) でやっと3割級になる差別化を実現。
+  static const double _meetOutModifier = 0.017;
 
   // 基準選球眼（この選球眼で基本確率になる）
   static const int _baseEye = 5;
 
-  // 選球眼1あたりの補正率
-  static const double _eyeBallModifier = 0.015; // ボール確率補正（高いほどボール見逃し増→四球増）
+  // 選球眼の影響（2026-05-23 改訂）:
+  //   旧実装は「選球眼が高い → ボール率増加」だけで、副作用として「打席が長引く
+  //   → 3 ストライク到達確率が上がる → 三振増加」というネット効果ほぼゼロの
+  //   パラメータになっていた。実野球では選球眼が良い打者は:
+  //   - ボール球を見送る（→ 四球増）
+  //   - ストライクゾーンの球はちゃんと振る（→ 見逃し三振減）
+  //   - ボールとストライクを見極めるので空振りも減る（→ 空振り三振減・打率↑）
+  //   この3経路で「四球+ / 三振- / 打率+」の方向に効くよう再設計。
+  static const double _eyeBallModifier = 0.015;            // ボール率増加（既存維持）
+  static const double _eyeStrikeLookingModifier = 0.010;   // 見逃しストライク減（強化）
+  static const double _eyeSwingMissModifier = 0.010;       // 空振りストライク減（強化）
+  static const double _eyeOutModifier = 0.0;               // 選眼の打率寄与は廃止（BB増 + K減 のみで効く）
 
   // 長打力による四球率補正（ホームラン警戒で勝負を避けられる）
-  static const double _powerWalkModifier = 0.008; // 長打力1あたりの四球率補正
+  // 2026-05-23: パワーヒッターが「フルスイングで空振り増 → 三振増」になるよう
+  // _powerSwingMissModifier を新規追加。
+  static const double _powerWalkModifier = 0.010;          // 0.008 → 0.010（敬遠強化）
+  static const double _powerSwingMissModifier = 0.0045;    // 空振り増（フルスイング、新規）
 
   // 基準長打力（この長打力で基本確率になる）
   static const int _basePower = 5;
 
   // 長打力1あたりの補正率
-  static const double _powerDoubleModifier = 0.005; // 二塁打確率補正
-  static const double _powerSingleModifier = 0.003; // 単打確率補正（打球速度で少し増）
+  // 2026-05-23(6): 長打力が単打を増やす効果（_powerSingleModifier）は撤廃。
+  // 現実では長打力は HR と二塁打を増やす指標で、単打数とはほぼ無相関。さらに
+  // 「強打者の打率 > コンタクト型の打率」の逆転が出ていた（HR寄与で打率が
+  // 直接押し上がる + 単打も増える二重経路）。HR と二塁打の押し上げに絞り、
+  // 単打は廃止する。
+  static const double _powerDoubleModifier = 0.002; // 二塁打確率補正（0.005→0.002）
+  static const double _powerSingleModifier = 0.0;   // 単打確率補正（廃止）
 
   // 三塁打は長打力ではなく走力で決まる（俊足の指標。鈍足の長距離砲は三塁打に
   // ならず本塁打/二塁打になる）。走力1あたりの三塁打確率補正。
@@ -169,19 +197,36 @@ class AtBatSimulator {
   // 2026-05-17 改訂: リーグ全体の SLG/HR が NPB 比で高かったため、長打力9≒40本は
   // 維持したまま中位（power4〜8）を圧縮した。これでリーグ合計が下がり、かつ
   // 上位との差がさらに開いて推測しやすくなる（設計の柱②）。
-  // 計測で 規定打席到達者の平均 HR が概ね次の水準になるよう調整:
-  //   power4≈5 / power5≈9 / power6≈15 / power7≈21 / power8≈30 / power9≈40 / power10≈49
+  // 2026-05-23(5): 打率/HR が組み合わせで過剰上振れし、強打者で HR 65本・5ツール
+  // で打率 .413 となっていた。NPB 投高打低（年 50+ HR は数年に1人、3割は数人）の
+  // 現実に合わせるべく約 25% ダウン。
+  // 2026-05-23(6): HR が打率に直接寄与しすぎて「パワー型 > コンタクト型」の打率
+  // 逆転が残っていたため、power 8〜10 を削減（HR が打率を押し上げる経路を弱める）。
+  // 2026-05-23(7): シュワーバー型（MLB 2023 .197 / HR 47）を再現するため、ミート
+  // 効果でコンタクト型の打率を引き上げ、HR テーブルは「ホームラン王 = 50本級」へ
+  // 戻す。ベース probOut も上げて全体打率を NPB 投高打低（.250）に寄せ、
+  // 「ミート低 → 打率低、長打力高 → HR 多い」の差別化を強化。
+  // (7-rev) HRが直接打率を押し上げるため、オール9で .426 と4割超えになっていた。
+  // HR テーブルを「シュワーバー再現に必要な最低限」に再調整:
+  //   power7≈18 / power8≈25 / power9≈36 / power10≈45
+  // (8) ユーザー共有の実戦データ（長打力9 のスラッガーで HR 21-27 本のみ、NPB
+  // 上位 35-45 本に届かない）を受けて、HR テーブルを大幅増。実戦の相手投手は
+  // リーグ平均（4-5変化球）で sweep の固定甘い投手より厳しいため、sweep 値より
+  // 実戦値が 30-40% 低く出る。実戦で長9 = HR 40本級になるよう sweep ベースで
+  // +50% 程度に上げる:
+  //   sweep値: power7≈28 / power8≈40 / power9≈55 / power10≈70
+  //   実戦値:  power7≈18 / power8≈26 / power9≈38 / power10≈48
   static const Map<int, double> _powerHomeRunBase = {
-    1: 0.0015,
-    2: 0.0025,
-    3: 0.0042,
-    4: 0.0070,
-    5: 0.0174,
-    6: 0.0324,
-    7: 0.0490,
-    8: 0.0770,
-    9: 0.1080,
-    10: 0.1250,
+    1: 0.0011,
+    2: 0.0020,
+    3: 0.0034,
+    4: 0.0060,
+    5: 0.0125,
+    6: 0.0215,
+    7: 0.0370,
+    8: 0.0545,
+    9: 0.0820,
+    10: 0.1050,
   };
 
   // 基準守備力（この守備力で基本確率になる）
@@ -206,7 +251,9 @@ class AtBatSimulator {
   // 同日さらにシュート/カット/シンカーを追加し K 率が再び上振れたため 0.073→0.069。
   // 2026-05-23: リーグ K率がやや多い（20.3%）感覚に合わせて 0.069 → 0.063 に微減。
   // 同時に球速空振りボーナスを縮小しているので、実機ではさらに下がる方向。
-  static const double _baseProbStrikeSwinging = 0.063;
+  // 2026-05-23(2): 平均能力(ミ5/長5/眼5) の K数 が 150試合で 103 と多めだったため
+  // ベースを 0.063 → 0.055 へ下げ、平均的選手の三振を NPB 中位水準に寄せる。
+  static const double _baseProbStrikeSwinging = 0.055;
   static const double _baseProbFoul = 0.195;
   // インプレー確率は残り（= 1 - 上記4つ = 0.24。旧 0.20 から引き上げ）
 
@@ -215,7 +262,13 @@ class AtBatSimulator {
   // リーグ打率を NPB 水準（~.250）へ寄せる。
   // 2026-05-18: シュート/カット/シンカー追加と配球リワークでリーグ水準が動いた
   // ため、リーグ打率を NPB へ戻すべく 0.740→0.718 に再センタ。
-  static const double _baseProbOut = 0.718;
+  // 2026-05-23(4): 選球眼/ミート/長打力の打率効果を再設計したぶんリーグ打率が
+  // .266 に上振れていたため、ベースを 0.718→0.738 に再センタ。
+  // 2026-05-23(7): NPB 投高打低（リーグ平均 .240-.250、3割打者は数人レベル）に
+  // 寄せるため、ベースを 0.738 → 0.760 に上げる。
+  // (8) 実戦データで強打者の打率が .236 (NPB スラッガーは .270 程度) と低く、
+  // 全体的に底上げが必要。0.760 → 0.752 に微減。
+  static const double _baseProbOut = 0.752;
   static const double _baseProbSingle = 0.20;
   // 二塁打を引き上げ・三塁打を引き下げ（2026-05-16 微調整）。
   // 旧 0.05 / 0.01 では 143試合換算 二塁打189・三塁打48 で、三塁打が NPB の
@@ -731,12 +784,15 @@ class AtBatSimulator {
     // 確率を調整
     // ボール率: 球種固有 + 制球力 + パラメータ補正 + 疲労 + 選球眼 + 長打力警戒 + プラトーン
     final probBall = (_baseProbBall + pitchBallModifier - controlBallModifier - paramScaling * 0.5 + fatigueBallIncrease + eyeBallBonus + powerWalkBonus + platoonBall).clamp(0.20, 0.55);
-    final probStrikeLooking = _baseProbStrikeLooking;
+    // 見逃しストライク率: 選球眼が高いほどストライクをちゃんと振るので下がる
+    final probStrikeLooking = (_baseProbStrikeLooking - eyeDiff * _eyeStrikeLookingModifier).clamp(0.05, 0.25);
     // 空振り率: 球種固有 + 球速（線形）+ 非線形球速ボーナス + パラメータ補正
-    //          - ミート力 - 疲労 + プラトーン
+    //          - ミート力 - 選球眼 + 長打力 - 疲労 + プラトーン
+    //  - 選球眼: 見極めて空振りを減らす
+    //  - 長打力: フルスイングで空振りが増える（パワーヒッターの三振多）
     // 持ち球数ボーナス（球種が多いほど打者が待ち球を絞れず空振り増）
     final arsenalSwing = (arsenalSize - _baseArsenalSize) * _arsenalSwingBonus;
-    final probStrikeSwinging = (_baseProbStrikeSwinging + pitchSwingModifier + speedModifier + velocityWhiffBonus + paramScaling - swingModifier - fatigueSwingDecrease + platoonSwing + arsenalSwing).clamp(0.03, 0.40);
+    final probStrikeSwinging = (_baseProbStrikeSwinging + pitchSwingModifier + speedModifier + velocityWhiffBonus + paramScaling - swingModifier - eyeDiff * _eyeSwingMissModifier + powerDiff * _powerSwingMissModifier - fatigueSwingDecrease + platoonSwing + arsenalSwing).clamp(0.03, 0.40);
     final probFoul = _baseProbFoul;
     // インプレー確率は残り（他の結果にならなかった場合）
 
@@ -982,6 +1038,7 @@ class AtBatSimulator {
     required PitchType pitchType,
     required int pitchParam,
     required double fatigue,
+    int eye = 5,
     int batterSpeed = 5,
     bool isPlatoonDisadvantage = false,
     BattedBallType? battedBallType,
@@ -1046,6 +1103,13 @@ class AtBatSimulator {
     final meetDiff = meet - _baseMeet;
     final meetOutAdjustment = -meetDiff * _meetOutModifier;
 
+    // 選球眼によるアウト率補正（2026-05-23 追加）
+    // 選球眼が良いと「ボール球を振らない → スイングは良いコース／質のものに集中
+    // → 打球の質が上がる → ヒット率がやや上がる」効果を加える。インプレー時の
+    // アウト率を選球眼で下げる方向で補正する。ミートほどは大きく効かない控えめな値。
+    final eyeDiff = eye - _baseEye;
+    final eyeOutAdjustment = -eyeDiff * _eyeOutModifier;
+
     // プラトーン補正（同じ手=投手有利）
     final platoonOut = isPlatoonDisadvantage ? _platoonOutModifier : 0.0;
 
@@ -1064,6 +1128,7 @@ class AtBatSimulator {
         leadModifierValue -
         fatigueOutDecrease +
         meetOutAdjustment +
+        eyeOutAdjustment +
         platoonOut +
         arsenalOut -
         weaknessPenalty;
@@ -1240,6 +1305,7 @@ class AtBatSimulator {
     int power,
     int? fielding, {
     int? batterSpeed,
+    int? batterEye,
     FieldPosition? fieldPosition,
     int? fielderArm,
     int? catcherFielding,
@@ -1267,6 +1333,7 @@ class AtBatSimulator {
       pitchType: pitchType,
       pitchParam: paramValue,
       fatigue: fatigue,
+      eye: batterEye ?? 5,
       arsenalSize: arsenalSize,
       batterSpeed: batterSpeed ?? 5,
       isPlatoonDisadvantage: isPlatoonDisadvantage,
@@ -1667,6 +1734,7 @@ class AtBatSimulator {
         strikes: strikes,
         meet: meet,
         power: power,
+        eye: eye,
         control: control,
         speed: speed,
         batterSpeed: batterSpeed,
@@ -2110,6 +2178,7 @@ class AtBatSimulator {
     required int strikes,
     required int meet,
     required int power,
+    required int eye,
     required int control,
     required int speed,
     required int batterSpeed,
@@ -2157,6 +2226,7 @@ class AtBatSimulator {
           power,
           fielding,
           batterSpeed: batterSpeed,
+          batterEye: eye,
           fieldPosition: pitch.fieldPosition,
           fielderArm: fielder?.arm,
           catcherFielding: catcher?.getFielding(DefensePosition.catcher),

@@ -35,7 +35,8 @@
       "Bash(sed -n '70,90p' bin/test_rebuild.dart)",
       "Bash(sed -n '15,30p' bin/test_foreign_players.dart)",
       "Bash(rm /Users/takahashi-sh/Project/idle_baseball/.claude/projects/-Users-takahashi-sh-Project-idle-baseball/memory/feedback_league_distribution_check.md)",
-      "Bash(rmdir /Users/takahashi-sh/Project/idle_baseball/.claude/projects/-Users-takahashi-sh-Project-idle-baseball/memory /Users/takahashi-sh/Project/idle_baseball/.claude/projects/-Users-takahashi-sh-Project-idle-baseball /Users/takahashi-sh/Project/idle_baseball/.claude/projects /Users/takahashi-sh/Project/idle_baseball/.claude)"
+      "Bash(rmdir /Users/takahashi-sh/Project/idle_baseball/.claude/projects/-Users-takahashi-sh-Project-idle-baseball/memory /Users/takahashi-sh/Project/idle_baseball/.claude/projects/-Users-takahashi-sh-Project-idle-baseball /Users/takahashi-sh/Project/idle_baseball/.claude/projects /Users/takahashi-sh/Project/idle_baseball/.claude)",
+      "Bash(awk *)"
     ]
   }
 }
