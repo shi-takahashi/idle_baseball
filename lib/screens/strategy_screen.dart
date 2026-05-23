@@ -921,11 +921,11 @@ class StrategyScreenState extends State<StrategyScreen>
           ),
           // 守備位置は shortName (1文字: 投/捕/一/二/三/遊/左/中/右) で表示。
           // 適性のない位置（cantField）はオレンジ + 警告アイコンで知らせる。
-          // 中身は最大でもアイコン + 1文字なので 28px に詰める。余ったぶんは
-          // 成績欄（Expanded）に自動で流れて、後半シーズンで数値が2-3桁になっても
-          // 切れにくくなる。
+          // 警告アイコン + 1文字 の組み合わせは Icon ウィジェットの内部キャンバス
+          // を含めると 28px に収まらないため 40px 確保（アイコンなしの行と幅が
+          // 揃うよう全行共通）。余ったぶんは成績欄（Expanded）に自動で流れる。
           SizedBox(
-            width: 28,
+            width: 40,
             child: InkWell(
               onTap: slot.player == null ? null : () => _pickPosition(index),
               child: Container(
