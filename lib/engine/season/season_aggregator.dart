@@ -101,13 +101,19 @@ class SeasonAggregator {
       awayRecord.ties++;
     }
 
-    // 失策（フィールディングエラー）の集計
+    // 失策（フィールディングエラー + 捕手送球エラー）の集計
     // 守備側 = halfInning.isTop なら home（home が守る）/ そうでなければ away
     for (final half in game.halfInnings) {
       final fieldingRecord = half.isTop ? homeRecord : awayRecord;
       for (final ab in half.atBats) {
         if (ab.fieldingError != null) {
           fieldingRecord.errors++;
+        }
+        // 捕手送球エラー（バッテリーエラー枠だが NPB ルール上は失策に算入）
+        for (final pitch in ab.pitches) {
+          if (pitch.batteryError?.type == BatteryErrorType.catcherThrowing) {
+            fieldingRecord.errors++;
+          }
         }
       }
     }
@@ -325,6 +331,15 @@ class SeasonAggregator {
         final fielder = ab.fieldingError?.fielder;
         if (fielder != null) {
           batterStats[fielder.id]?.errors++;
+        }
+        // 捕手送球エラーの個人失策算入
+        for (final pitch in ab.pitches) {
+          if (pitch.batteryError?.type == BatteryErrorType.catcherThrowing) {
+            final c = pitch.batteryError!.catcher;
+            if (c != null) {
+              batterStats[c.id]?.errors++;
+            }
+          }
         }
 
         if (ab.isIncomplete) continue;

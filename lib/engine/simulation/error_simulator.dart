@@ -115,42 +115,110 @@ class ErrorSimulator {
   static const double _catcherFieldingPassedBallModifier = 0.0004;
 
   // === 内野エラー関連 ===
-  // ゴロエラー基本確率（捕球 + 送球の合算）。
-  // 検知時に [pickGroundBallErrorType] で 捕球エラー / 送球エラー に振り分ける。
-  // 2026-05-17: 旧 0.04 では 143試合換算 失策 約55本と NPB（60〜80）下限を
-  // やや下回り、パラメータ非表示の設計で守備力を読みづらかったため引き上げ。
-  // 目標は NPB 下限寄りの ~65 本（外野フライ落球を恒久未実装にしているぶんの
-  // 余白を残す）。
-  static const double _baseGroundBallErrorRate = 0.048; // 4.8%
+  // ゴロエラー判定。検知時に [pickGroundBallErrorType] で 捕球 / 送球 に振り分ける。
+  //
+  // 2026-05-23: 旧設計（base 0.048 + 線形 modifier 0.006/pt + clamp 下限 0.010）
+  // では NPB 比でエラー数が約2倍多く、守備力差もランダム性に埋もれて推測ゲーム
+  // として機能していなかった。具体的には 150 試合換算で
+  //   遊撃 守備力5: 26.9 個（NPB 目安 10〜15）
+  //   遊撃 守備力8: 15.2 個（守備力9のサンプルゼロ＝ほぼ生成されない）
+  // という状態。clamp 下限 0.010 が守備力9 以上の値を切り捨てており、能力9 の
+  // 名手でも普通の守備力に均されていた。
+  //
+  // 新設計: 「ポジション別 base（守備力5のエラー確率）× 守備力スケール」の積で
+  // 表現。守備力スケールは 1pt あたり 0.7 倍の指数減衰で、守備力9 で base の
+  // 0.24 倍まで落ちる（線形 modifier より上下を引き離す、[feedback_parameter_influence]）。
+  //
+  // NPB 目安（150試合、スタメン平均 = 守備力5 相当）:
+  //   遊撃 10〜15 / 三塁 7〜12 / 二塁 5〜9 / 捕手 3〜5 / 一塁 ~5
+  // base は計測値から逆算（ポジション別ゴロ機会数を所与として、目標エラー数を
+  // 達成する確率を選定）。
+  static const Map<FieldPosition, double> _positionErrorBase = {
+    FieldPosition.pitcher: 0.020,   // 投手（機会少、難しい）
+    FieldPosition.catcher: 0.030,   // 捕手（ゴロ機会少、難しい）
+    FieldPosition.first: 0.014,     // 一塁（楽）
+    FieldPosition.second: 0.018,    // 二塁
+    FieldPosition.third: 0.027,     // 三塁（強い打球が多い）
+    FieldPosition.shortstop: 0.024, // 遊撃（守備範囲広い）
+  };
+  // 守備力スケール（守備力5 = 1.0、1pt あたり 0.7 倍の指数減衰）。
+  // 上下を引き離す非線形。守備力1 は 4.17 倍、守備力9 は 0.24 倍。
+  static const Map<int, double> _fieldingErrorScale = {
+    1: 4.17,
+    2: 2.92,
+    3: 2.04,
+    4: 1.43,
+    5: 1.00,
+    6: 0.70,
+    7: 0.49,
+    8: 0.34,
+    9: 0.24,
+    10: 0.17,
+  };
   // 内野ゴロエラー検知時の「捕球 vs 送球」内訳（NPB の実績に近い 6:4）
   static const double _groundBallFieldingErrorShare = 0.6;
-  // 守備力による補正（1ポイントあたり）
-  static const double _fieldingErrorModifier = 0.006; // 守備力1で+2.4%、10で-3.0%
-  // ポジション別の難易度補正
-  static const Map<FieldPosition, double> _positionErrorModifier = {
-    FieldPosition.pitcher: 0.010,   // 投手は守備機会少なく難しい
-    FieldPosition.catcher: 0.006,   // 捕手も難しい
-    FieldPosition.first: -0.010,    // 一塁は比較的簡単
-    FieldPosition.second: 0.0,      // 二塁は標準
-    FieldPosition.third: 0.010,     // 三塁は強い打球が多い
-    FieldPosition.shortstop: 0.006, // 遊撃は守備範囲広く難しい
-  };
 
   // === 外野エラー関連 ===
   // 外野手のエラーは「ヒット + 追加進塁」の形で発生する。
   // 単独で「アウトをセーフに」するエラー（外野フライ落球）はプロレベルで
   // ほぼあり得ないので未実装。
   //
-  // 二塁打エラー（クッション処理ミス + 中継返球ミス）基本確率
-  static const double _baseDoubleErrorRate = 0.015; // 1.5%
-  // 単打エラー（中継返球ミス）基本確率
-  // クッション処理を伴わず、長距離返球の機会も少ないため低め
-  static const double _baseSingleErrorRate = 0.005; // 0.5%
-  // 守備力による補正（共通）
-  static const double _outfieldFieldingErrorModifier = 0.003;
+  // 2026-05-23: 守備力ごとの非線形テーブルに変更。旧設計（base + 線形 modifier
+  // 0.003/pt）では能力差がランダム性に埋もれており、150試合で守備力9=0個 /
+  // 守備力5=1個 / 守備力1=5個と全体的に低すぎ、かつ上下差も小さかった。
+  // 目標: 守備力 X の外野手は約 (10-X) 個 / 150試合（守備力1で9個、守備力5で
+  // 5個、守備力9で1個）。上下を引き離すため線形でなく非線形テーブルで定義。
+  //
+  // 二塁打エラー（クッション処理ミス + 中継返球ミス）と単打エラー（中継返球
+  // ミスのみ）の per-event 確率を守備力ごとに定義。二塁打側は長距離処理を
+  // 伴うため確率高め（おおむね単打側の 3 倍）。
+  static const Map<int, double> _outfieldDoubleErrorByFielding = {
+    1: 0.120,
+    2: 0.105,
+    3: 0.092,
+    4: 0.078,
+    5: 0.068,
+    6: 0.056,
+    7: 0.045,
+    8: 0.030,
+    9: 0.016,
+    10: 0.008,
+  };
+  static const Map<int, double> _outfieldSingleErrorByFielding = {
+    1: 0.040,
+    2: 0.035,
+    3: 0.031,
+    4: 0.026,
+    5: 0.023,
+    6: 0.019,
+    7: 0.015,
+    8: 0.010,
+    9: 0.005,
+    10: 0.0025,
+  };
 
   // 二塁打エラー検知時の内訳: クッション処理ミス vs 中継返球ミス
   static const double _doubleCushionShare = 0.70;
+
+  // === 捕手送球エラー関連 ===
+  // 走者あり投球で独立試行する捕手の送球エラー（盗塁阻止失敗・牽制送球ミス等）。
+  // NPB の捕手は PB を除く失策が 150試合あたり 3〜5 個。本ゲームでは捕手にゴロが
+  // 飛ぶ機会自体が極小（_baseGroundBallErrorRate 経路では実質発生しない）ため、
+  // 別経路として実装する。
+  // per-runner-pitch（走者ありの投球）で独立試行。守備力5 で 0.06% (年 ~4個)、
+  // 守備力9 で 0.014% (年 ~1個)。
+  static const Map<int, double> _catcherThrowingErrorByFielding = {
+    1: 0.0025,
+    2: 0.0018,
+    3: 0.0012,
+    4: 0.00085,
+    5: 0.00060,
+    6: 0.00042,
+    7: 0.00029,
+    8: 0.00020,
+    9: 0.00014,
+    10: 0.00010,
+  };
 
   /// 守れない（canPlay=false）ポジションに強引配置された選手のエラー倍率。
   /// NPB の「捕手不在で内野手が捕手」のような状況の表現で、守備力 1 の選手
@@ -183,6 +251,18 @@ class ErrorSimulator {
     final pitchModifier = (_pitchTypeWildPitchModifier[pitchType] ?? 0.0) * 0.5; // ワイルドピッチより影響小
 
     var probability = (_basePassedBallRate - fieldingModifier + pitchModifier).clamp(0.0002, 0.010);
+    if (isForcedPlacement) probability *= _forcedPlacementErrorMultiplier;
+    return _random.nextDouble() < probability;
+  }
+
+  /// 捕手の送球エラー判定（盗塁阻止失敗・牽制送球ミス等）。
+  /// 走者あり投球で独立試行。発生時はランナー1つ進塁（WP/PB と同じ）。
+  /// catcherFielding: 捕手の守備力
+  /// isForcedPlacement: 捕手不在で内野手等を強引配置している場合 true（エラー率3倍）
+  bool checkCatcherThrowingError(int catcherFielding,
+      {bool isForcedPlacement = false}) {
+    final f = catcherFielding.clamp(1, 10);
+    var probability = _catcherThrowingErrorByFielding[f] ?? 0.0006;
     if (isForcedPlacement) probability *= _forcedPlacementErrorMultiplier;
     return _random.nextDouble() < probability;
   }
@@ -231,11 +311,10 @@ class ErrorSimulator {
   /// 戻り値: エラーが発生したらtrue
   bool checkGroundBallError(int fielding, FieldPosition position,
       {bool isForcedPlacement = false}) {
-    final fieldingDiff = fielding - 5;
-    final fieldingModifier = fieldingDiff * _fieldingErrorModifier;
-    final posModifier = _positionErrorModifier[position] ?? 0.0;
-
-    var probability = (_baseGroundBallErrorRate - fieldingModifier + posModifier).clamp(0.010, 0.12);
+    final base = _positionErrorBase[position] ?? 0.020;
+    final f = fielding.clamp(1, 10);
+    final scale = _fieldingErrorScale[f] ?? 1.0;
+    var probability = base * scale;
     if (isForcedPlacement) probability *= _forcedPlacementErrorMultiplier;
     return _random.nextDouble() < probability;
   }
@@ -349,10 +428,8 @@ class ErrorSimulator {
   bool checkDoubleError(int fielding, FieldPosition position,
       {bool isForcedPlacement = false}) {
     if (!position.isOutfield) return false;
-    final fieldingDiff = fielding - 5;
-    final fieldingModifier = fieldingDiff * _outfieldFieldingErrorModifier;
-    var probability =
-        (_baseDoubleErrorRate - fieldingModifier).clamp(0.003, 0.04);
+    final f = fielding.clamp(1, 10);
+    var probability = _outfieldDoubleErrorByFielding[f] ?? 0.06;
     if (isForcedPlacement) probability *= _forcedPlacementErrorMultiplier;
     return _random.nextDouble() < probability;
   }
@@ -364,10 +441,8 @@ class ErrorSimulator {
   bool checkSingleError(int fielding, FieldPosition position,
       {bool isForcedPlacement = false}) {
     if (!position.isOutfield) return false;
-    final fieldingDiff = fielding - 5;
-    final fieldingModifier = fieldingDiff * _outfieldFieldingErrorModifier;
-    var probability =
-        (_baseSingleErrorRate - fieldingModifier).clamp(0.001, 0.02);
+    final f = fielding.clamp(1, 10);
+    var probability = _outfieldSingleErrorByFielding[f] ?? 0.02;
     if (isForcedPlacement) probability *= _forcedPlacementErrorMultiplier;
     return _random.nextDouble() < probability;
   }

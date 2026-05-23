@@ -1544,19 +1544,46 @@ class AtBatSimulator {
             runsScored: errorResult.runsScored,
           );
         }
+      }
 
-        // バッテリーエラーがあればPitchResultを更新
-        if (currentBatteryError != null) {
-          pitch = PitchResult(
-            type: pitch.type,
-            pitchType: pitch.pitchType,
-            battedBallType: pitch.battedBallType,
-            fieldPosition: pitch.fieldPosition,
-            speed: pitch.speed,
-            steals: pitch.steals,
-            batteryError: currentBatteryError,
+      // 2.6 捕手送球エラー（盗塁阻止失敗等）。
+      // WP/PB と異なりボール球限定でなく、走者あり投球で独立試行。
+      // NPB 捕手の PB 除く失策（150試合で 3〜5 個）を再現する経路。
+      if (currentBatteryError == null && currentRunners.hasRunners) {
+        if (_errorSimulator.checkCatcherThrowingError(catcherFielding,
+            isForcedPlacement: isCatcherForced)) {
+          final scorer = currentRunners.third;
+          final errorResult = _errorSimulator.applyBatteryError(
+            ErrorType.throwingError,
+            currentRunners,
+          );
+          currentRunners =
+              _errorSimulator.applyBatteryErrorToRunners(currentRunners);
+          batteryErrorRuns += errorResult.runsScored;
+          if (errorResult.runsScored > 0 && scorer != null) {
+            batteryErrorScorers.add(
+              (runner: scorer, type: BatteryErrorType.catcherThrowing),
+            );
+          }
+          currentBatteryError = BatteryError(
+            type: BatteryErrorType.catcherThrowing,
+            runsScored: errorResult.runsScored,
+            catcher: catcher,
           );
         }
+      }
+
+      // バッテリーエラーがあればPitchResultを更新
+      if (currentBatteryError != null) {
+        pitch = PitchResult(
+          type: pitch.type,
+          pitchType: pitch.pitchType,
+          battedBallType: pitch.battedBallType,
+          fieldPosition: pitch.fieldPosition,
+          speed: pitch.speed,
+          steals: pitch.steals,
+          batteryError: currentBatteryError,
+        );
       }
 
       // 3. 盗塁がある場合の処理

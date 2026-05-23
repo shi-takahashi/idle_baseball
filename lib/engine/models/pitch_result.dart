@@ -70,6 +70,7 @@ class PitchResult {
         batteryError: json['batteryError'] == null
             ? null
             : BatteryError.fromJson(
-                json['batteryError'] as Map<String, dynamic>),
+                json['batteryError'] as Map<String, dynamic>,
+                playerById),
       );
 }

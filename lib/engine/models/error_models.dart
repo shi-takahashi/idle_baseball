@@ -1,10 +1,11 @@
 import 'enums.dart';
 import 'player.dart';
 
-/// バッテリーエラー（ワイルドピッチ/パスボール）の種類
+/// バッテリーエラー（ワイルドピッチ/パスボール/捕手送球エラー）の種類
 enum BatteryErrorType {
-  wildPitch,   // 暴投
-  passedBall,  // 捕逸
+  wildPitch,        // 暴投
+  passedBall,       // 捕逸
+  catcherThrowing,  // 捕手の送球エラー（盗塁阻止失敗等）
 }
 
 extension BatteryErrorTypeExtension on BatteryErrorType {
@@ -14,6 +15,8 @@ extension BatteryErrorTypeExtension on BatteryErrorType {
         return '暴投';
       case BatteryErrorType.passedBall:
         return '捕逸';
+      case BatteryErrorType.catcherThrowing:
+        return '捕手悪送球';
     }
   }
 
@@ -23,6 +26,8 @@ extension BatteryErrorTypeExtension on BatteryErrorType {
         return 'WP';
       case BatteryErrorType.passedBall:
         return 'PB';
+      case BatteryErrorType.catcherThrowing:
+        return 'CT';
     }
   }
 }
@@ -31,21 +36,34 @@ extension BatteryErrorTypeExtension on BatteryErrorType {
 class BatteryError {
   final BatteryErrorType type;
   final int runsScored; // このエラーによる得点
+  // catcherThrowing 時の責任選手（守備統計に算入するため）。
+  // WP は投手の責任なので null。PB は捕手のミスだが NPB ルール上「失策」では
+  // ないため null（パスボール自体は別カウンタ）。
+  final Player? catcher;
 
   const BatteryError({
     required this.type,
     required this.runsScored,
+    this.catcher,
   });
 
   Map<String, dynamic> toJson() => {
         'type': type.name,
         'runsScored': runsScored,
+        if (catcher != null) 'catcherId': catcher!.id,
       };
 
-  factory BatteryError.fromJson(Map<String, dynamic> json) => BatteryError(
+  factory BatteryError.fromJson(
+    Map<String, dynamic> json, [
+    Map<String, Player>? playerById,
+  ]) =>
+      BatteryError(
         type: BatteryErrorType.values
             .firstWhere((t) => t.name == json['type']),
         runsScored: json['runsScored'] as int,
+        catcher: json['catcherId'] == null
+            ? null
+            : playerById?[json['catcherId'] as String],
       );
 
   @override
