@@ -101,9 +101,28 @@ class PlayerAging {
 
     int? adjustSpeed(int? v) {
       if (v == null) return null;
-      // 球速は 1〜10 とスケールが違うので別係数。1 ポイントあたり 1〜2 km の重み感
-      final delta = mean * 1.5 + _gauss() * 1.0;
       final cap = p.potentialAverageSpeedOf(v);
+      // 2026-05-23(15) 新設計: ポテンシャルと年齢から「その年齢で期待される現在値」を
+      // 算出し、現在値をそこへ近づける。PlayerGenerator._speedGrowthMargin と同じ
+      // テーブルを使うことで、生成時と加齢で一貫した能力分布を保つ。
+      //
+      // 年齢ごとの margin（ポテンシャルとの距離）:
+      //   ~21: 5 / 22-25: 2.5 / 26-28: 0.5 / 29-32: 1.5 / 33-35: 3.5 / 36+: 6
+      final ageMargin = newAge <= 21
+          ? 5.0
+          : newAge <= 25
+              ? 2.5
+              : newAge <= 28
+                  ? 0.5
+                  : newAge <= 32
+                      ? 1.5
+                      : newAge <= 35
+                          ? 3.5
+                          : 6.0;
+      final target = (cap - ageMargin).round();
+      final diff = target - v;
+      // 1年で動かす量は最大 ±2 km、その範囲内で diff を縮める
+      final delta = diff.clamp(-2.0, 2.0) + _gauss() * 0.8;
       return (v + delta.round()).clamp(110, cap);
     }
 

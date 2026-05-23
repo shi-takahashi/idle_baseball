@@ -73,18 +73,30 @@ class PlayerGenerator {
   /// 技術系で大きく伸びうる性質を残すため、素質型の確率を 8% に上げる。
   static const double _fieldingTalentEliteChance = 0.08;
   static const double _fieldingTalentMiddleChance = 0.30;
-  // 球速 (km/h) のポテンシャル成長マージン。
-  // 平均 +5 km/h、ガウス揺らぎ sd=2 で「+1 〜 +9 km/h」のレンジ。
-  // 高卒 boost (+1.5 × 2 = +3 km/h) と組み合わせると「+4 〜 +12 km/h」になり、
-  // 大谷型「高卒157→165 (+8)」や田中型「高卒155→ピーク160 (+5)」の双方が
-  // 出現可能。多くの選手は +3〜+6 km/h 程度の伸び。
-  static const double _speedBaseMargin = 5.0;
-  static const double _speedSd = 2.0;
-  // 球速の自然上限。147 km/h ≒ ability 5、160 km/h ≒ ability 10 のマッピングで、
-  // 1〜10 能力の ceiling=9 と同様に「ability 9 相当 = 158 km/h」で抑える。
-  // initial >= 158 の選手は initial 値を維持（clamp の lower で吸収）。
-  // 編集 UI からは 165 km/h まで設定可能だが、自然生成・成長では出ない。
+  // 球速 (km/h) のポテンシャルと現在値の関係。
+  // 2026-05-23(15): 「現在値を抽選 → 成長マージンを足してポテンシャル」だと、
+  // ポテンシャル分布がリーグ全体で揺らぐ問題があった。逆向きに「ポテンシャルを
+  // 直接抽選 → 年齢/タイプから成長余地を引いて現在値」に再設計。
+  //
+  // これにより:
+  // - リーグの 155+ ポテンシャル保有者数は常に一定（成長による増殖なし）
+  // - 同タイプの新人でも伸び代に個人差（A: ポ148/伸び3、B: ポ150/伸び7 のように
+  //   数年後に逆転する選手が出る）
+  // - 高卒は伸び代大・入団時低、大卒/社会人は伸び代小・入団時高い
+  //
+  // ポテンシャル抽選パラメータ:
+  // 2026-05-23(15): mean 147 / sd 3.5 だと
+  //   - リーグ平均現在能力が 143 (ピーク到達してない選手・衰え選手込みで mean が下がる)
+  //   - 現在能力 155+ が 0.5-1.0人/リーグ で目標 1人にやや届かない
+  // ユーザー提案「狙った結果に収束するよう抽選確率を微調整」を反映:
+  //   - mean 148 → リーグ全体の現在能力平均が 144-145 (NPB と概ね整合)
+  //   - sd 3.5 → 155+ ポテンシャル = 2.0% × 108 = 2.2人
+  //     ピーク到達できない損失を加味して、現在能力 155+ が定常 ~1.5人/リーグ
+  //     （NPB の中央値 1-2人/リーグ）。世代インフレは入れず、100年後も同じ分布。
+  static const double _potentialSpeedMean = 148.0;
+  static const double _potentialSpeedSd = 3.5;
   static const int _speedCeiling = 158;
+  static const int _speedFloor = 139;
 
   /// 新人タイプ別のポテンシャルボーナス（mean に加算）
   /// - 高卒: +1.5（伸びしろ重視、初期値は低いが将来性は高い）
@@ -163,14 +175,21 @@ class PlayerGenerator {
     int? ageOverride,
     RookieType? rookieType,
   }) {
-    // 球速: NPB 平均の 147 km/h を中心に正規分布（sd=3）
-    // - 自動生成は「だいたい 140〜155 km/h」に収まるよう sd を絞り clamp [139,156]。
-    //   現代プロに 140 km/h 未満は稀、常時 160 km/h 超もほぼいないため。
-    // - 140 未満 / 156 超の特殊な投手は編集 UI（最大 165 km/h）からのみ作成可能。
-    // - abilityBoost 1 ポイントごとに +2 km/h（抑え・エースは速い）
-    final speedMean = 147.0 + abilityBoost * 2.0;
+    // 球速: ポテンシャル直接抽選 → 年齢/タイプから成長余地を引いて現在値を逆算。
+    // 2026-05-23(15) 新設計: リーグの 155+ ポテンシャル分布が常に一定になる。
+    // abilityBoost (現状未使用) はポテンシャル mean に +2km/pt 加算。
+    final ageForSpeed = ageOverride ?? _generateAge();
+    final potentialSpeed = (_potentialSpeedMean +
+            abilityBoost * 2.0 +
+            _r.nextGaussian() * _potentialSpeedSd)
+        .round()
+        .clamp(_speedFloor, _speedCeiling);
+    final speedMargin = _speedGrowthMargin(ageForSpeed, rookieType);
+    // current = potential - margin（margin 正なら現在値はポテンシャル未満、
+    // margin 負なら現在値はポテンシャル超え＝衰え前のピーク超え運だが、
+    // 実装上はポテンシャル ceiling で押さえる）
     final avgSpeed =
-        (speedMean + _r.nextGaussian() * 3.0).round().clamp(139, 156);
+        (potentialSpeed - speedMargin).clamp(_speedFloor - 5, _speedCeiling);
 
     // 球種: ストレート + 変化球。各変化球を独立確率で抽選する。保有確率は
     // NPB 2016 の「投じた投手の割合」（images/breaking-ball.png）に準拠。
@@ -249,7 +268,7 @@ class PlayerGenerator {
       id: _newId(),
       name: _uniqueName(),
       number: number,
-      age: ageOverride ?? _generateAge(),
+      age: ageForSpeed,
       averageSpeed: avgSpeed,
       fastball: fastball,
       control: control,
@@ -287,8 +306,8 @@ class PlayerGenerator {
         sinker: sinker,
         bonus: potentialBonus,
       ),
-      potentialAverageSpeed:
-          _potentialAverageSpeed(avgSpeed, bonus: potentialBonus),
+      // 2026-05-23(15) 新設計: ポテンシャル直接抽選
+      potentialAverageSpeed: potentialSpeed,
     );
   }
 
@@ -626,17 +645,53 @@ class PlayerGenerator {
     return raw.round().clamp(initial, tier.cap);
   }
 
-  /// 球速 (km/h) のポテンシャル上限を計算する。
-  /// 1〜10 とはスケールが違うので別係数。
-  /// initial が ceiling を超えて生成された選手（初期 159〜160 km/h の超剛速球派）は
-  /// その initial 値をそのまま potential として保持する（成長は無いが衰えは普通に進行）。
-  int _potentialAverageSpeed(int initial, {double bonus = 0.0}) {
-    if (initial >= _speedCeiling) return initial;
-    final raw = initial +
-        _speedBaseMargin +
-        bonus * 2.0 +
-        _r.nextGaussian() * _speedSd;
-    return raw.round().clamp(initial, _speedCeiling);
+  /// 年齢 / 新人タイプから球速の「ポテンシャルとの距離」を返す（km/h、常に >= 0）。
+  /// current = potential - margin で逆算する。
+  ///   margin 大 = 若手で伸び代あり or 衰え期で能力が低下している
+  ///   margin 0 = ピーク到達
+  ///
+  /// 個人差を持たせるため、平均にガウシアン揺らぎを加える。これにより
+  /// 「ポテンシャル148/伸び3」と「ポテンシャル150/伸び7」のように、
+  /// 入団時は前者が速くても、ピーク到達後は後者が逆転する選手が混在する。
+  int _speedGrowthMargin(int age, RookieType? rookieType) {
+    double mean;
+    double sd;
+    if (rookieType == RookieType.highSchool) {
+      // 高卒 18歳: 伸び代大・ばらつき大
+      mean = 5.0;
+      sd = 2.0;
+    } else if (rookieType == RookieType.college) {
+      // 大卒 22歳: 中程度
+      mean = 3.0;
+      sd = 1.5;
+    } else if (rookieType == RookieType.corporate) {
+      // 社会人 21-25歳: 伸び代小、入団時能力高い
+      mean = 1.5;
+      sd = 1.0;
+    } else {
+      // リーグ初期生成（既存選手）: 年齢から逆算
+      // 若手期も衰え期も「ポテンシャルとの差」として正の margin を返す
+      if (age <= 21) {
+        mean = 5.0;
+        sd = 2.0; // 若手: まだ伸び代大
+      } else if (age <= 25) {
+        mean = 2.5;
+        sd = 1.5;
+      } else if (age <= 28) {
+        mean = 0.5;
+        sd = 1.0; // ピーク前後
+      } else if (age <= 32) {
+        mean = 1.5;
+        sd = 1.0; // 衰え始め（current = potential - 1.5）
+      } else if (age <= 35) {
+        mean = 3.5;
+        sd = 1.5; // 衰え進行
+      } else {
+        mean = 6.0;
+        sd = 2.0; // 大幅衰え
+      }
+    }
+    return (mean + _r.nextGaussian() * sd).round().clamp(0, 12);
   }
 
   /// 「眠った変化球ポテンシャル」を仕込む確率（未習得の球種ごとに抽選）。
@@ -830,9 +885,16 @@ class PlayerGenerator {
     PitcherRole? pitcherRole,
     Set<String> teamSurnames = const <String>{},
   }) {
-    // 球速: 平均 +3 km/h で 142〜158 km/h レンジ、sd 4 で当たり外れ
+    // 球速: ポテンシャル直接抽選 → 年齢から成長余地を引いて現在値を逆算。
+    // 2026-05-23(15): 日本人と同じ「ポテンシャル先取り」設計。
+    // 外国人は mean +3 (150)、sd 広めで当たり外れ大。
+    final foreignAge = _foreignAge();
+    final potentialSpeed = (150.0 + _r.nextGaussian() * 3.5)
+        .round()
+        .clamp(140, _speedCeiling);
+    final speedMargin = _speedGrowthMargin(foreignAge, null);
     final avgSpeed =
-        (150.0 + _r.nextGaussian() * 4.0).round().clamp(140, 158);
+        (potentialSpeed - speedMargin).clamp(135, _speedCeiling);
 
     // 変化球抽選（通常投手と同じロジック）
     const breakingProbs = <String, double>{
@@ -884,7 +946,7 @@ class PlayerGenerator {
       id: _newId(),
       name: _uniqueForeignName(teamSurnames),
       number: number,
-      age: _foreignAge(),
+      age: foreignAge,
       averageSpeed: avgSpeed,
       fastball: fastball,
       control: control,
@@ -908,7 +970,7 @@ class PlayerGenerator {
         slider: slider, curve: curve, splitter: splitter,
         changeup: changeup, shoot: shoot, cutter: cutter, sinker: sinker,
       ),
-      potentialAverageSpeed: _potentialAverageSpeed(avgSpeed),
+      potentialAverageSpeed: potentialSpeed,
       isForeign: true,
     );
   }
