@@ -386,7 +386,7 @@ class AtBatSimulator {
     PitchType.changeup: 15,  // -10〜-20の中央
     PitchType.shoot: 5,      // ツーシーム系。ストレートとほぼ同球速
     PitchType.cutter: 7,     // ストレートよりやや遅い
-    PitchType.sinker: 14,    // 沈む遅球
+    PitchType.sinker: 5,     // 高速シンカー型。ストレートとほぼ同球速（沈むツーシーム）
   };
 
   // ボール率補正（正=ボール増）
