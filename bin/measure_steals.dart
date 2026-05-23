@@ -5,8 +5,10 @@ import 'package:idle_baseball/engine/engine.dart';
 /// - 走力別の試行数 / 成功数 / 成功率
 /// - 1チーム1試合あたりの盗塁数
 /// - ダブルスチール件数
+/// - **走力別の per-player 150試合換算 SB**（出場試合数で正規化）
 void main() {
-  const numSeasons = 3;
+  const numSeasons = 6;
+  const gamesPerTeam = 150;
   // 走力 → (attempts, successes)
   final attemptsBySpeed = <int, int>{};
   final successesBySpeed = <int, int>{};
@@ -17,16 +19,31 @@ void main() {
   int totalGames = 0;
   int totalTeamGames = 0;
 
+  // 走力別の per-player 集計
+  final perPlayerGames = <int, int>{for (var k = 1; k <= 10; k++) k: 0};
+  final perPlayerSB = <int, int>{for (var k = 1; k <= 10; k++) k: 0};
+
   for (int s = 0; s < numSeasons; s++) {
     final teams = TeamGenerator(random: Random(200 + s)).generateLeague();
-    final schedule = const ScheduleGenerator().generate(teams);
+    final schedule = ScheduleGenerator()
+        .generateForGamesPerTeam(teams, gamesPerTeam);
     final controller = SeasonController(
       teams: teams,
       schedule: schedule,
       myTeamId: teams.first.id,
+      gamesPerTeam: gamesPerTeam,
       random: Random(200 + s),
     );
     controller.advanceAll();
+
+    // per-player 集計（走力別出場試合数と盗塁数を蓄積）
+    for (final st in controller.batterStats.values) {
+      final player = st.player;
+      if (player.isPitcher) continue;
+      final sp = player.speed ?? 5;
+      perPlayerGames[sp] = (perPlayerGames[sp] ?? 0) + st.games;
+      perPlayerSB[sp] = (perPlayerSB[sp] ?? 0) + st.stolenBases;
+    }
 
     for (final sg in schedule.games) {
       final result = controller.resultFor(sg.gameNumber);
@@ -91,4 +108,16 @@ void main() {
     print('  走力$sp: $n');
   }
   print('');
+  print('===== 走力別 per-player 150試合換算 SB =====');
+  print(' 走力 | のべ試合 | のべSB | 150試合換算');
+  print('------|----------|--------|------------');
+  for (int sp = 1; sp <= 10; sp++) {
+    final g = perPlayerGames[sp] ?? 0;
+    final sb = perPlayerSB[sp] ?? 0;
+    final per150 = g == 0 ? 0.0 : sb / g * 150;
+    print('  ${sp.toString().padLeft(2)}  '
+        '| ${g.toString().padLeft(8)} '
+        '| ${sb.toString().padLeft(6)} '
+        '| ${per150.toStringAsFixed(1).padLeft(10)}');
+  }
 }
