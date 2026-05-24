@@ -1,5 +1,6 @@
 import 'dart:math';
 import '../models/models.dart';
+import 'ability_profile.dart';
 import 'name_data.dart';
 import 'random_utils.dart';
 
@@ -32,89 +33,13 @@ class _PositionalProfile {
 ///   [Player.potentialAverageSpeed]）は生成時に確定し、加齢成長時の上限となる
 class PlayerGenerator {
   final RandomUtils _r;
+  late final AbilitySampler _sampler;
   final Set<String> _usedNames;
   int _idCounter;
 
-  // ---- ポテンシャル算出パラメータ（素質ガチャ方式） ----
-  //
-  // 設計: 「線形に initial + 一律マージン」ではなく、能力ごとに **素質レベル** を
-  // 独立抽選して非線形に伸びしろを決める。
-  //
-  //   普通型 70%: cap = round(initial + gauss(mean=0.4, sd=0.4))、cap上限 = 7
-  //     → 入団時の能力でほぼ確定、プロでもほとんど伸びない大多数の選手
-  //   中位型 25%: cap = round(initial + gauss(mean=1.5, sd=0.6))、cap上限 = 8
-  //     → 中堅レベルまで伸びる選手。「7 で優秀」の層に入る可能性
-  //   素質型  5%: cap = round(initial + gauss(mean=3.0, sd=0.8))、cap上限 = 9
-  //     → 一握りの「9 に届く可能性のある」素質型。それでも initial が低いと届かない
-  //
-  // 9 に届くには「素質型(5%) × initial 6 以上(~55%) × 成長運」が必要。
-  // リーグ 132 野手で素質型 ≈ 7 人、その中で initial 6+ ≈ 4 人。さらに成長カーブの
-  // 確率性で実際に 9 まで伸びるのはその一部 → 平衡で 0〜2 人 / リーグ。
-  static const double _talentMiddleChance = 0.30;
-  static const double _talentEliteChance = 0.05;
-
-  /// 素質レベル別の成長マージン平均 / sd / cap上限。
-  /// key: 'normal' / 'middle' / 'elite'
-  ///
-  /// cap の設計:
-  ///   normal: cap=7 → 大多数の選手は 7 までで頭打ち
-  ///   middle: cap=8 → 中位の選手は 8 まで届きうる（「タイトル争いの 8」を支える層）
-  ///   elite:  cap=9 → 一握りの素質型だけが 9 に届きうる
-  ///
-  /// 中位/素質型の比率はリーグの「8 が常時 3〜5 人」を維持するよう調整。
-  /// 確率の和: normal 65% + middle 30% + elite 5% = 100%。
-  static const Map<String, ({double mean, double sd, int cap})> _talentTiers = {
-    'normal': (mean: 0.4, sd: 0.4, cap: 7),
-    'middle': (mean: 1.5, sd: 0.6, cap: 8),
-    'elite': (mean: 3.0, sd: 0.8, cap: 9),
-  };
-
-  /// 守備力（fielding map 内の各ポジション値）も同じ素質ガチャ方式を使う。
-  /// 技術系で大きく伸びうる性質を残すため、素質型の確率を 8% に上げる。
-  static const double _fieldingTalentEliteChance = 0.08;
-  static const double _fieldingTalentMiddleChance = 0.30;
-  // 球速 (km/h) のポテンシャルと現在値の関係。
-  // 2026-05-23(15): 「現在値を抽選 → 成長マージンを足してポテンシャル」だと、
-  // ポテンシャル分布がリーグ全体で揺らぐ問題があった。逆向きに「ポテンシャルを
-  // 直接抽選 → 年齢/タイプから成長余地を引いて現在値」に再設計。
-  //
-  // これにより:
-  // - リーグの 155+ ポテンシャル保有者数は常に一定（成長による増殖なし）
-  // - 同タイプの新人でも伸び代に個人差（A: ポ148/伸び3、B: ポ150/伸び7 のように
-  //   数年後に逆転する選手が出る）
-  // - 高卒は伸び代大・入団時低、大卒/社会人は伸び代小・入団時高い
-  //
-  // ポテンシャル抽選パラメータ:
-  // 2026-05-23(15): mean 147 / sd 3.5 だと
-  //   - リーグ平均現在能力が 143 (ピーク到達してない選手・衰え選手込みで mean が下がる)
-  //   - 現在能力 155+ が 0.5-1.0人/リーグ で目標 1人にやや届かない
-  // ユーザー提案「狙った結果に収束するよう抽選確率を微調整」を反映:
-  //   - mean 148 → リーグ全体の現在能力平均が 144-145 (NPB と概ね整合)
-  //   - sd 3.5 → 155+ ポテンシャル = 2.0% × 108 = 2.2人
-  //     ピーク到達できない損失を加味して、現在能力 155+ が定常 ~1.5人/リーグ
-  //     （NPB の中央値 1-2人/リーグ）。世代インフレは入れず、100年後も同じ分布。
-  static const double _potentialSpeedMean = 148.0;
-  static const double _potentialSpeedSd = 3.5;
-  static const int _speedCeiling = 158;
-  static const int _speedFloor = 139;
-
-  /// 新人タイプ別のポテンシャルボーナス（mean に加算）
-  /// - 高卒: +1.5（伸びしろ重視、初期値は低いが将来性は高い）
-  /// - 大卒: 0.0
-  /// - 社会人: -0.5（即戦力だが伸び鈍）
-  /// - 既存リーグ生成（rookie でない）: 0.0
-  static double _potentialBonusForRookieType(RookieType? type) {
-    switch (type) {
-      case RookieType.highSchool:
-        return 1.5;
-      case RookieType.college:
-        return 0.0;
-      case RookieType.corporate:
-        return -0.5;
-      case null:
-        return 0.0;
-    }
-  }
+  // 全能力のポテンシャル抽選 / 現在値逆算 / 加齢ロジックは [AbilitySampler] に
+  // 集約された。能力ごとの違いは [AbilityProfile] の数値テーブルと
+  // 呼び出し時の `meanBonus` だけで表現する（[feedback_unified_logic_principle]）。
 
   /// - [random]: RNG
   /// - [idStart]: id 連番の開始値（ロード時に既存選手の最大 id を渡してデフォ値を超えないようにする）
@@ -125,7 +50,9 @@ class PlayerGenerator {
     Set<String>? usedNames,
   })  : _r = RandomUtils(random),
         _idCounter = idStart,
-        _usedNames = usedNames ?? <String>{};
+        _usedNames = usedNames ?? <String>{} {
+    _sampler = AbilitySampler(_r);
+  }
 
   /// 先発投手を生成
   Player generateStartingPitcher({required int number}) {
@@ -175,21 +102,13 @@ class PlayerGenerator {
     int? ageOverride,
     RookieType? rookieType,
   }) {
-    // 球速: ポテンシャル直接抽選 → 年齢/タイプから成長余地を引いて現在値を逆算。
-    // 2026-05-23(15) 新設計: リーグの 155+ ポテンシャル分布が常に一定になる。
-    // abilityBoost (現状未使用) はポテンシャル mean に +2km/pt 加算。
-    final ageForSpeed = ageOverride ?? _generateAge();
-    final potentialSpeed = (_potentialSpeedMean +
-            abilityBoost * 2.0 +
-            _r.nextGaussian() * _potentialSpeedSd)
-        .round()
-        .clamp(_speedFloor, _speedCeiling);
-    final speedMargin = _speedGrowthMargin(ageForSpeed, rookieType);
-    // current = potential - margin（margin 正なら現在値はポテンシャル未満、
-    // margin 負なら現在値はポテンシャル超え＝衰え前のピーク超え運だが、
-    // 実装上はポテンシャル ceiling で押さえる）
-    final avgSpeed =
-        (potentialSpeed - speedMargin).clamp(_speedFloor - 5, _speedCeiling);
+    final age = ageOverride ?? _generateAge();
+
+    // 全能力を統一 API で抽選。AbilityProfiles + meanBonus で能力ごとの違いを表現。
+    // abilityBoost (エース級+1 等) は全能力 mean に加算する形で反映。
+    final speed = _sampleSpeed(age, rookieType, meanBonus: abilityBoost * 2.0);
+    final fastball = _sample1to10(age, rookieType, meanBonus: abilityBoost);
+    final control = _sample1to10(age, rookieType, meanBonus: abilityBoost);
 
     // 球種: ストレート + 変化球。各変化球を独立確率で抽選する。保有確率は
     // NPB 2016 の「投じた投手の割合」（images/breaking-ball.png）に準拠。
@@ -212,104 +131,103 @@ class PlayerGenerator {
     for (final e in breakingProbs.entries) {
       if (_r.chance(e.value)) chosen.add(e.key);
     }
-    // 最低 2 種類保証（不足ぶんは保有率の高い球種から順に補う）
     while (chosen.length < 2) {
       chosen.add(breakingProbs.keys.firstWhere((k) => !chosen.contains(k)));
     }
-    // 最大 5 種類（超過ぶんはランダムに外す）
     while (chosen.length > 5) {
       chosen.removeAt(_r.random.nextInt(chosen.length));
     }
     // 変化球の質は全球種共通で平均 5（abilityBoost で底上げ）。「どれだけ投げるか」は
     // 質ではなく球種別の使用頻度重み（at_bat_simulator の _pitchTypeUsageWeight）で
     // 表現する。質＝被打率・空振り、使用頻度＝投球割合、と役割を分離している。
-    int? slider, curve, splitter, changeup, shoot, cutter, sinker;
+    final breakingPairs = <String, ({int potential, int current})>{};
     for (final t in chosen) {
-      final v = _r.abilityInt(mean: 5.0 + abilityBoost);
-      switch (t) {
-        case 'slider':
-          slider = v;
-          break;
-        case 'curve':
-          curve = v;
-          break;
-        case 'splitter':
-          splitter = v;
-          break;
-        case 'changeup':
-          changeup = v;
-          break;
-        case 'shoot':
-          shoot = v;
-          break;
-        case 'cutter':
-          cutter = v;
-          break;
-        case 'sinker':
-          sinker = v;
-          break;
-      }
+      breakingPairs[t] = _sample1to10(age, rookieType, meanBonus: abilityBoost);
     }
 
     // 投手の利き腕: forcedThrows 指定があればそれ、なければ 右70%・左30%
     final throws = forcedThrows ??
         (_r.chance(0.3) ? Handedness.left : Handedness.right);
 
-    final fastball = _r.abilityInt(mean: 5.0 + abilityBoost);
-    final control = _r.abilityInt(mean: 5.0 + abilityBoost);
-    final meet = _r.normalInt(mean: 2.0, sd: 0.8);
-    final power = _r.normalInt(mean: 1.5, sd: 0.7);
-    final eye = _r.normalInt(mean: 2.5, sd: 0.8);
-    final speed = _r.normalInt(mean: 3.5, sd: 1.5);
+    // 投手の打撃能力（DH非採用なので打席に立つ。野手より低め）
+    // meanBonus でデフォルト 5.5 から大幅に下げる
+    final meet = _sample1to10(age, rookieType, meanBonus: 2.0 - 5.5);
+    final power = _sample1to10(age, rookieType, meanBonus: 1.5 - 5.5);
+    final eye = _sample1to10(age, rookieType, meanBonus: 2.5 - 5.5);
+    final batSpeed = _sample1to10(age, rookieType, meanBonus: 3.5 - 5.5);
 
-    final potentialBonus = _potentialBonusForRookieType(rookieType);
+    // 未習得変化球に「眠ったポテンシャル」を仕込む（加齢で習得判定）
+    final hiddenPotentials = <String, int>{};
+    for (final key in _breakingBallKeys) {
+      if (breakingPairs.containsKey(key)) continue;
+      if (_r.chance(_hiddenPitchPotentialChance)) {
+        final dormant =
+            _sample1to10(age, rookieType, meanBonus: abilityBoost);
+        hiddenPotentials[key] = dormant.potential;
+      }
+    }
 
     return Player(
       id: _newId(),
       name: _uniqueName(),
       number: number,
-      age: ageForSpeed,
-      averageSpeed: avgSpeed,
-      fastball: fastball,
-      control: control,
-      slider: slider,
-      curve: curve,
-      splitter: splitter,
-      changeup: changeup,
-      shoot: shoot,
-      cutter: cutter,
-      sinker: sinker,
+      age: age,
+      averageSpeed: speed.current,
+      fastball: fastball.current,
+      control: control.current,
+      slider: breakingPairs['slider']?.current,
+      curve: breakingPairs['curve']?.current,
+      splitter: breakingPairs['splitter']?.current,
+      changeup: breakingPairs['changeup']?.current,
+      shoot: breakingPairs['shoot']?.current,
+      cutter: breakingPairs['cutter']?.current,
+      sinker: breakingPairs['sinker']?.current,
       throws: throws,
-      // 投手の打撃能力（DH非採用なので打席に立つ。野手より低め）
-      // 個別に設定されているので、後でバランス調整しやすい
-      meet: meet,
-      power: power,
-      eye: eye,
-      // 投手の走力は低め（平均3.5）
-      speed: speed,
-      // 打席（投手も打つ）
+      meet: meet.current,
+      power: power.current,
+      eye: eye.current,
+      speed: batSpeed.current,
       bats: _batterHandedness(),
       pitcherRole: pitcherRole,
-      potentials: _buildPotentials(
-        meet: meet,
-        power: power,
-        speed: speed,
-        eye: eye,
-        fastball: fastball,
-        control: control,
-        slider: slider,
-        curve: curve,
-        splitter: splitter,
-        changeup: changeup,
-        shoot: shoot,
-        cutter: cutter,
-        sinker: sinker,
-        bonus: potentialBonus,
-      ),
-      // 2026-05-23(15) 新設計: ポテンシャル直接抽選
-      potentialAverageSpeed: potentialSpeed,
+      potentials: {
+        'meet': meet.potential,
+        'power': power.potential,
+        'speed': batSpeed.potential,
+        'eye': eye.potential,
+        'fastball': fastball.potential,
+        'control': control.potential,
+        for (final e in breakingPairs.entries) e.key: e.value.potential,
+        ...hiddenPotentials,
+      },
+      potentialAverageSpeed: speed.potential,
     );
   }
+
+  /// 統一 API のショートハンド: 球速 (km/h) のポテンシャル & 現在値を 1 回で返す。
+  ({int potential, int current}) _sampleSpeed(
+    int age,
+    RookieType? rookieType, {
+    double meanBonus = 0.0,
+  }) =>
+      _sampler.samplePotentialAndCurrent(
+        profile: AbilityProfiles.fastballSpeed,
+        age: age,
+        rookieType: rookieType,
+        meanBonus: meanBonus,
+      );
+
+  /// 統一 API のショートハンド: 1-10 能力のポテンシャル & 現在値を 1 回で返す。
+  ({int potential, int current}) _sample1to10(
+    int age,
+    RookieType? rookieType, {
+    double meanBonus = 0.0,
+  }) =>
+      _sampler.samplePotentialAndCurrent(
+        profile: AbilityProfiles.ability1to10,
+        age: age,
+        rookieType: rookieType,
+        meanBonus: meanBonus,
+      );
 
   /// 守備位置ごとの打撃・走力傾向を返す。
   ///
@@ -390,17 +308,24 @@ class PlayerGenerator {
     ],
   };
 
-  /// 主ポジションに紐づくサブポジションを抽選し、`fielding` map に低めの守備力で追加する。
+  /// 主ポジションに紐づくサブポジションを抽選し、`fielding` map に低めの守備力で
+  /// 追加する。統一 API の `_sample1to10` で「現在値」だけ使う（fielding は
+  /// _buildFielding 側でポテンシャルもまとめて構築するので、ここでは current のみ）。
   void _attachSecondaryPositions(
     Map<DefensePosition, int> fielding,
+    Map<DefensePosition, int> fieldingPotential,
     DefensePosition primary,
+    int age,
+    RookieType? rookieType,
   ) {
     final secondaries = _secondaryFielding[primary] ?? const [];
     for (final entry in secondaries) {
       if (fielding.containsKey(entry.pos)) continue;
       if (!_r.chance(entry.chance)) continue;
-      // サブポジは「守れるが下手」の幅。mean 3.5 で 1〜6 程度に分布。
-      fielding[entry.pos] = _r.normalInt(mean: 3.5, sd: 1.5);
+      // サブポジは「守れるが下手」の幅。mean -2 で平均 3.5 程度。
+      final pair = _sample1to10(age, rookieType, meanBonus: -2.0);
+      fielding[entry.pos] = pair.current;
+      fieldingPotential[entry.pos] = pair.potential;
     }
   }
 
@@ -424,41 +349,50 @@ class PlayerGenerator {
     required int number,
     required List<DefensePosition> positions,
   }) {
+    final age = _generateAge();
     final primaryPosition = positions.first;
-    final fielding = <DefensePosition, int>{
-      primaryPosition: _r.abilityInt(mean: 6.5),
-    };
+    // 主ポジ守備力は平均 6.5 (meanBonus +1.0)、サブは平均 4.5 (meanBonus -1.0)
+    final fielding = <DefensePosition, int>{};
+    final fieldingPotential = <DefensePosition, int>{};
+    final primaryPair = _sample1to10(age, null, meanBonus: 1.0);
+    fielding[primaryPosition] = primaryPair.current;
+    fieldingPotential[primaryPosition] = primaryPair.potential;
     for (int i = 1; i < positions.length; i++) {
-      fielding[positions[i]] = _r.abilityInt(mean: 4.5);
+      final pair = _sample1to10(age, null, meanBonus: -1.0);
+      fielding[positions[i]] = pair.current;
+      fieldingPotential[positions[i]] = pair.potential;
     }
-    _attachSecondaryPositions(fielding, primaryPosition);
+    _attachSecondaryPositions(
+        fielding, fieldingPotential, primaryPosition, age, null);
     final profile = _profileForPosition(primaryPosition);
-    final meet = _r.abilityInt(mean: 5.0 + profile.meet);
-    final power = _r.abilityInt(mean: 5.0 + profile.power);
-    final speed = _r.abilityInt(mean: 5.0 + profile.speed);
-    final eye = _r.abilityInt();
-    final arm = _r.abilityInt(mean: 5.0 + profile.arm);
+    final meet = _sample1to10(age, null, meanBonus: profile.meet);
+    final power = _sample1to10(age, null, meanBonus: profile.power);
+    final speed = _sample1to10(age, null, meanBonus: profile.speed);
+    // 旧 abilityInt() のデフォルト mean=5.0 は新 potentialMean 5.5 と 0.5 差。
+    // 統一原則のため meanBonus -0.5 は付けず、デフォルト 5.5 で行く（measure_growth で確認）。
+    final eye = _sample1to10(age, null);
+    final arm = _sample1to10(age, null, meanBonus: profile.arm);
     return Player(
       id: _newId(),
       name: _uniqueName(),
       number: number,
-      age: _generateAge(),
-      meet: meet,
-      power: power,
-      speed: speed,
-      eye: eye,
-      arm: arm,
+      age: age,
+      meet: meet.current,
+      power: power.current,
+      speed: speed.current,
+      eye: eye.current,
+      arm: arm.current,
       bats: _batterHandedness(),
       throws: _r.chance(0.15) ? Handedness.left : Handedness.right,
       fielding: fielding,
-      potentials: _buildPotentials(
-        meet: meet,
-        power: power,
-        speed: speed,
-        eye: eye,
-        arm: arm,
-      ),
-      potentialFielding: _buildPotentialFielding(fielding),
+      potentials: {
+        'meet': meet.potential,
+        'power': power.potential,
+        'speed': speed.potential,
+        'eye': eye.potential,
+        'arm': arm.potential,
+      },
+      potentialFielding: fieldingPotential,
     );
   }
 
@@ -480,22 +414,6 @@ class PlayerGenerator {
         return 22;
       case RookieType.corporate:
         return _r.normalInt(mean: 23.0, sd: 1.0, min: 21, max: 25);
-    }
-  }
-
-  /// 新人タイプ別の能力ブースト（年齢が高いほど能力高め、ただし sd は維持なので
-  /// まれに高卒の即戦力や、社会人の伸び悩みも出る）。
-  /// - 高卒: -1.5 (能力低、伸びしろ)
-  /// - 大卒: -0.3 (中堅）
-  /// - 社会人: 0.0 (即戦力）
-  double _abilityBoostForRookieType(RookieType type) {
-    switch (type) {
-      case RookieType.highSchool:
-        return -1.5;
-      case RookieType.college:
-        return -0.3;
-      case RookieType.corporate:
-        return 0.0;
     }
   }
 
@@ -529,70 +447,66 @@ class PlayerGenerator {
 
   /// 引退者の代わりに加入する新人野手。
   /// - 守備: 自分独自のプロファイル（[_rookieFieldingPatterns] からランダム抽選）
-  /// - 能力: タイプによって平均能力が変わる
-  ///   - 高卒: 平均 -1.5（伸びしろ重視）
-  ///   - 大卒: 平均 -0.3（中堅）
-  ///   - 社会人: 平均 0.0（即戦力）
-  ///   ただし sd は維持しているので、まれに高卒の即戦力や社会人の凡才も出る
   /// - 年齢: タイプによる（[_ageForRookieType] 参照）
+  /// - 能力: ポテンシャル分布は世代を超えて一定 ([feedback_potential_first_design])。
+  ///   高卒で入団時に能力が低く見えるのは margin (年齢/タイプ別) で表現済みなので、
+  ///   ポテンシャル mean を更に下げない（下げるとリーグの分布が世代交代で減衰する）。
   ///
-  /// 守備位置の整合性は LineupPlanner 側で吸収される
-  /// （守れない選手はベンチから昇格してきた選手と入れ替わる）。
+  /// 守備位置の整合性は LineupPlanner 側で吸収される。
   Player generateRookieFielder({
     required int number,
     RookieType type = RookieType.college,
     List<DefensePosition>? forcedPositions,
   }) {
-    final boost = _abilityBoostForRookieType(type);
-    final potentialBonus = _potentialBonusForRookieType(type);
+    final age = _ageForRookieType(type);
     final List<DefensePosition> positions =
         forcedPositions ?? _r.pick(_rookieFieldingPatterns);
     final fielding = <DefensePosition, int>{};
-    // 1つ目（メイン）は若手平均、サブはやや低めにする
+    final fieldingPotential = <DefensePosition, int>{};
     for (int i = 0; i < positions.length; i++) {
-      final mean = (i == 0 ? 5.5 : 4.5) + boost;
-      fielding[positions[i]] = _r.abilityInt(mean: mean);
+      // 1つ目はメイン (旧 mean 5.5 → meanBonus 0)、サブはやや低め (旧 mean 4.5 → -1.0)
+      final bonus = (i == 0 ? 0.0 : -1.0);
+      final pair = _sample1to10(age, type, meanBonus: bonus);
+      fielding[positions[i]] = pair.current;
+      fieldingPotential[positions[i]] = pair.potential;
     }
-    // 主ポジションに紐づくサブポジションも低めで追加
-    _attachSecondaryPositions(fielding, positions.first);
-    // 守備傾向は主ポジション（positions の先頭）で決める
+    _attachSecondaryPositions(
+        fielding, fieldingPotential, positions.first, age, type);
     final profile = _profileForPosition(positions.first);
-    // 新人は能力のばらつきがやや大きい（sd 1.5）。abilityInt で max=8 + 9プロモート抽選
-    final meet = _r.abilityInt(mean: 5.0 + boost + profile.meet, sd: 1.5);
-    final power = _r.abilityInt(mean: 5.0 + boost + profile.power, sd: 1.5);
-    final speed = _r.abilityInt(mean: 5.5 + boost + profile.speed);
-    final eye = _r.abilityInt(mean: 4.5 + boost);
-    final arm = _r.abilityInt(mean: 5.0 + boost + profile.arm);
+    final meet = _sample1to10(age, type, meanBonus: profile.meet);
+    final power = _sample1to10(age, type, meanBonus: profile.power);
+    final speed = _sample1to10(age, type, meanBonus: profile.speed);
+    final eye = _sample1to10(age, type);
+    final arm = _sample1to10(age, type, meanBonus: profile.arm);
     return Player(
       id: _newId(),
       name: _uniqueName(),
       number: number,
-      age: _ageForRookieType(type),
-      meet: meet,
-      power: power,
-      speed: speed, // 若い分やや走れる
-      eye: eye,
-      arm: arm,
+      age: age,
+      meet: meet.current,
+      power: power.current,
+      speed: speed.current,
+      eye: eye.current,
+      arm: arm.current,
       bats: _batterHandedness(),
       throws: _r.chance(0.15) ? Handedness.left : Handedness.right,
       fielding: fielding,
-      potentials: _buildPotentials(
-        meet: meet,
-        power: power,
-        speed: speed,
-        eye: eye,
-        arm: arm,
-        bonus: potentialBonus,
-      ),
-      potentialFielding:
-          _buildPotentialFielding(fielding, bonus: potentialBonus),
+      potentials: {
+        'meet': meet.potential,
+        'power': power.potential,
+        'speed': speed.potential,
+        'eye': eye.potential,
+        'arm': arm.potential,
+      },
+      potentialFielding: fieldingPotential,
     );
   }
 
   /// 引退者の代わりに加入する新人投手。
   /// - 役割: 引退者と同じロール（先発 or 救援＋ロール種類）
-  /// - 能力: タイプ別の abilityBoost を適用（[_abilityBoostForRookieType]）
   /// - 年齢: タイプによる（[_ageForRookieType] 参照）
+  /// - 能力: ポテンシャル分布は世代固定。「新人だから低い」は margin (年齢/タイプ別)
+  ///   で吸収する ([feedback_potential_first_design])。
   Player generateRookiePitcher({
     required int number,
     bool isStarter = true,
@@ -603,186 +517,19 @@ class PlayerGenerator {
       number: number,
       isStarter: isStarter,
       pitcherRole: pitcherRole,
-      abilityBoost: _abilityBoostForRookieType(type),
       ageOverride: _ageForRookieType(type),
       rookieType: type,
     );
   }
 
-  /// 1〜10 能力のポテンシャル上限を計算する（素質ガチャ方式）。
-  ///
-  /// initial が 10 のときはそのまま 10 を返す（手動編集で 10 を作った選手の維持）。
-  /// それ以外は能力ごとに **素質レベル** を抽選し、tier に応じた margin / cap で
-  /// ポテンシャル上限を決める（[_talentTiers] 参照）。
-  ///
-  /// [isFielding] が true のときは fielding 用の確率配分を使う（素質型 8% で
-  /// 練習系の伸びを表現）。それ以外は [_talentEliteChance] / [_talentMiddleChance]。
-  ///
-  /// [bonus] は新人タイプ別の補正（高卒+1.5 等）で margin に加算される。
-  int _potentialFor(
-    int? initial, {
-    String? key,
-    bool isFielding = false,
-    double bonus = 0.0,
-  }) {
-    if (initial == null) return 0;
-    if (initial >= 10) return 10;
-    final eliteCh =
-        isFielding ? _fieldingTalentEliteChance : _talentEliteChance;
-    final middleCh =
-        isFielding ? _fieldingTalentMiddleChance : _talentMiddleChance;
-    final roll = _r.random.nextDouble();
-    final tier = roll < eliteCh
-        ? _talentTiers['elite']!
-        : (roll < eliteCh + middleCh
-            ? _talentTiers['middle']!
-            : _talentTiers['normal']!);
-    // initial が tier.cap を上回るケース（例: 9 プロモートされた選手が普通型に
-    // 分類された）は initial をそのまま維持（成長は起きないが初期値は守られる）
-    if (initial >= tier.cap) return initial;
-    final raw =
-        initial + tier.mean + bonus + _r.nextGaussian() * tier.sd;
-    return raw.round().clamp(initial, tier.cap);
-  }
-
-  /// 年齢 / 新人タイプから球速の「ポテンシャルとの距離」を返す（km/h、常に >= 0）。
-  /// current = potential - margin で逆算する。
-  ///   margin 大 = 若手で伸び代あり or 衰え期で能力が低下している
-  ///   margin 0 = ピーク到達
-  ///
-  /// 個人差を持たせるため、平均にガウシアン揺らぎを加える。これにより
-  /// 「ポテンシャル148/伸び3」と「ポテンシャル150/伸び7」のように、
-  /// 入団時は前者が速くても、ピーク到達後は後者が逆転する選手が混在する。
-  int _speedGrowthMargin(int age, RookieType? rookieType) {
-    double mean;
-    double sd;
-    if (rookieType == RookieType.highSchool) {
-      // 高卒 18歳: 伸び代大・ばらつき大
-      mean = 5.0;
-      sd = 2.0;
-    } else if (rookieType == RookieType.college) {
-      // 大卒 22歳: 中程度
-      mean = 3.0;
-      sd = 1.5;
-    } else if (rookieType == RookieType.corporate) {
-      // 社会人 21-25歳: 伸び代小、入団時能力高い
-      mean = 1.5;
-      sd = 1.0;
-    } else {
-      // リーグ初期生成（既存選手）: 年齢から逆算
-      // 若手期も衰え期も「ポテンシャルとの差」として正の margin を返す
-      if (age <= 21) {
-        mean = 5.0;
-        sd = 2.0; // 若手: まだ伸び代大
-      } else if (age <= 25) {
-        mean = 2.5;
-        sd = 1.5;
-      } else if (age <= 28) {
-        mean = 0.5;
-        sd = 1.0; // ピーク前後
-      } else if (age <= 32) {
-        mean = 1.5;
-        sd = 1.0; // 衰え始め（current = potential - 1.5）
-      } else if (age <= 35) {
-        mean = 3.5;
-        sd = 1.5; // 衰え進行
-      } else {
-        mean = 6.0;
-        sd = 2.0; // 大幅衰え
-      }
-    }
-    return (mean + _r.nextGaussian() * sd).round().clamp(0, 12);
-  }
-
   /// 「眠った変化球ポテンシャル」を仕込む確率（未習得の球種ごとに抽選）。
   /// 20% で「将来カーブを覚える可能性のある投手」のような余地を残す。
-  /// ポテンシャル質は通常の能力分布（mean 5, sd 1.5）から仮 initial を立てて
-  /// `_potentialFor` で算出するので、3〜9 の範囲に分布する。
+  /// 加齢処理 (`PlayerAging`) で習得判定の対象。
   static const double _hiddenPitchPotentialChance = 0.20;
   static const Set<String> _breakingBallKeys = {
     'slider', 'curve', 'splitter', 'changeup',
     'shoot', 'cutter', 'sinker',
   };
-
-  /// 1〜10 能力一式（field name → potential）のマップを構築するヘルパー。
-  /// initial が null のキーは原則含めないが、変化球は別扱い:
-  /// 投手の場合、持っていない変化球にも一定確率で「眠ったポテンシャル」を仕込み、
-  /// 加齢処理 (`PlayerAging`) で習得判定の対象にする。
-  Map<String, int> _buildPotentials({
-    int? meet,
-    int? power,
-    int? speed,
-    int? eye,
-    int? arm,
-    int? fastball,
-    int? control,
-    int? slider,
-    int? curve,
-    int? splitter,
-    int? changeup,
-    int? shoot,
-    int? cutter,
-    int? sinker,
-    double bonus = 0.0,
-  }) {
-    final map = <String, int>{};
-    // 投手判定: 投手能力（fastball / control）のいずれかが non-null なら投手扱い
-    final isPitcher = fastball != null || control != null;
-    void put(String key, int? v) {
-      if (v != null) {
-        // 能力名 key を渡して、_abilityGrowthMargin から能力別マージンを引く
-        map[key] = _potentialFor(v, key: key, bonus: bonus);
-        return;
-      }
-      // 投手の未習得変化球: 確率で「眠ったポテンシャル」を仕込む
-      if (isPitcher && _breakingBallKeys.contains(key)) {
-        if (_r.chance(_hiddenPitchPotentialChance)) {
-          // 仮 initial を平均的な能力分布から作り、その上でポテンシャル算出
-          final virtualInitial = _r.abilityInt();
-          map[key] = _potentialFor(virtualInitial, key: key, bonus: bonus);
-        }
-      }
-    }
-
-    put('meet', meet);
-    put('power', power);
-    put('speed', speed);
-    put('eye', eye);
-    put('arm', arm);
-    put('fastball', fastball);
-    put('control', control);
-    put('slider', slider);
-    put('curve', curve);
-    put('splitter', splitter);
-    put('changeup', changeup);
-    put('shoot', shoot);
-    put('cutter', cutter);
-    put('sinker', sinker);
-    return map;
-  }
-
-  /// fielding 能力一式のポテンシャル上限マップを構築する。
-  /// 値 0（守れない）はそのまま 0 を保持する。
-  Map<DefensePosition, int>? _buildPotentialFielding(
-    Map<DefensePosition, int>? fielding, {
-    double bonus = 0.0,
-  }) {
-    if (fielding == null) return null;
-    final out = <DefensePosition, int>{};
-    for (final e in fielding.entries) {
-      if (e.value == 0) {
-        out[e.key] = 0;
-      } else {
-        // 守備力は技術系で大きく伸びうるため fielding 用の素質ガチャを使う
-        out[e.key] = _potentialFor(
-          e.value,
-          isFielding: true,
-          bonus: bonus,
-        );
-      }
-    }
-    return out;
-  }
 
   /// 打者の打席: 右65%、左30%、両5%
   Handedness _batterHandedness() {
@@ -795,15 +542,6 @@ class PlayerGenerator {
   // ===========================================================
   // 外国人選手の生成
   // ===========================================================
-
-  /// 外国人選手の能力値: 日本人より若干バラつくが、中央集中の傾向は維持。
-  /// 日本人 sd 1.2（abilityInt のデフォルト）に対して外国人は sd 1.4 でやや裾広め。
-  /// 9 への昇格抽選は通常より高め（0.3%）で「外国人は当たれば大砲」のニュアンス。
-  /// それでもリーグ 24 人 × 5 能力 × 0.3% = 0.36 人 / 年 程度なので、9 は依然として稀。
-  /// 当たり外れ感は mean を主能力で動かすことで出す（パワー型は mean 5.5 など）。
-  int _foreignAbility({double mean = 5.0}) {
-    return _r.abilityInt(mean: mean, sd: 1.4, promoteNineChance: 0.003);
-  }
 
   /// 新規獲得時の外国人選手の年齢分布: mean 27 / sd 3.5 / 22〜35。
   /// NPB の外国人選手獲得は中堅（27〜30 歳）中心で、35 歳以上の新規獲得は
@@ -837,66 +575,63 @@ class PlayerGenerator {
     required int number,
     Set<String> teamSurnames = const <String>{},
   }) {
+    final age = _foreignAge();
     final primary = _foreignFielderPrimary();
     final profile = _profileForPosition(primary);
-    final fielding = <DefensePosition, int>{
-      primary: _foreignAbility(mean: 4.0), // 守備力は弱め
+    // 守備力は弱め（旧 mean 4.0 → meanBonus -1.5）
+    final primaryFielding = _sample1to10(age, null, meanBonus: -1.5);
+    final fielding = <DefensePosition, int>{primary: primaryFielding.current};
+    final fieldingPotential = <DefensePosition, int>{
+      primary: primaryFielding.potential,
     };
-    // 国籍別オフセット（日本人 mean 5.0 を基準とした増減）:
-    //   ミート: 細かいテクニックは日本人優位（-0.5）
-    //   長打: パワー型が多い（+0.5）
-    //   走力: 鈍足傾向（-0.5）
-    //   選球眼・肩: 同等（±0）
-    // これに [_profileForPosition] のポジションオフセットを加算する。
-    // 例: 一塁の外国人 power = 5.5 + 1.5 = 7.0、二塁の外国人 power = 5.5 - 1.0 = 4.5。
-    final meet = _foreignAbility(mean: 4.5 + profile.meet);
-    final power = _foreignAbility(mean: 5.5 + profile.power);
-    final speed = _foreignAbility(mean: 4.5 + profile.speed);
-    final eye = _foreignAbility(mean: 5.0);
-    final arm = _foreignAbility(mean: 5.0 + profile.arm);
+    // 国籍別オフセット（日本人 mean 5.5 を基準にした増減を meanBonus で吸収）:
+    //   meet -1.0 / power +0.0 / speed -1.0 / eye -0.5 / arm -0.5
+    //   ＋ポジションオフセット [_profileForPosition]
+    final meet = _sample1to10(age, null, meanBonus: -1.0 + profile.meet);
+    final power = _sample1to10(age, null, meanBonus: 0.0 + profile.power);
+    final speed = _sample1to10(age, null, meanBonus: -1.0 + profile.speed);
+    final eye = _sample1to10(age, null, meanBonus: -0.5);
+    final arm = _sample1to10(age, null, meanBonus: -0.5 + profile.arm);
     return Player(
       id: _newId(),
       name: _uniqueForeignName(teamSurnames),
       number: number,
-      age: _foreignAge(),
-      meet: meet,
-      power: power,
-      speed: speed,
-      eye: eye,
-      arm: arm,
+      age: age,
+      meet: meet.current,
+      power: power.current,
+      speed: speed.current,
+      eye: eye.current,
+      arm: arm.current,
       bats: _batterHandedness(),
-      // 外国人投手は左投げ比率がやや高い（NPB 外国人左腕の人気）
       throws: _r.chance(0.20) ? Handedness.left : Handedness.right,
       fielding: fielding,
-      potentials: _buildPotentials(
-        meet: meet, power: power, speed: speed, eye: eye, arm: arm,
-      ),
-      potentialFielding: _buildPotentialFielding(fielding),
+      potentials: {
+        'meet': meet.potential,
+        'power': power.potential,
+        'speed': speed.potential,
+        'eye': eye.potential,
+        'arm': arm.potential,
+      },
+      potentialFielding: fieldingPotential,
       isForeign: true,
     );
   }
 
   /// 外国人投手を生成する。
-  /// 球速 +3 km/h、制球 -1、その他の質はフラット分布（sd 2.5）で当たり外れ大。
-  /// 球種抽選は通常投手と同じ枠（最低 2 変化球 + ストレート）。
+  /// 球速 +2 km/h、制球 -1、その他はデフォルト。meanBonus でオフセットを吸収。
   Player generateForeignPitcher({
     required int number,
     bool isStarter = true,
     PitcherRole? pitcherRole,
     Set<String> teamSurnames = const <String>{},
   }) {
-    // 球速: ポテンシャル直接抽選 → 年齢から成長余地を引いて現在値を逆算。
-    // 2026-05-23(15): 日本人と同じ「ポテンシャル先取り」設計。
-    // 外国人は mean +3 (150)、sd 広めで当たり外れ大。
-    final foreignAge = _foreignAge();
-    final potentialSpeed = (150.0 + _r.nextGaussian() * 3.5)
-        .round()
-        .clamp(140, _speedCeiling);
-    final speedMargin = _speedGrowthMargin(foreignAge, null);
-    final avgSpeed =
-        (potentialSpeed - speedMargin).clamp(135, _speedCeiling);
+    final age = _foreignAge();
+    // 球速 mean +2 (外国人は球速で目立つ)
+    final speed = _sampleSpeed(age, null, meanBonus: 2.0);
+    final fastball = _sample1to10(age, null);
+    final control = _sample1to10(age, null, meanBonus: -1.0); // 制球 -1
 
-    // 変化球抽選（通常投手と同じロジック）
+    // 変化球抽選（通常投手と同じ枠だが保有率は外国人独自）
     const breakingProbs = <String, double>{
       'slider': 0.88,
       'curve': 0.55,
@@ -916,61 +651,51 @@ class PlayerGenerator {
     while (chosen.length > 5) {
       chosen.removeAt(_r.random.nextInt(chosen.length));
     }
-    int? slider, curve, splitter, changeup, shoot, cutter, sinker;
+    final breakingPairs = <String, ({int potential, int current})>{};
     for (final t in chosen) {
-      // 変化球の質もフラット分布で当たり外れ
-      final v = _foreignAbility(mean: 5.0);
-      switch (t) {
-        case 'slider': slider = v; break;
-        case 'curve': curve = v; break;
-        case 'splitter': splitter = v; break;
-        case 'changeup': changeup = v; break;
-        case 'shoot': shoot = v; break;
-        case 'cutter': cutter = v; break;
-        case 'sinker': sinker = v; break;
-      }
+      breakingPairs[t] = _sample1to10(age, null);
     }
 
-    // 外国人投手は左投手の比率がやや高め（30 → 40%）
     final throws = _r.chance(0.40) ? Handedness.left : Handedness.right;
 
-    final fastball = _foreignAbility(mean: 5.0);
-    final control = _foreignAbility(mean: 4.0); // 制球 -1
-    // 投手の打撃能力は通常通り低め（DH 非採用で打席に立つ）
-    final meet = _r.normalInt(mean: 2.0, sd: 0.8);
-    final power = _r.normalInt(mean: 2.0, sd: 0.8); // 外国人投手はやや長打あり
-    final eye = _r.normalInt(mean: 2.5, sd: 0.8);
-    final speed = _r.normalInt(mean: 3.0, sd: 1.2);
+    // 投手の打撃: 日本人投手と同じ meanBonus テーブル（power だけやや高め）
+    final meet = _sample1to10(age, null, meanBonus: 2.0 - 5.5);
+    final power = _sample1to10(age, null, meanBonus: 2.0 - 5.5);
+    final eye = _sample1to10(age, null, meanBonus: 2.5 - 5.5);
+    final batSpeed = _sample1to10(age, null, meanBonus: 3.0 - 5.5);
 
     return Player(
       id: _newId(),
       name: _uniqueForeignName(teamSurnames),
       number: number,
-      age: foreignAge,
-      averageSpeed: avgSpeed,
-      fastball: fastball,
-      control: control,
-      slider: slider,
-      curve: curve,
-      splitter: splitter,
-      changeup: changeup,
-      shoot: shoot,
-      cutter: cutter,
-      sinker: sinker,
+      age: age,
+      averageSpeed: speed.current,
+      fastball: fastball.current,
+      control: control.current,
+      slider: breakingPairs['slider']?.current,
+      curve: breakingPairs['curve']?.current,
+      splitter: breakingPairs['splitter']?.current,
+      changeup: breakingPairs['changeup']?.current,
+      shoot: breakingPairs['shoot']?.current,
+      cutter: breakingPairs['cutter']?.current,
+      sinker: breakingPairs['sinker']?.current,
       throws: throws,
-      meet: meet,
-      power: power,
-      eye: eye,
-      speed: speed,
+      meet: meet.current,
+      power: power.current,
+      eye: eye.current,
+      speed: batSpeed.current,
       bats: _batterHandedness(),
       pitcherRole: pitcherRole,
-      potentials: _buildPotentials(
-        meet: meet, power: power, speed: speed, eye: eye,
-        fastball: fastball, control: control,
-        slider: slider, curve: curve, splitter: splitter,
-        changeup: changeup, shoot: shoot, cutter: cutter, sinker: sinker,
-      ),
-      potentialAverageSpeed: potentialSpeed,
+      potentials: {
+        'meet': meet.potential,
+        'power': power.potential,
+        'speed': batSpeed.potential,
+        'eye': eye.potential,
+        'fastball': fastball.potential,
+        'control': control.potential,
+        for (final e in breakingPairs.entries) e.key: e.value.potential,
+      },
+      potentialAverageSpeed: speed.potential,
       isForeign: true,
     );
   }

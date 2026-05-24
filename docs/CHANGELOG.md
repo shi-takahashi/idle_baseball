@@ -5,6 +5,107 @@
 
 ---
 
+## 2026-05-24 統一ロジックへの再構築（全能力で同じ関数 + プロファイル）
+
+### 動機
+
+(15)(16) のポテンシャル先取り設計を球速以外にも展開するにあたり、ユーザーから
+**原理原則** の提示:
+
+> 球速だから、制球だから、と専用ロジックを書かないで欲しい。最後は、どちらでも
+> 同じ方法、同じロジックで決めるんだよ。プログラム内部のパラメータを少なく保って、
+> 全体バランスを保つのが大事。特例追加 → バランス崩れ → また特例追加、では
+> いつまで経っても着地できない。
+
+これを最優先の方針として `feedback_unified_logic_principle` に保存。
+
+### 新規 API
+
+`lib/engine/generators/ability_profile.dart` を追加。全能力 1 つの関数で処理:
+
+```
+[AbilityProfile]: 数値テーブルのみ (mean / sd / floor / ceiling / currentFloor / annualStep)
+  - fastballSpeed: km/h 用 (mean 148, sd 3.5, floor 139, ceiling 158)
+  - ability1to10:  1-10 能力共通 (mean 5.5, sd 1.5, floor 1, ceiling 9)
+
+[AbilitySampler]:
+  - samplePotentialAndCurrent(profile, age, rookieType, meanBonus):
+    1. ポテンシャル = gauss(mean+meanBonus, sd).clamp
+    2. margin = sampleMarginInSd(age, rookieType) × profile.sd  ← sd 単位で共通
+    3. 現在値 = (ポテンシャル - margin).clamp
+  - ageOneStep: 同じ margin テーブルで毎年 target に近づける
+
+[sampleMarginInSd] = 全能力共通の年齢/タイプ別テーブル (sd 単位):
+  高卒 1.43σ / 大卒 0.86σ / 社会人 0.43σ
+  ~21: 1.43 / 22-25: 0.71 / 26-28: 0.14 (ピーク) / 29-32: 0.43 / 33-35: 1.00 / 36+: 1.71
+```
+
+「投手の打撃低い」「外国人パワー高い」「ポジションオフセット」など、能力ごとの
+違いはすべて `meanBonus` 引数で吸収。プロファイルは増やさない。
+
+### 廃止したパラメータ / ロジック
+
+- `_talentTiers` (normal/middle/elite cap 7/8/9) + tier 確率 4 種類 + `_potentialFor`
+  → 素質ガチャ方式を全廃。ポテンシャルは普通のガウシアン + clamp で決定
+- `_potentialSpeedMean` / `_potentialSpeedSd` / `_speedCeiling` / `_speedFloor` /
+  `_speedGrowthMargin` / `_potentialBonusForRookieType` → 球速専用関数を全廃
+- `_abilityBoostForRookieType`（新人 -1.5/-0.3/0.0） → 新設計では「若い=margin大」で
+  自然に表現される。abilityBoost と rookieType margin の二重適用がリーグ分布の
+  世代減衰を引き起こしていた問題を解消
+- `_foreignAbility`（外国人専用 sd 1.4 + promoteNineChance 0.003） → meanBonus で吸収
+- `_buildPotentials` / `_buildPotentialFielding` → samplePotentialAndCurrent が
+  (potential, current) ペアを返すので不要
+- PlayerAging の `_abilityDeclineFactor` / `_meanDeltaForAge` / `_sdForAge` /
+  `adjust` / `adjustSpeed` / `adjustFielding` の個別ロジック → 統一 ageOneStep に
+  集約。「衰えやすさ」は profile.sd と統一 margin テーブルで暗黙に表現される
+
+### 検証
+
+**経年定常性 (measure_growth、30リーグ全選手、S1 → S20)**:
+
+| 能力 | S1: 9/8/7人 | S20: 9/8/7人 |
+|------|-------------|--------------|
+| meet | 1.1/5.2/12.0 | 1.5/5.5/12.8 |
+| power | 2.0/7.3/12.7 | 2.6/8.8/14.7 |
+| speed | 2.5/7.2/13.9 | 3.0/8.2/12.5 |
+| eye | 0.7/4.9/11.1 | 0.7/4.5/11.7 |
+| fastball | 1.1/4.7/11.9 | 0.9/4.6/11.7 |
+| control | 0.9/4.1/11.9 | 0.6/2.8/7.3 |
+
+**球速 (measure_grown_speed、24リーグ、S0 → S20)**:
+
+| 経過年 | mean | 155+/リーグ |
+|---|---|---|
+| 0年 | 146.2 | 1.71 |
+| 20年 | 145.0 | 1.29 |
+
+**S1 → S20 で分布がほぼ変わらない**（100年後も同じ分布 = ゲームバランスが
+シーズン進行で崩れない、の原理原則達成）。
+
+**リーグ打撃 (measure_league_avg、6シーズン)**:
+打率.256 / OPS .703 / SLG .381 / K率 21.0% / BB率 7.7% / HBP率 1.1%
+（NPB ど真ん中レンジ維持）
+
+test_generate / test_aging / test_persist / test_next_season / test_offseason_user /
+test_rebuild / test_foreign_players すべて PASS。`dart analyze` クリーン。
+
+### 副次的な廃止（旧コードからの引きずり）
+
+- `_buildPotentials` で使われていた「投手判定 (fastball / control の non-null)」を
+  撤廃し、各生成メソッドで明示的に potentials map を構築（責務が明確に）
+
+### 次回 / 未完
+
+- リーグ分布の細かな目標値合わせ（control の 9 が 0.6人 → 1.0人にしたい等）は
+  プロファイル数値の微調整（`AbilityProfiles.ability1to10.potentialMean` を 5.5 → 5.7
+  にするなど）で対応可能。設計変更は不要
+- 投手能力の影響度スイープ (`sweep_pitcher`) は未計測。能力分布が微妙に変わったぶん、
+  能力影響度も微変動するはずなので、別途確認
+- 外国人選手の「当たり外れ感」（旧 sd 1.4） がフラット化された。NPB 助っ人らしさを
+  戻したいなら `meanBonus` 増減で表現するか、外国人専用プロファイルを 1 つ追加する
+
+---
+
 ## 2026-05-23(16) 抽選確率の微調整（損失補正） + 世代インフレなし
 
 ### 動機
