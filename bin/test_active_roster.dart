@@ -1,7 +1,7 @@
 // 当日ベンチ入り + 投手ロールの検証
 // - suggestedStrategyForMyTeam が打順9・控え野手9・救援8 を埋めた作戦を返す
-// - 先発・ベンチ入り救援は全18投手から背番号順（中立）に選ばれる
-// - 開幕時の投手ロール: 先発ローテ6→「先発」/ 救援12→「中継ぎ」
+// - 先発・ベンチ入り救援は全20投手から背番号順（中立）に選ばれる
+// - 開幕時の投手ロール: 先発ローテ6→「先発」/ 救援14→「中継ぎ」
 // - setMyStrategy した作戦が試合編成で尊重される（控え野手の非ベンチ入りは出場0、
 //   ベンチ入り救援固定の投手は先発0）
 
@@ -69,7 +69,7 @@ void main() {
   check('スタメン選定は背番号順で中立（控えより若い番号がスタメン入り）',
       selectionOk);
 
-  // --- 1b. 開幕時の投手ロール: 背番号若い6人が「先発」、残り12人が「中継ぎ」---
+  // --- 1b. 開幕時の投手ロール: 背番号若い6人が「先発」、残り14人が「中継ぎ」---
   final allPitchersAtStart = <Player>[
     ...team.startingRotation,
     ...team.bullpen,
@@ -79,7 +79,7 @@ void main() {
     allPitchersAtStart.take(6).every((p) => p.pitcherRole == PitcherRole.starter),
   );
   check(
-    '開幕時 残り12人が「中継ぎ」役割',
+    '開幕時 残り14人が「中継ぎ」役割',
     allPitchersAtStart.skip(6).every((p) => p.pitcherRole == PitcherRole.middle),
   );
   // setPitcherRole で永続的に役割を変更できる
@@ -103,15 +103,16 @@ void main() {
   };
   final excludedFielders =
       allFielders.where((p) => !activeFielderIds.contains(p.id)).toList();
-  check('ベンチ入り外の控え野手は5人', excludedFielders.length == 5);
+  // 20 名構成: スタメン 8 + ベンチ入り控え 9 = 17、残り 20-17=3 が非ベンチ入り
+  check('ベンチ入り外の控え野手は3人', excludedFielders.length == 3);
 
-  // 先発・ベンチ入り救援は全18投手から背番号順（中立）に選ばれる。
+  // 先発・ベンチ入り救援は全20投手から背番号順（中立）に選ばれる。
   final spId = suggested.lineup.firstWhere((p) => p.isPitcher).id;
   final allPitchers = <Player>[
     ...team.startingRotation,
     ...team.bullpen,
   ]..sort((a, b) => a.number.compareTo(b.number));
-  check('Day1 先発は全18投手で背番号最小', allPitchers.first.id == spId);
+  check('Day1 先発は全20投手で背番号最小', allPitchers.first.id == spId);
   final activeBullpenIds =
       suggested.activeBullpen.map((p) => p.id).toSet();
   // 初期提案のベンチ入り救援は「先発ロールを除く中継ぎ等から背番号下位8人」。

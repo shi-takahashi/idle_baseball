@@ -4,21 +4,24 @@ import 'player_generator.dart';
 
 /// チームを自動生成する
 ///
-/// 1チーム40人構成（投手18 / 野手22）:
+/// 1チーム40人構成（投手20 / 野手20）:
 /// - スタメン野手 8 (players[0..7]: 1〜8番。捕/一/二/三/遊/左/中/右)
 /// - 先発ローテ 6 (startingRotation、うち1人が試合ごとに players[8]=9番 に入る)
-/// - 救援投手 12 (bullpen: 抑え1 + セットアッパー2 + 中継4 + ワンポイント1 + ロング2 + 敗戦処理2)
-/// - 控え野手 14 (bench: 控え捕手2・内野UT4・外野UT8)
+/// - 救援投手 14 (bullpen: 抑え1 + セットアッパー2 + 中継6 + ワンポイント1 + ロング2 + 敗戦処理2)
+/// - 控え野手 12 (bench: 控え捕手2・内野UT4・外野UT6)
 ///
-/// このうち実際に各試合に出るのは「当日ベンチ入り26人」
+/// このうち実際に各試合に出るのは「当日ベンチ入り26人」（投手 9 + 野手 17）
 /// （SeasonController が 40 人から日次で選定）。生成時点では 40 人プール全体を作る。
+///
+/// **設計**: 投手 20 / 野手 20 にすることで、引退 3 名/チーム/年が両者で
+/// 同じ世代交代率 (15%/年) となり、ピーク年齢層比率も対称化する。これにより
+/// 投手と野手の能力分布が対称的になる（[feedback_unified_logic_principle]）。
 ///
 /// 捕手はチームに必ず 3 人（先発 1 + 控え 2）。捕手は専門性が高いポジション
 /// なので、自動生成時は他ポジションを兼任しない（チーム編集画面では制約なし）。
 ///
 /// 開幕時に各ポジションを守れる選手の人数:
-///   捕手 3 / 一塁 5 / 二塁 4 / 三塁 5 / 遊撃 4 / 外野 11
-/// 試合中の代打・代走で控えを使っても、守備配置を回せるだけの厚みを確保。
+///   捕手 3 / 一塁 4 / 二塁 3 / 三塁 4 / 遊撃 3 / 外野 8
 class TeamGenerator {
   final PlayerGenerator _playerGen;
   final Random _random;
@@ -58,7 +61,7 @@ class TeamGenerator {
     int numberIdx = 0;
     int nextNumber() => numberPool[numberIdx++];
 
-    // ---- 投手 18人（日本人 16 + 外国人 2、役割なしフラット生成 → 能力ベース割り当て） ----
+    // ---- 投手 20人（日本人 18 + 外国人 2、役割なしフラット生成 → 能力ベース割り当て） ----
     // 設計（2026-05-23）:
     // 旧版は生成時に「先発6 / 抑え1 / セットアッパー2 / 中継ぎ4 / ...」と役割別に
     // 能力 boost をつけて生成していた（reliefSpec）。さらに外国人 2 人は両方 starter
@@ -96,8 +99,8 @@ class TeamGenerator {
       foreignSurnamesUsed.add(foreignSurnameOf(fp.name));
     }
 
-    // 日本人投手 16 人をフラット生成
-    for (int i = 0; i < 16; i++) {
+    // 日本人投手 18 人をフラット生成
+    for (int i = 0; i < 18; i++) {
       pitcherPool.add(_playerGen.generatePitcher(number: nextNumber()));
     }
 
@@ -114,7 +117,7 @@ class TeamGenerator {
         .where((p) => p.pitcherRole != PitcherRole.starter)
         .toList();
 
-    // ---- 野手 22人（日本人 20 + 外国人 2、全員フラット生成 → 能力ベースでスタメン選定） ----
+    // ---- 野手 20人（日本人 18 + 外国人 2、全員フラット生成 → 能力ベースでスタメン選定） ----
     // 設計（2026-05-23）:
     // 旧版は「スタメン用 8 名 (mean 5.0) + 控え用 12 名 (mean 4.5) + 外国人 2 名」と、
     // 生成時に役割（スタメン or 控え）と能力差を仕込んでいた。これは「最初から
@@ -142,26 +145,25 @@ class TeamGenerator {
       foreignFielderSurnames.add(foreignSurnameOf(ff.name));
     }
 
-    // 日本人野手 20 人をポジションパターン付きでフラット生成。
-    // 各ポジションを守れる選手数の最低ライン:
-    //   捕手 3 / 一塁 5+ / 二塁 4+ / 三塁 5+ / 遊撃 4+ / 外野 9+
-    // （これに外国人 2 名のポジション抽選結果が加わる）
+    // 日本人野手 18 人をポジションパターン付きでフラット生成。
+    // 各ポジションを守れる選手数の最低ライン (日本人 18 + 外国人 2 = 20 名):
+    //   捕手 3 / 一塁 4+ / 二塁 3+ / 三塁 4+ / 遊撃 3+ / 外野 8+
+    // スタメン 8 名（捕1/一1/二1/三1/遊1/外3）を選定でき、当日ベンチ入り
+    // 17 名（スタメン 8 + 控え 9）も回せる厚みを確保。
     const fielderPositionPatterns = <List<DefensePosition>>[
       // 捕手 3 名（専門性が高いので兼任なし）
       [DefensePosition.catcher],
       [DefensePosition.catcher],
       [DefensePosition.catcher],
-      // 内野手 8 名（一/三、二/遊 を兼任するパターンが多い）
+      // 内野手 7 名（一/三、二/遊 を兼任するパターンが多い）
       [DefensePosition.first],
-      [DefensePosition.first, DefensePosition.third],
       [DefensePosition.first, DefensePosition.third],
       [DefensePosition.second],
       [DefensePosition.second, DefensePosition.shortstop],
-      [DefensePosition.second, DefensePosition.shortstop],
       [DefensePosition.third],
       [DefensePosition.shortstop],
-      // 外野手 9 名（外野単独 5、内外野兼任 3、万能UT 1）
-      [DefensePosition.outfield],
+      [DefensePosition.first, DefensePosition.third, DefensePosition.outfield],
+      // 外野手 8 名（外野単独 4、内外野兼任 3、万能UT 1）
       [DefensePosition.outfield],
       [DefensePosition.outfield],
       [DefensePosition.outfield],
@@ -201,22 +203,20 @@ class TeamGenerator {
     );
   }
 
-  /// 18 人の投手をフラット生成した後、能力スコア順にロールを割り当てる。
+  /// 20 人の投手をフラット生成した後、能力スコア順にロールを割り当てる。
   ///
   /// 割り当て規則（能力スコア降順）:
   ///   1-6位   → starter（先発ローテ 6 人）
   ///   7位     → closer（抑え 1 人）
   ///   8-9位   → setup（セットアッパー 2 人）
-  ///   10-13位 → middle（中継ぎ 4 人）
-  ///   14-15位 → long（ロング 2 人）
-  ///   16位    → situational（ワンポイント、左投手優先）
-  ///   17-18位 → mopUp（敗戦処理 2 人）
+  ///   10-15位 → middle（中継ぎ 6 人）
+  ///   16-17位 → long（ロング 2 人）
+  ///   18位    → situational（ワンポイント、左投手優先）
+  ///   19-20位 → mopUp（敗戦処理 2 人）
   ///
-  /// situational は左投手としての特殊起用なので、能力順位 16 位ぴったりの
+  /// situational は左投手としての特殊起用なので、能力順位 18 位ぴったりの
   /// 投手より「中継ぎ系の中で能力が比較的下位の左投手」を優先する。
   /// 左投手がいなければ右投手のまま situational に割り当てる。
-  /// long も球速の遅い投手の方が適性が高いが、本実装では能力順のみで割り当てる
-  /// （シンプル化、必要なら後で球速ソートを足す）。
   ///
   /// オフシーズン後の再評価（[TeamRebuilder]）からも static で呼べるよう公開。
   /// 入力リストの要素を `withPitcherRole` で差し替える破壊的更新。
@@ -226,7 +226,7 @@ class TeamGenerator {
       ..sort((a, b) =>
           _pitcherAbilityScore(b).compareTo(_pitcherAbilityScore(a)));
 
-    // 順位 → 役割の割当
+    // 順位 → 役割の割当（20 名構成）
     const roleByRank = <PitcherRole>[
       PitcherRole.starter, // 1
       PitcherRole.starter, // 2
@@ -241,19 +241,21 @@ class TeamGenerator {
       PitcherRole.middle, // 11
       PitcherRole.middle, // 12
       PitcherRole.middle, // 13
-      PitcherRole.long, // 14
-      PitcherRole.long, // 15
-      PitcherRole.situational, // 16
-      PitcherRole.mopUp, // 17
-      PitcherRole.mopUp, // 18
+      PitcherRole.middle, // 14
+      PitcherRole.middle, // 15
+      PitcherRole.long, // 16
+      PitcherRole.long, // 17
+      PitcherRole.situational, // 18
+      PitcherRole.mopUp, // 19
+      PitcherRole.mopUp, // 20
     ];
 
-    // situational 用に左投手を優先選択する。割当 16 位の投手が右投手の場合、
-    // bullpen 圏内（7〜18位）の左投手と入れ替えてその左投手を situational に。
-    // 入れ替えで動く相手の元ロールを 16 位だった投手に渡す。
+    // situational 用に左投手を優先選択する。割当 18 位の投手が右投手の場合、
+    // bullpen 圏内（7〜20位）の左投手と入れ替えてその左投手を situational に。
+    // 入れ替えで動く相手の元ロールを 18 位だった投手に渡す。
     final situationalIdx = roleByRank.indexOf(PitcherRole.situational);
     if (sorted[situationalIdx].effectiveThrows != Handedness.left) {
-      // 7〜18 位の中から左投手を探す（先発エース層は崩さない）
+      // 7〜20 位の中から左投手を探す（先発エース層は崩さない）
       int? leftIdx;
       for (int i = 6; i < sorted.length; i++) {
         if (i == situationalIdx) continue;
@@ -278,7 +280,7 @@ class TeamGenerator {
     }
   }
 
-  /// 22 名の野手プールから、能力スコア順にポジション別スタメン 8 名を選ぶ。
+  /// 20 名の野手プールから、能力スコア順にポジション別スタメン 8 名を選ぶ。
   ///
   /// 選定順序: 捕 → 一 → 二 → 三 → 遊 → 外 → 外 → 外
   /// 各ポジションについて「そのポジションを守れる未選定の選手」の中で能力スコア

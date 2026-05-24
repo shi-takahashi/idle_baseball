@@ -99,17 +99,16 @@ void main() {
       }
     }
     print('${t.shortName}: $roleCount');
-    // 12人ブルペンの想定ロール構成: 抑え1 / セットアッパー2 / 中継ぎ4 /
-    // ワンポイント0〜1 / ロング2 / 敗戦処理2。
-    // ワンポイントは左投手がいなければ 0 になり得るので下限のみ確認。
+    // 14人ブルペンの想定ロール構成: 抑え1 / セットアッパー2 / 中継ぎ6 /
+    // ワンポイント0〜1 / ロング2 / 敗戦処理2 (投手 20 名構成、2026-05-24)。
     if ((roleCount[PitcherRole.closer] ?? 0) != 1) {
       throw '${t.shortName}: 抑え不在または複数';
     }
     if ((roleCount[PitcherRole.setup] ?? 0) != 2) {
       throw '${t.shortName}: セットアッパーが2人でない';
     }
-    if ((roleCount[PitcherRole.middle] ?? 0) != 4) {
-      throw '${t.shortName}: 中継ぎが4人でない';
+    if ((roleCount[PitcherRole.middle] ?? 0) != 6) {
+      throw '${t.shortName}: 中継ぎが6人でない';
     }
     if ((roleCount[PitcherRole.long] ?? 0) != 2) {
       throw '${t.shortName}: ロングが2人でない';
