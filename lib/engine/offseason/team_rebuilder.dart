@@ -35,10 +35,14 @@ class TeamRebuilder {
   static const int minRetirementAge = 26;
 
   /// 各ポジションで最低限守れる選手数（CPU 自動再編で必ず維持される）。
-  /// 外野は試合中 3 人配置するため厚めに必要。
+  /// 内野・捕手は 3 人、外野は試合中 3 人配置するため 8 人を要求する。
   /// この水準を割らないよう引退判定をブロックし、新人加入で不足ポジションを補う。
+  ///
+  /// 20 名ロスター (日本人 18 + 外国人 2) で守備人数は概ね:
+  ///   捕手 3 / 一塁 5-6 / 二塁 3 / 三塁 4 / 遊撃 3 / 外野 8-9
+  /// と初期生成時点で制約をぎりぎり満たす。経年で薄くなったら新人で補強する。
   static int minPlayersForPosition(DefensePosition pos) =>
-      pos == DefensePosition.outfield ? 5 : 2;
+      pos == DefensePosition.outfield ? 8 : 3;
 
   final PlayerGenerator playerGen;
 
@@ -336,11 +340,17 @@ class TeamRebuilder {
     fielders.sort(
         (a, b) => _retirementScore(b).compareTo(_retirementScore(a)));
 
-    // 各 DefensePosition について「守れる野手数」を集計
+    // 各 DefensePosition の「守れる野手数」は **チーム全体（外国人込み）** で
+    // 集計する。ユーザー方針: 各ポジ 3 / 外野 8 はチーム全体での充足を意味する。
+    // 引退判定でも新人補強でもこの全体カウントを使う。
+    final allFielders = <Player>[
+      ...team.players.where((p) => !p.isPitcher),
+      ...team.bench,
+    ];
     final canPlayCount = <DefensePosition, int>{
       for (final pos in DefensePosition.values) pos: 0,
     };
-    for (final p in fielders) {
+    for (final p in allFielders) {
       for (final pos in DefensePosition.values) {
         if (p.canPlay(pos)) canPlayCount[pos] = canPlayCount[pos]! + 1;
       }
@@ -372,11 +382,12 @@ class TeamRebuilder {
       }
     }
 
-    // 引退者を新人野手と入れ替え。各引退で減ったポジションが最低ラインを
-    // 下回るなら、新人はそのポジションを守れる選手として生成（補充重視）。
-    // それ以外の引退はランダム守備プロファイル（新人の個性を尊重）。
+    // 引退者を新人野手と入れ替え。チーム全体で最低ラインを下回るポジションが
+    // あれば、新人はそのポジションを守れる選手として生成（補充重視、引退者の
+    // 守備位置とは無関係に「最も不足しているポジション」を優先）。
+    // すべての制約を満たしていれば、新人はランダム守備プロファイル（個性を尊重）。
     for (final retiredPlayer in retiredPlayers) {
-      final shortage = _shortagePositionForRetiree(canPlayCount, retiredPlayer);
+      final shortage = _mostNeededShortagePosition(canPlayCount);
       final rookie = playerGen.generateRookieFielder(
         number: retiredPlayer.number,
         type: _pickCpuRookieType(),
@@ -392,23 +403,21 @@ class TeamRebuilder {
     return retiredIds;
   }
 
-  /// 引退者が守っていたポジションで、引退後に最低ラインを下回るものを返す。
-  /// 複数あれば外野を優先（最も枯渇しやすいため）、なければ null。
-  DefensePosition? _shortagePositionForRetiree(
+  /// チーム全体で「最低ラインを下回るポジション」のうち、最も不足が大きいものを返す。
+  /// 同率なら外野を優先（試合中 3 人配置が必要なため枯渇インパクトが大きい）。
+  /// すべて充足していれば null。
+  DefensePosition? _mostNeededShortagePosition(
     Map<DefensePosition, int> currentCount,
-    Player retiredPlayer,
   ) {
     DefensePosition? best;
-    int bestDeficit = 0;
+    int bestPriority = 0;
     for (final pos in DefensePosition.values) {
-      if (!retiredPlayer.canPlay(pos)) continue;
       final deficit = minPlayersForPosition(pos) - currentCount[pos]!;
       if (deficit <= 0) continue;
-      // 外野不足を優先（試合中 3 人配置が必要なため）
       final priority =
           deficit * 10 + (pos == DefensePosition.outfield ? 1 : 0);
-      if (priority > bestDeficit) {
-        bestDeficit = priority;
+      if (priority > bestPriority) {
+        bestPriority = priority;
         best = pos;
       }
     }
@@ -636,7 +645,8 @@ class TeamRebuilder {
         (a, b) => _retirementScore(b).compareTo(_retirementScore(a)),
       );
 
-    final recommendedRetireFielders = _recommendedRetirements(
+    final recommendedRetireFielders = _recommendedFielderRetirements(
+      team,
       fielders,
       retireFieldersPerTeam,
     );
@@ -702,14 +712,56 @@ class TeamRebuilder {
     );
   }
 
-  /// CPU と同じ「26 歳以上 + スコア > 0 の上位 [count] 名」を返す。
-  /// ただしポジション制約（最低 2 人/位置）は守らない（UI 側でユーザーが調整できるため）。
+  /// CPU と同じ「26 歳以上 + スコア > 0 の上位 [count] 名」を返す（投手用）。
+  /// ポジション制約は適用しない（投手にはポジション概念なし）。
   List<Player> _recommendedRetirements(List<Player> sorted, int count) {
     final picks = <Player>[];
     for (final p in sorted) {
       if (picks.length >= count) break;
       if (_retirementScore(p) <= 0) break;
       picks.add(p);
+    }
+    return picks;
+  }
+
+  /// 野手用の推奨引退。スコア順に候補を見つつ、引退でポジション制約
+  /// （各ポジ [minPlayersForPosition]）を破る選手はスキップする。
+  /// [team] はチーム全体のポジション充足判定に使う（外国人込みで集計）。
+  List<Player> _recommendedFielderRetirements(
+    Team team,
+    List<Player> sortedFielders,
+    int count,
+  ) {
+    final allFielders = <Player>[
+      ...team.players.where((p) => !p.isPitcher),
+      ...team.bench,
+    ];
+    final canPlayCount = <DefensePosition, int>{
+      for (final pos in DefensePosition.values) pos: 0,
+    };
+    for (final p in allFielders) {
+      for (final pos in DefensePosition.values) {
+        if (p.canPlay(pos)) canPlayCount[pos] = canPlayCount[pos]! + 1;
+      }
+    }
+
+    final picks = <Player>[];
+    for (final p in sortedFielders) {
+      if (picks.length >= count) break;
+      if (_retirementScore(p) <= 0) break;
+      bool wouldBreakConstraint = false;
+      for (final pos in DefensePosition.values) {
+        if (p.canPlay(pos) &&
+            canPlayCount[pos]! - 1 < minPlayersForPosition(pos)) {
+          wouldBreakConstraint = true;
+          break;
+        }
+      }
+      if (wouldBreakConstraint) continue;
+      picks.add(p);
+      for (final pos in DefensePosition.values) {
+        if (p.canPlay(pos)) canPlayCount[pos] = canPlayCount[pos]! - 1;
+      }
     }
     return picks;
   }
