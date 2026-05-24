@@ -238,19 +238,27 @@ class PlayerGenerator {
   /// - 捕手: 打撃控えめ・強肩・鈍足
   /// - 外野: 強打型 / 守備型 / 中距離型 を抽選（[_rollOutfieldProfile]）
   _PositionalProfile _profileForPosition(DefensePosition pos) {
+    // ポジションオフセットは「上げる側と下げる側でゼロサムに近い」設計にする
+    // ([feedback_unified_logic_principle])。
+    // 旧 +1.5/-2.0 のような極端な値は「リーグ全体の power/speed 平均が一方的に
+    // 上がる」副作用があった。±1 / ±0.5 範囲に縮小して、ポジション傾向を
+    // 残しつつリーグ全体の能力分布をフラットに保つ。
     switch (pos) {
       case DefensePosition.first:
         return const _PositionalProfile(
-            power: 1.5, speed: -2.0, meet: 0.5, arm: -0.5);
+            power: 1.0, speed: -1.5, meet: 0.5, arm: -0.5);
       case DefensePosition.third:
-        return const _PositionalProfile(power: 1.0, speed: -1.0, arm: 1.0);
+        return const _PositionalProfile(
+            power: 0.5, speed: -0.5, arm: 0.5);
       case DefensePosition.second:
-        return const _PositionalProfile(power: -1.0, speed: 1.5, meet: 0.5);
+        return const _PositionalProfile(
+            power: -1.0, speed: 1.0, meet: 0.5);
       case DefensePosition.shortstop:
-        return const _PositionalProfile(power: -1.0, speed: 1.5, arm: 1.0);
+        return const _PositionalProfile(
+            power: -0.5, speed: 1.0, arm: 0.5);
       case DefensePosition.catcher:
         return const _PositionalProfile(
-            power: -1.0, speed: -2.0, meet: -0.5, arm: 1.0);
+            power: -0.5, speed: -1.5, arm: 0.5);
       case DefensePosition.outfield:
         return _rollOutfieldProfile();
     }
@@ -259,15 +267,16 @@ class PlayerGenerator {
   /// 外野手の型を抽選する。
   /// 強打型 40% / 守備型 35% / 中距離型 25%。
   /// 外野は LF/CF/RF を区別しない作りなので、生成時に1回だけ型を引いて個性とする。
+  /// オフセットは ±0.5/±1 程度に縮小（[_profileForPosition] と同じ理由）。
   _PositionalProfile _rollOutfieldProfile() {
     final roll = _r.random.nextDouble();
     if (roll < 0.40) {
       // 強打型: 長打を期待される代わりにやや足が落ちる
-      return const _PositionalProfile(power: 1.0, speed: -0.5);
+      return const _PositionalProfile(power: 0.5, speed: -0.5);
     }
     if (roll < 0.75) {
       // 守備型: 広い守備範囲と強肩、長打は控えめ
-      return const _PositionalProfile(power: -0.5, speed: 1.5, arm: 1.0);
+      return const _PositionalProfile(power: -0.5, speed: 1.0, arm: 0.5);
     }
     // 中距離型: 平均的（オフセットなし）
     return const _PositionalProfile();
