@@ -2,7 +2,7 @@
 //
 // 検証ポイント:
 // (a) prepareOffseason が候補リストを返し、teams は変更されない
-// (b) 新人候補は野手 6 / 投手 6（高卒 2 + 大卒 2 + 社会人 2）で生成される
+// (b) 新人候補は野手 9 / 投手 9（高卒 3 + 大卒 3 + 社会人 3）で生成される
 // (c) commitOffseason に推奨選択を渡すと、自チームの選手が引退・新人加入する
 // (d) 加入した新人は引退者の背番号と先発／救援ロールを引き継ぐ
 // (e) 自チーム再編成後にシーズン 2 を完走できる
@@ -66,17 +66,17 @@ void main() {
         '球${c.player.averageSpeed} 制${c.player.control})$mark');
   }
 
-  // (b) 各タイプ 2 名ずつ
+  // (b) 各タイプ 3 名ずつ
   for (final type in RookieType.values) {
     final fCount =
         plan.rookieFielderCandidates.where((c) => c.type == type).length;
     final pCount =
         plan.rookiePitcherCandidates.where((c) => c.type == type).length;
-    if (fCount != 2 || pCount != 2) {
+    if (fCount != 3 || pCount != 3) {
       throw '${type.displayName} の候補数が想定外: 野手 $fCount, 投手 $pCount';
     }
   }
-  print('OK: 高卒 / 大卒 / 社会人 がそれぞれ 2 名ずつ生成されている');
+  print('OK: 高卒 / 大卒 / 社会人 がそれぞれ 3 名ずつ生成されている');
 
   // (b) (c) commitOffseason に推奨選択を渡す
   final retiredFielderNumbers = plan.recommendedRetireFielderIds

@@ -619,13 +619,17 @@ class TeamRebuilder {
   /// 引退候補は野手・投手それぞれ全選手をスコア降順で含み、UI 側で表示する。
   /// 推奨選択は CPU と同じ条件: 26 歳以上 + スコア > 0 の上位最大 [retireFieldersPerTeam] 名。
   ///
-  /// 新人候補は野手・投手それぞれ [rookieCandidatesPerType] × 3 タイプ = 6 名生成する
+  /// 新人候補は野手・投手それぞれ [rookieCandidatesPerType] × 3 タイプ = 9 名生成する
   /// （高卒 / 大卒 / 社会人 を各 [rookieCandidatesPerType] 名）。
   /// 推奨は能力スコア上位を選ぶ（基本的には大卒・社会人寄りに偏るが、
   /// まれな高卒の即戦力もここで拾える）。
+  ///
+  /// **数値の根拠**: 候補が少ないと「衰えた捕手を引退させたいが、新人候補に
+  /// 捕手がいない」状況に陥りやすい。各タイプ 3 名（合計 9 名）にすることで、
+  /// ランダム抽選でも 2-3 年以内に望むポジションが候補に出る確率を確保する。
   OffseasonPlan buildOffseasonPlan(
     Team team, {
-    int rookieCandidatesPerType = 2,
+    int rookieCandidatesPerType = 3,
   }) {
     // 外国人選手は別ロジック（prepareForeignChangesForMyTeam で生成・
     // applyUserSelection 内の _applyForeignChanges で適用）で処理されるので、
