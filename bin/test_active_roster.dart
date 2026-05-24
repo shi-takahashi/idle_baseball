@@ -27,8 +27,8 @@ void main() {
 
   // --- 1. 提案が当日ベンチ入りを含む完全な編成か ---
   check('提案 lineup 9人', suggested.lineup.length == 9);
-  check('提案 activeBench 9人', suggested.activeBench.length == 9);
-  check('提案 activeBullpen 8人', suggested.activeBullpen.length == 8);
+  check('提案 activeBench 8人', suggested.activeBench.length == 8);
+  check('提案 activeBullpen 9人', suggested.activeBullpen.length == 9);
   check('activeBench は全員野手',
       suggested.activeBench.every((p) => !p.isPitcher));
   check('activeBullpen は全員投手',
@@ -103,8 +103,8 @@ void main() {
   };
   final excludedFielders =
       allFielders.where((p) => !activeFielderIds.contains(p.id)).toList();
-  // 20 名構成: スタメン 8 + ベンチ入り控え 9 = 17、残り 20-17=3 が非ベンチ入り
-  check('ベンチ入り外の控え野手は3人', excludedFielders.length == 3);
+  // 20 名構成: スタメン 8 + ベンチ入り控え 8 = 16、残り 20-16=4 が非ベンチ入り
+  check('ベンチ入り外の控え野手は4人', excludedFielders.length == 4);
 
   // 先発・ベンチ入り救援は全20投手から背番号順（中立）に選ばれる。
   final spId = suggested.lineup.firstWhere((p) => p.isPitcher).id;
@@ -115,13 +115,13 @@ void main() {
   check('Day1 先発は全20投手で背番号最小', allPitchers.first.id == spId);
   final activeBullpenIds =
       suggested.activeBullpen.map((p) => p.id).toSet();
-  // 初期提案のベンチ入り救援は「先発ロールを除く中継ぎ等から背番号下位8人」。
+  // 初期提案のベンチ入り救援は「先発ロールを除く中継ぎ等から背番号下位9人」。
   final expectedBullpenIds = [
     for (final p in allPitchers)
       if (p.id != spId && p.pitcherRole != PitcherRole.starter) p,
-  ].take(8).map((p) => p.id).toSet();
+  ].take(9).map((p) => p.id).toSet();
   check(
-    'ベンチ入り救援は先発を除外して背番号順で8人',
+    'ベンチ入り救援は先発を除外して背番号順で9人',
     activeBullpenIds.length == expectedBullpenIds.length &&
         activeBullpenIds.containsAll(expectedBullpenIds),
   );
@@ -150,7 +150,7 @@ void main() {
   final benchAppeared = suggested.activeBench
       .where((p) => (c.batterStats[p.id]?.games ?? 0) > 0)
       .length;
-  print('  （参考）ベンチ入り控え野手9人中 $benchAppeared 人が出場');
+  print('  （参考）ベンチ入り控え野手8人中 $benchAppeared 人が出場');
 
   print(ok ? '\n=== 全テスト OK ===' : '\n=== FAIL ===');
 }

@@ -38,8 +38,8 @@ class StrategyScreen extends StatefulWidget {
 class StrategyScreenState extends State<StrategyScreen>
     with SingleTickerProviderStateMixin {
   /// 当日ベンチ入り 26 人の内訳（編成バリデーションで使う）。
-  static const int _activeBenchTarget = 9; // ベンチ入り控え野手
-  static const int _activeBullpenTarget = 8; // ベンチ入り救援
+  static const int _activeBenchTarget = 8; // ベンチ入り控え野手
+  static const int _activeBullpenTarget = 9; // ベンチ入り救援
 
   /// _Slot.id 用の連番カウンタ。`_loadFromCurrent` で新規スロットを作る時に使う。
   int _slotIdCounter = 0;
@@ -53,7 +53,7 @@ class StrategyScreenState extends State<StrategyScreen>
   late List<_Slot> _slots = List.generate(9, (_) => _Slot(id: _newSlotId()));
 
   /// 当日ベンチ入りさせる控え野手・救援投手の id 集合。
-  /// 控え野手はスタメン9人を除いた野手プールから [_activeBenchTarget] 人、
+  /// 控え野手はスタメン8人を除いた野手プールから [_activeBenchTarget] 人、
   /// 救援は救援プールから [_activeBullpenTarget] 人を選ぶ。
   Set<String> _activeBenchIds = {};
   Set<String> _activeBullpenIds = {};
@@ -490,7 +490,7 @@ class StrategyScreenState extends State<StrategyScreen>
     final count = pool.where((p) => _activeBullpenIds.contains(p.id)).length;
     return _buildRosterCard(
       title: 'ベンチ入り 救援投手',
-      hint: '当日先発を除く全投手から、リリーフ登板する8人を選ぶ。'
+      hint: '当日先発を除く全投手から、リリーフ登板する9人を選ぶ。'
           '右の役割（先発/抑え等）はタップで指定（変更後は継続）。'
           '先発役割の投手はベンチ入りさせても最後の砦としてのみ登板。',
       count: count,

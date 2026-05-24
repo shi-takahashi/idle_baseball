@@ -177,8 +177,8 @@ class SeasonController {
   // 当日ベンチ入りした 26 人だけ。内訳は 投手9（当日先発1 + 救援8）/ 野手17
   // （主力8 + 控え9）。主力野手8と先発ローテ6は常時候補で、ここで絞るのは
   // 控え野手と救援。
-  static const int _activeBenchSize = 9; // 当日ベンチ入りする控え野手の人数
-  static const int _activeBullpenSize = 8; // 当日ベンチ入りする救援投手の人数
+  static const int _activeBenchSize = 8; // 当日ベンチ入りする控え野手の人数
+  static const int _activeBullpenSize = 9; // 当日ベンチ入りする救援投手の人数
   // CPU 運用の自然な揺らぎ: 控え野手・救援それぞれで、1 チーム 1 日あたり
   // 「能力下位アクティブ ↔ 非アクティブ」が 1 組入れ替わる確率。
   static const double _activeRosterSwapChance = 0.12;
@@ -1141,10 +1141,11 @@ class SeasonController {
 
   /// 40 人ロスターから「当日ベンチ入り 26 人」に絞った試合用 Team を返す。
   ///
+  /// 内訳: スタメン野手 8 + 控え野手 8 + 先発 1 + 救援 9 = 26
   /// - 主力野手 8（players[0..7]）と先発ローテ 6 はそのまま
   ///   （当日先発は後段の [_selectStarter] が 6 人から選ぶ）
-  /// - 控え野手 14 → 9（控え捕手は希少なので最大 2 人を優先確保）
-  /// - 救援 12 → 8（抑えは役割が固有なので 1 人を優先確保）
+  /// - 控え野手 12 → 8（各ポジション 2 人以上守れるよう確保、外野は 5 人以上）
+  /// - 救援 14 → 9（抑えは役割が固有なので 1 人を優先確保）
   ///
   /// [neutral] true（自チーム）: 残り枠を**背番号順**で埋める。エンジンが
   /// 能力上位を選ぶと「どれが上位選手か」のヒントになり推測ゲームが崩れるため
@@ -1161,26 +1162,50 @@ class SeasonController {
     return team.copyWith(bench: bench, bullpen: bullpen);
   }
 
-  /// 控え野手 14 人から当日ベンチ入りの 9 人を選ぶ。
-  /// 控え捕手は代打・守備交代で枯れると守備が回らなくなるため、最大 2 人を
-  /// 必ずアクティブにする（守備適性ベースの確保で、能力リークではない）。
+  /// 控え野手 12 人から当日ベンチ入りの 8 人を選ぶ。
+  ///
+  /// **ポジション充足の制約**: スタメン 8 (捕1+内野4+外野3) に控えを加えた合計で、
+  /// 各ポジション 2 人以上、外野 5 人以上守れるよう確保する。
+  /// これは「代打・守備交代で枯れない」現実的な編成（守備適性ベース、能力リーク
+  /// ではない）。スタメンが各ポジ 1 人ずつなので、控えは:
+  ///   捕手 ≥ 1 / 一塁 ≥ 1 / 二塁 ≥ 1 / 三塁 ≥ 1 / 遊撃 ≥ 1 / 外野 ≥ 2
+  /// を確保。兼任選手 1 名で複数ポジションをカバーするケースも含む。
   List<Player> _selectActiveBench(List<Player> bench, {bool neutral = false}) {
     if (bench.length <= _activeBenchSize) return bench;
-    final catchers = bench
-        .where((p) => p.getFielding(DefensePosition.catcher) > 0)
-        .toList()
-      ..sort(_rosterRank(neutral));
-    final guaranteed = catchers.take(2).toList();
-    final pool =
-        bench.where((p) => !guaranteed.contains(p)).toList();
+
+    const benchMinByPosition = <DefensePosition, int>{
+      DefensePosition.catcher: 1,
+      DefensePosition.first: 1,
+      DefensePosition.second: 1,
+      DefensePosition.third: 1,
+      DefensePosition.shortstop: 1,
+      DefensePosition.outfield: 2,
+    };
+
+    final selected = <Player>[];
+    for (final entry in benchMinByPosition.entries) {
+      final pos = entry.key;
+      final needed = entry.value;
+      final alreadyCovers =
+          selected.where((p) => p.canPlay(pos)).length;
+      if (alreadyCovers >= needed) continue;
+      final candidates = bench
+          .where((p) => !selected.contains(p) && p.canPlay(pos))
+          .toList()
+        ..sort(_rosterRank(neutral));
+      selected.addAll(candidates.take(needed - alreadyCovers));
+    }
+
+    final remainingCount = _activeBenchSize - selected.length;
+    if (remainingCount <= 0) return selected.take(_activeBenchSize).toList();
+    final pool = bench.where((p) => !selected.contains(p)).toList();
     return [
-      ...guaranteed,
-      ..._pickActive(pool, _activeBenchSize - guaranteed.length,
-          neutral: neutral),
+      ...selected,
+      ..._pickActive(pool, remainingCount, neutral: neutral),
     ];
   }
 
-  /// 救援 12 人から当日ベンチ入りの 8 人を選ぶ。
+  /// 救援 14 人から当日ベンチ入りの 9 人を選ぶ。
   /// 抑えは終盤の役割が固有なので 1 人を必ずアクティブにする
   /// （自チームでロール指定された抑えを当日も使えるようにする意図。
   /// 自チームは開幕時全員中継ぎなので、その場合は closers が空になり素通し）。
