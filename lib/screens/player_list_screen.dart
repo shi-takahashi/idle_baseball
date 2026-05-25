@@ -164,12 +164,16 @@ class _PlayerRow extends StatelessWidget {
                 ),
               ),
             ),
-            // 名前（背番号のすぐ右）。外国人はカタカナ表記で識別できるため
-            // 「外」マークは表示しない。
+            // 名前（背番号のすぐ右）+ 外国人タグ（カタカナ識別だけでは日本人で
+            // カタカナ名(イチロー等、手動編集で起こり得る)と区別できないため復活）
             Text(
               player.name,
               style: const TextStyle(fontSize: 14),
             ),
+            if (player.isForeign) ...[
+              const SizedBox(width: 4),
+              _foreignTag(),
+            ],
             const SizedBox(width: 12),
             // ポジション / 役割（名前のすぐ右に続けて表示）
             Text(
@@ -198,5 +202,24 @@ class _PlayerRow extends StatelessWidget {
       return '${p.effectiveThrows.displayName}投';
     }
     return '${p.effectiveBatsBase.displayName}打';
+  }
+
+  Widget _foreignTag() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+      decoration: BoxDecoration(
+        color: Colors.deepOrange.shade50,
+        borderRadius: BorderRadius.circular(4),
+        border: Border.all(color: Colors.deepOrange.shade300, width: 0.5),
+      ),
+      child: Text(
+        '外',
+        style: TextStyle(
+          fontSize: 10,
+          color: Colors.deepOrange.shade700,
+          fontWeight: FontWeight.bold,
+        ),
+      ),
+    );
   }
 }
