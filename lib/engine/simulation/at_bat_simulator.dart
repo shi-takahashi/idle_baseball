@@ -77,6 +77,23 @@ class InPlayProbabilities {
 class AtBatSimulator {
   final Random _random;
 
+  /// 計測用フラグ。リーグ全体の本塁打 SD を「打席内乱数の各層」「コンディション
+  /// 揺らぎ」がどれだけ膨らませているか分解計測するために使う。通常実行では
+  /// すべて false（本番動作に影響なし）。bin/measure_variance_breakdown.dart 参照。
+  ///
+  /// - [disableBatterCondition]: 野手調子 ±1 補正を 0 に固定
+  /// - [disablePitcherCondition]: 投手調子 ±2 補正を 0 に固定
+  /// - [disableSpeedVariation]: 球速の毎球変動 ±3 を 0 に固定
+  /// - [disablePitchSelectionRandomness]: 重み平均で「期待値」相当の球種を毎球選ぶ
+  /// - [disableBattedBallTypeRandomness]: 打球タイプを期待値固定（ゴロ）
+  /// - [disableFieldPositionRandomness]: 打球方向を期待値固定（センター）
+  static bool disableBatterCondition = false;
+  static bool disablePitcherCondition = false;
+  static bool disableSpeedVariation = false;
+  static bool disablePitchSelectionRandomness = false;
+  static bool disableBattedBallTypeRandomness = false;
+  static bool disableFieldPositionRandomness = false;
+
   // 基準球速（この球速で基本確率になる）
   static const int _baseSpeed = 145;
 
@@ -223,17 +240,26 @@ class AtBatSimulator {
   // +50% 程度に上げる:
   //   sweep値: power7≈28 / power8≈40 / power9≈55 / power10≈70
   //   実戦値:  power7≈18 / power8≈26 / power9≈38 / power10≈48
+  // (9) リーグ多シーズン進行で HR 王 24-30 本の下振れシーズンが頻発・防御率1位
+  // 1点台前半が常態化していたユーザー指摘を受け、上位帯を約 1.25倍に再底上げ。
+  // power 6 以下は据え置きで「能力差を引き離す」(設計の柱②)。
+  // (9-rev) 初回 1.25倍では HR 王 50-60本級が頻発したため、上位帯を ~7% 戻し。
+  // power 9 平均 ~37本・HR 王 ~42-45本/上限 ~50本(NPB 王・松井級)に着地させる。
+  // (10) 打球タイプ抽選を power 依存に変更(過剰分散主因の解消)したため、強打者
+  // のフライ機会が安定し SD が縮む代わりに HR 平均がやや下がった。テーブルを
+  // ~10-14% 増やして HR 王 35-40本(NPB近年)に着地させる。
+  // 目標 (HR/600PA): power7≈23 / power8≈33 / power9≈43 / power10≈55
   static const Map<int, double> _powerHomeRunBase = {
     1: 0.0011,
     2: 0.0020,
     3: 0.0034,
     4: 0.0060,
     5: 0.0125,
-    6: 0.0215,
-    7: 0.0370,
-    8: 0.0545,
-    9: 0.0820,
-    10: 0.1050,
+    6: 0.0225,
+    7: 0.0475,
+    8: 0.0720,
+    9: 0.1080,
+    10: 0.1400,
   };
 
   // 基準守備力（この守備力で基本確率になる）
@@ -704,6 +730,7 @@ class AtBatSimulator {
 
   /// 球速を生成（正規分布的、中央付近が出やすい）
   int generateSpeed(int averageSpeed) {
+    if (disableSpeedVariation) return averageSpeed;
     // 2つの一様乱数の平均を使って中央寄りの分布を作る
     // ±3の範囲で中央付近が出やすい（調子±2と合わせて±5の変動）
     final r1 = _random.nextDouble() * 6 - 3; // -3 to +3
@@ -837,7 +864,7 @@ class AtBatSimulator {
     }
 
     // インプレー
-    final battedBallType = _randomBattedBallType(pitchType);
+    final battedBallType = _randomBattedBallType(pitchType, power);
     final fieldPosition = _randomFieldPosition(battedBallType, batterSide);
     return PitchResult(type: PitchResultType.inPlay, pitchType: pitchType, battedBallType: battedBallType, fieldPosition: fieldPosition, speed: speed);
   }
@@ -864,8 +891,23 @@ class AtBatSimulator {
   /// ゴロ率は球種依存（[_groundBallShare]）。残り（フライ＋ライナー）は従来の
   /// フライ : ライナー ≒ 76 : 24 の比率で配分する。内野ライナー過多を避けるため
   /// シミュレーターは現実よりゴロ寄り（リーグ平均ゴロ ~50%）に調整している。
-  BattedBallType _randomBattedBallType(PitchType pitchType) {
-    final ground = _groundBallShare[pitchType] ?? 0.50;
+  /// 打者長打力 1ptあたりのゴロ率補正(power 5 を基準に、power が高いほどゴロ率
+  /// が下がりフライ率が上がる)。
+  /// 過剰分散の主因が「打球タイプ抽選の打席ごとぶれ」だった(measure_variance_breakdown)
+  /// ことを受け、強打者は安定してフライを多く打つ = HR SD が縮む構造に変更。
+  /// power 1 で +0.10 (ゴロ多)、power 9 で -0.10 (フライ多)。
+  static const double _groundShiftPerPower = 0.025;
+
+  BattedBallType _randomBattedBallType(PitchType pitchType, int power) {
+    if (disableBattedBallTypeRandomness) {
+      // 期待値固定: ゴロ率最大のシンカー(0.675)等によらず、リーグ平均ゴロ(0.50)で
+      // 「ゴロ」を返す。これで打球タイプ抽選の乱数寄与をゼロにできる。
+      return BattedBallType.groundBall;
+    }
+    final baseGround = _groundBallShare[pitchType] ?? 0.50;
+    // 打者長打力でゴロ率を偏らせる(power 1: ゴロ打ち、power 9: アッパースイング)
+    final powerShift = (5 - power) * _groundShiftPerPower;
+    final ground = (baseGround + powerShift).clamp(0.20, 0.80);
     final roll = _random.nextDouble();
     if (roll < ground) return BattedBallType.groundBall;
     // 非ゴロぶんをフライ 76% / ライナー 24% に配分
@@ -880,6 +922,13 @@ class AtBatSimulator {
   /// 左打者はライト方向・一二塁間に引っ張りやすい
   FieldPosition _randomFieldPosition(
       BattedBallType battedBallType, Handedness batterSide) {
+    if (disableFieldPositionRandomness) {
+      // 期待値固定: ゴロは遊撃、フライ・ライナーは中堅
+      if (battedBallType == BattedBallType.groundBall) {
+        return FieldPosition.shortstop;
+      }
+      return FieldPosition.center;
+    }
     final weights = _directionWeights(battedBallType, batterSide);
     return _pickWeighted(weights);
   }
@@ -1482,22 +1531,26 @@ class AtBatSimulator {
     int initialStrikes = 0,
     List<PitchResult> previousPitches = const [],
   }) {
+    // 計測フラグでコンディション補正を 0 化
+    final effectivePitcherCondition =
+        disablePitcherCondition ? PitcherCondition.normal : condition;
+    final effectiveBatterMod = disableBatterCondition ? 0 : batterConditionModifier;
     // 投手の平均球速（設定されていなければ145km）+ 調子補正
-    final avgSpeed = (pitcher.averageSpeed ?? 145) + condition.speedModifier;
+    final avgSpeed = (pitcher.averageSpeed ?? 145) + effectivePitcherCondition.speedModifier;
     // 投手の制球力（設定されていなければ5）+ 調子補正（1〜10の範囲内）
-    final control = ((pitcher.control ?? 5) + condition.controlModifier).clamp(1, 10);
+    final control = ((pitcher.control ?? 5) + effectivePitcherCondition.controlModifier).clamp(1, 10);
     // 投手の持ち球数（球種が多いほど打者が待ち球を絞れず、わずかに有利）
     final arsenalSize = _arsenalSize(pitcher);
     // 投手の弱点軸ペナルティ（3軸2軸欠点で急増する非線形ペナルティ）
     final weaknessPenalty = pitcherWeaknessPenalty(pitcher);
     // 打者のミート力（設定されていなければ5）+ 調子補正（1〜10の範囲内）
-    final meet = ((batter.meet ?? 5) + batterConditionModifier).clamp(1, 10);
+    final meet = ((batter.meet ?? 5) + effectiveBatterMod).clamp(1, 10);
     // 打者の長打力（設定されていなければ5）+ 調子補正
-    final power = ((batter.power ?? 5) + batterConditionModifier).clamp(1, 10);
+    final power = ((batter.power ?? 5) + effectiveBatterMod).clamp(1, 10);
     // 打者の走力（設定されていなければ5）+ 調子補正
-    final batterSpeed = ((batter.speed ?? 5) + batterConditionModifier).clamp(1, 10);
+    final batterSpeed = ((batter.speed ?? 5) + effectiveBatterMod).clamp(1, 10);
     // 打者の選球眼（設定されていなければ5）+ 調子補正
-    final eye = ((batter.eye ?? 5) + batterConditionModifier).clamp(1, 10);
+    final eye = ((batter.eye ?? 5) + effectiveBatterMod).clamp(1, 10);
     // 捕手の肩の強さ（盗塁阻止に使用）
     final catcher = pitchingTeam.getFielder(FieldPosition.catcher);
     final catcherArm = catcher?.arm ?? 5;
@@ -1559,12 +1612,13 @@ class AtBatSimulator {
       }
       final pitchType = _selectPitchType(
         pitcher,
-        condition,
+        effectivePitcherCondition,
         prevPitchType: prevPitchType,
         prevSameStreak: prevSameStreak,
       );
       final speed = _generatePitchSpeed(avgSpeed, pitchType);
-      final pitchParam = _getPitchParam(pitcher, pitchType, condition);
+      final pitchParam =
+          _getPitchParam(pitcher, pitchType, effectivePitcherCondition);
       var pitch = simulatePitch(
         balls,
         strikes,
@@ -1802,14 +1856,20 @@ class AtBatSimulator {
     PitcherCondition condition = const PitcherCondition(),
     int batterConditionModifier = 0,
   }) {
+    final effectivePitcherCondition =
+        disablePitcherCondition ? PitcherCondition.normal : condition;
+    final effectiveBatterMod =
+        disableBatterCondition ? 0 : batterConditionModifier;
     final meet =
-        ((batter.meet ?? 5) + batterConditionModifier).clamp(1, 10);
+        ((batter.meet ?? 5) + effectiveBatterMod).clamp(1, 10);
     final batterSpeed =
-        ((batter.speed ?? 5) + batterConditionModifier).clamp(1, 10);
+        ((batter.speed ?? 5) + effectiveBatterMod).clamp(1, 10);
     final power = batter.power ?? 5;
     final control =
-        ((pitcher.control ?? 5) + condition.controlModifier).clamp(1, 10);
-    final avgSpeed = (pitcher.averageSpeed ?? 145) + condition.speedModifier;
+        ((pitcher.control ?? 5) + effectivePitcherCondition.controlModifier)
+            .clamp(1, 10);
+    final avgSpeed =
+        (pitcher.averageSpeed ?? 145) + effectivePitcherCondition.speedModifier;
 
     int balls = 0;
     int strikes = 0;
