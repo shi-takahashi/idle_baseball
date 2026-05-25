@@ -5,8 +5,8 @@ import '../engine/engine.dart';
 /// 個人成績画面
 ///
 /// タブ:
-/// - 打撃: 首位打者(打率) / 本塁打王 / 打点王 / 盗塁王 / 最多得点 / OPS
-/// - 投手: 最優秀防御率 / 最多勝 / 最多奪三振 / 最多セーブ / 最多ホールド / WHIP
+/// - 打撃: 首位打者(打率) / 本塁打王 / 打点王 / 盗塁王 / OPS
+/// - 投手: 最優秀防御率 / 最多勝 / 最多奪三振 / 最多セーブ / 最優秀中継ぎ(HP) / WHIP
 ///
 /// 自チームの選手は青色太字でハイライト。
 class IndividualStatsScreen extends StatefulWidget {
@@ -75,8 +75,11 @@ class _IndividualStatsScreenState extends State<IndividualStatsScreen>
     final all = c.batterStats.values.toList();
     // 規定打席: シーズン試合数 × 3.1（現時点まで消化した試合数をベース）
     final qualifiedPA = (c.currentDay * 3.1).ceil();
-    final qualified =
-        all.where((b) => b.plateAppearances >= qualifiedPA).toList();
+    // currentDay == 0（1試合も消化前）は規定打席フィルタが事実上ザルになり
+    // 全選手が並ぶので、ランキング系は空にする。
+    final qualified = c.currentDay == 0
+        ? <BatterSeasonStats>[]
+        : all.where((b) => b.plateAppearances >= qualifiedPA).toList();
 
     return ListView(
       padding: const EdgeInsets.all(8),
@@ -111,13 +114,6 @@ class _IndividualStatsScreenState extends State<IndividualStatsScreen>
           min: 1,
         ),
         _buildBatterRanking(
-          '最多得点',
-          all,
-          (b) => b.runs.toDouble(),
-          (v) => v.toInt().toString(),
-          min: 1,
-        ),
-        _buildBatterRanking(
           'OPS',
           qualified,
           (b) => b.ops,
@@ -132,8 +128,10 @@ class _IndividualStatsScreenState extends State<IndividualStatsScreen>
     final all = c.pitcherStats.values.toList();
     // 規定投球回: シーズン試合数 × 1.0
     final qualifiedIP = c.currentDay.toDouble();
-    final qualified =
-        all.where((p) => p.inningsPitched >= qualifiedIP).toList();
+    // currentDay == 0（1試合も消化前）は全投手が IP 0 で並ぶので、ランキング系は空に。
+    final qualified = c.currentDay == 0
+        ? <PitcherSeasonStats>[]
+        : all.where((p) => p.inningsPitched >= qualifiedIP).toList();
 
     return ListView(
       padding: const EdgeInsets.all(8),
@@ -165,13 +163,6 @@ class _IndividualStatsScreenState extends State<IndividualStatsScreen>
           '最多セーブ',
           all,
           (p) => p.saves.toDouble(),
-          (v) => v.toInt().toString(),
-          min: 1,
-        ),
-        _buildPitcherRanking(
-          '最多ホールド',
-          all,
-          (p) => p.holds.toDouble(),
           (v) => v.toInt().toString(),
           min: 1,
         ),
@@ -310,9 +301,13 @@ class _IndividualStatsScreenState extends State<IndividualStatsScreen>
                   overflow: TextOverflow.ellipsis,
                 ),
                 Text(
-                  '${b.atBats}打数${b.hits}安打  '
-                  '${b.homeRuns}本${b.rbi}点  '
-                  '盗${b.stolenBases}  四球${b.walks}  三振${b.strikeouts}',
+                  '打${b.battingAverage.toStringAsFixed(3)}  '
+                  '本${b.homeRuns}  '
+                  '点${b.rbi}  '
+                  '盗${b.stolenBases}  '
+                  '三${b.strikeouts}  '
+                  '四${b.walks}  '
+                  'OPS${b.ops.toStringAsFixed(3)}',
                   style: subStyle,
                 ),
               ],
@@ -406,11 +401,14 @@ class _IndividualStatsScreenState extends State<IndividualStatsScreen>
                   overflow: TextOverflow.ellipsis,
                 ),
                 Text(
+                  '防${p.era.toStringAsFixed(2)}  '
+                  '勝${p.wins}  '
+                  '負${p.losses}  '
+                  'S${p.saves}  '
+                  'H${p.holds}  '
                   '${p.inningsPitchedDisplay}回  '
-                  '${p.wins}勝${p.losses}敗${p.saves}S${p.holds}H  '
-                  '${p.strikeoutsRecorded}K  '
-                  '${p.walksAllowed}四  '
-                  '被${p.hitsAllowed}安  失${p.runsAllowed}',
+                  '三${p.strikeoutsRecorded}  '
+                  '四${p.walksAllowed}',
                   style: subStyle,
                 ),
               ],
