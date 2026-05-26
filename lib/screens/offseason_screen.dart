@@ -26,6 +26,14 @@ class _OffseasonScreenState extends State<OffseasonScreen>
   late final OffseasonPlan _plan;
   late final TabController _tabController;
 
+  /// 「新候補」ラベルの位置目印（タブ毎）。アラートの「やること」ボタンから
+  /// `Scrollable.ensureVisible` でここまで一気にスクロールするのに使う。
+  /// セクションヘッダーではなく `新候補` ラベルを基準にすることで、
+  /// ボタンを押した瞬間にユーザーが本当に必要な「獲得候補のリスト」が
+  /// 画面上部に来るようにする（[離脱] バッジ等は既にアラートで把握済み）。
+  final _newForeignFielderKey = GlobalKey();
+  final _newForeignPitcherKey = GlobalKey();
+
   /// 各候補の選択状態（id → 選択中か）
   final _retireFielderSelected = <String>{};
   final _retirePitcherSelected = <String>{};
@@ -91,26 +99,25 @@ class _OffseasonScreenState extends State<OffseasonScreen>
   bool _isForcedDeparture(String id) =>
       _plan.foreignDepartures.any((p) => p.id == id);
 
-  /// 外国人入替の整合性チェック。投手枠 / 野手枠ごとに
-  /// 「現状 - 離脱 - カット + 獲得 = 想定枠（1 / 1）」を満たすか。
-  /// 過去シーズンで何らかの経緯で空席ができている場合も、獲得だけで空席を
-  /// 埋められるよう「離脱より獲得が多い」状態を許容する。
-  bool get _foreignValid {
+  /// 外国人枠の現状を投手 / 野手の両軸で計算する。
+  /// 「現状 - 離脱(強制+任意) - カット + 獲得」が想定枠 2 と一致しているか、
+  /// 過不足を返す。アラートカードとボトムバーの validation で共有する。
+  _ForeignSlotStatus get _foreignSlotStatus {
     final currentPitchers =
         _currentForeigners.where((p) => p.isPitcher).length;
     final currentFielders =
         _currentForeigners.where((p) => !p.isPitcher).length;
-    int pitcherDepart = 0;
-    int fielderDepart = 0;
-    // 強制離脱
+    int forcedPitcherDepart = 0;
+    int forcedFielderDepart = 0;
     for (final p in _plan.foreignDepartures) {
       if (p.isPitcher) {
-        pitcherDepart++;
+        forcedPitcherDepart++;
       } else {
-        fielderDepart++;
+        forcedFielderDepart++;
       }
     }
-    // ユーザー任意カット
+    int voluntaryPitcherRelease = 0;
+    int voluntaryFielderRelease = 0;
     for (final id in _foreignReleaseSelected) {
       final p = _currentForeigners.firstWhere(
         (x) => x.id == id,
@@ -118,12 +125,11 @@ class _OffseasonScreenState extends State<OffseasonScreen>
       );
       if (p.id.isEmpty) continue;
       if (p.isPitcher) {
-        pitcherDepart++;
+        voluntaryPitcherRelease++;
       } else {
-        fielderDepart++;
+        voluntaryFielderRelease++;
       }
     }
-    // 獲得候補
     int pitcherAcquire = 0;
     int fielderAcquire = 0;
     for (final id in _foreignAcquireSelected) {
@@ -138,11 +144,30 @@ class _OffseasonScreenState extends State<OffseasonScreen>
         fielderAcquire++;
       }
     }
-    const targetPitchers = 2; // TeamRebuilder.targetForeignPitchers と同じ
-    const targetFielders = 2;
-    return (currentPitchers - pitcherDepart + pitcherAcquire) ==
-            targetPitchers &&
-        (currentFielders - fielderDepart + fielderAcquire) == targetFielders;
+    const target = 2; // TeamRebuilder.targetForeignPitchers / Fielders と同じ
+    final pitcherTotal = currentPitchers -
+        forcedPitcherDepart -
+        voluntaryPitcherRelease +
+        pitcherAcquire;
+    final fielderTotal = currentFielders -
+        forcedFielderDepart -
+        voluntaryFielderRelease +
+        fielderAcquire;
+    return _ForeignSlotStatus(
+      target: target,
+      pitcherTotal: pitcherTotal,
+      fielderTotal: fielderTotal,
+      forcedPitcherDepart: forcedPitcherDepart,
+      forcedFielderDepart: forcedFielderDepart,
+      pitcherAcquire: pitcherAcquire,
+      fielderAcquire: fielderAcquire,
+    );
+  }
+
+  /// 外国人入替の整合性チェック。
+  bool get _foreignValid {
+    final s = _foreignSlotStatus;
+    return s.pitcherTotal == s.target && s.fielderTotal == s.target;
   }
 
   /// 引退・新人 + 外国人入替の両方が valid なら true。
@@ -154,19 +179,26 @@ class _OffseasonScreenState extends State<OffseasonScreen>
       _foreignValid;
 
   /// _isValid が false の時、ボトムバーに出すエラー文。
-  /// 何が原因か（野手の人数 / 投手の人数 / 外国人枠）を伝える。
+  /// 何が原因か（野手の人数 / 投手の人数 / 外国人枠の不足/過剰）を具体的に伝える。
   String get _validationMessage {
     final issues = <String>[];
     if (_retireFielderSelected.length != _takeFielderSelected.length) {
-      issues.add('野手の引退と新人の人数');
+      issues.add('野手の引退と新人の人数を揃える');
     }
     if (_retirePitcherSelected.length != _takePitcherSelected.length) {
-      issues.add('投手の引退と新人の人数');
+      issues.add('投手の引退と新人の人数を揃える');
     }
-    if (!_foreignValid) {
-      issues.add('外国人の枠');
+    final s = _foreignSlotStatus;
+    String? slotIssue(String label, int total, int target) {
+      if (total < target) return '外国人$labelをあと ${target - total} 名獲得';
+      if (total > target) return '外国人$label候補から ${total - target} 名外す';
+      return null;
     }
-    return '${issues.join("、")}を揃えてください';
+    final pIssue = slotIssue('投手', s.pitcherTotal, s.target);
+    final fIssue = slotIssue('野手', s.fielderTotal, s.target);
+    if (pIssue != null) issues.add(pIssue);
+    if (fIssue != null) issues.add(fIssue);
+    return issues.join(' / ');
   }
 
   /// 「○ 名引退 / ○ 名加入」の説明テキスト
@@ -275,6 +307,15 @@ class _OffseasonScreenState extends State<OffseasonScreen>
                 const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
             child: _buildIntro(),
           ),
+          // 強制離脱があり、まだ補充されていないときだけ表示するアラート。
+          // ボトムバーの validation 文だけだと「何が起きて、何が必要か」が
+          // タブ末尾までスクロールしないと分からないので、画面トップで宣言する。
+          if (_shouldShowForcedDepartureAlert)
+            Padding(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+              child: _buildForcedDepartureAlert(),
+            ),
           TabBar(
             controller: _tabController,
             labelColor: Theme.of(context).colorScheme.primary,
@@ -300,10 +341,20 @@ class _OffseasonScreenState extends State<OffseasonScreen>
 
   /// 野手タブ: 引退候補（全選手）と新人野手候補を縦に並べる。
   /// 同じタブ内に置くことで「引退人数 = 加入人数」を揃える操作が一画面で完結する。
+  ///
+  /// `ListView` ではなく `SingleChildScrollView + Column` を使うのは、
+  /// 末尾の外国人セクションを `GlobalKey` 経由で `Scrollable.ensureVisible`
+  /// するため。`ListView(children: [...])` は viewport 外を遅延ビルドする
+  /// ため、最初は外国人セクションが render object を持たず ensureVisible が
+  /// no-op になる。Column は全件ビルドされる代わりに ensureVisible が常に動く。
+  /// 1 タブあたり最大でも 50 タイル程度なので、遅延ビルドの利点よりスクロール
+  /// 制御の素直さを優先する。
   Widget _buildFielderTab() {
-    return ListView(
+    return SingleChildScrollView(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      children: [
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
         _SectionHeader(
           title: '引退する野手',
           subtitle:
@@ -353,15 +404,19 @@ class _OffseasonScreenState extends State<OffseasonScreen>
         const SizedBox(height: 16),
         ..._buildForeignSectionFor(isPitcher: false),
         const SizedBox(height: 80), // bottom bar との余白
-      ],
+        ],
+      ),
     );
   }
 
   /// 投手タブ: 引退候補（全選手）と新人投手候補を縦に並べる。
+  /// `SingleChildScrollView + Column` を使う理由は `_buildFielderTab` 参照。
   Widget _buildPitcherTab() {
-    return ListView(
+    return SingleChildScrollView(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      children: [
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
         _SectionHeader(
           title: '引退する投手',
           subtitle:
@@ -411,7 +466,8 @@ class _OffseasonScreenState extends State<OffseasonScreen>
         const SizedBox(height: 16),
         ..._buildForeignSectionFor(isPitcher: true),
         const SizedBox(height: 80),
-      ],
+        ],
+      ),
     );
   }
 
@@ -477,6 +533,7 @@ class _OffseasonScreenState extends State<OffseasonScreen>
             )),
       const SizedBox(height: 8),
       Padding(
+        key: isPitcher ? _newForeignPitcherKey : _newForeignFielderKey,
         padding: const EdgeInsets.only(left: 4, bottom: 4),
         child: Text(
           '新候補',
@@ -502,6 +559,154 @@ class _OffseasonScreenState extends State<OffseasonScreen>
     ];
   }
 
+  /// 「やること」ボタンから呼ばれるショートカット。
+  /// 該当タブに切替えたうえで、外国人セクションの「新候補」ラベル位置まで
+  /// 自動スクロールする。ヘッダーや既存外国人タイルではなく `新候補` 自体を
+  /// 画面上端に置くことで、ボタンを押したユーザーの次のアクション
+  /// （獲得チェック）対象を即タップ可能な状態にする。
+  /// `_tabController.animateTo` は既に同じタブにいる場合は no-op だが、
+  /// `ensureVisible` 側でスクロールは進むので任意の状態から動作する。
+  /// タブ切替アニメーション完了 + 次タブの初回 build を待つために短い遅延を挟む
+  /// （Flutter の `kTabScrollDuration` は 200ms）。
+  void _jumpToForeignSection({required bool isPitcher}) {
+    _tabController.animateTo(isPitcher ? 1 : 0);
+    Future.delayed(const Duration(milliseconds: 280), () {
+      if (!mounted) return;
+      final key =
+          isPitcher ? _newForeignPitcherKey : _newForeignFielderKey;
+      final ctx = key.currentContext;
+      if (ctx == null || !ctx.mounted) return;
+      Scrollable.ensureVisible(
+        ctx,
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeInOut,
+        alignment: 0.0,
+      );
+    });
+  }
+
+  /// 強制離脱があり、かつ補充が完了していないときだけアラートを出す。
+  /// 任意カットによる空席はユーザー自身の操作なのでここでは扱わず、
+  /// ボトムバーの validation 文に任せる。
+  bool get _shouldShowForcedDepartureAlert {
+    if (_plan.foreignDepartures.isEmpty) return false;
+    final s = _foreignSlotStatus;
+    final pitcherShortage =
+        (s.forcedPitcherDepart - s.pitcherAcquire).clamp(0, s.target);
+    final fielderShortage =
+        (s.forcedFielderDepart - s.fielderAcquire).clamp(0, s.target);
+    return pitcherShortage > 0 || fielderShortage > 0;
+  }
+
+  /// 画面トップに置く強制離脱アラート。誰が抜けるのか + 何をすればいいのかを
+  /// 一目で把握できるようにする。タップで該当タブへジャンプする補助ボタン付き。
+  Widget _buildForcedDepartureAlert() {
+    final departures = _plan.foreignDepartures;
+    final s = _foreignSlotStatus;
+    final pitcherShortage =
+        (s.forcedPitcherDepart - s.pitcherAcquire).clamp(0, s.target);
+    final fielderShortage =
+        (s.forcedFielderDepart - s.fielderAcquire).clamp(0, s.target);
+    return Card(
+      margin: EdgeInsets.zero,
+      color: Colors.orange.shade50,
+      shape: RoundedRectangleBorder(
+        side: BorderSide(color: Colors.orange.shade400, width: 1.2),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.warning_amber_rounded,
+                    color: Colors.orange.shade800, size: 20),
+                const SizedBox(width: 6),
+                Text(
+                  '外国人選手が離脱します',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.orange.shade900,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'シーズン終了に伴い、以下の選手がチームを離れます。'
+              '空いた枠は新候補から獲得して埋めてください。',
+              style: TextStyle(
+                  fontSize: 11, color: Colors.orange.shade900),
+            ),
+            const SizedBox(height: 8),
+            // 離脱が 3 人以上だと縦に伸びすぎてタブ内容が圧迫されるので、
+            // 最大 ~3 行ぶんで頭打ちにして内部スクロールに切り替える。
+            // 期待値は 0.8 人/シーズン（4 人 × 1/5）なので発火頻度は低いが、
+            // 4 人離脱した場合でもタブ操作領域が確保されるようにする。
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 96),
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    for (final p in departures)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 3),
+                        child: _DepartureLine(
+                          player: p,
+                          controller: widget.controller,
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 6),
+            Container(
+              padding: const EdgeInsets.symmetric(
+                  horizontal: 8, vertical: 6),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(4),
+                border: Border.all(color: Colors.orange.shade200),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    'やること',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.orange.shade900,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  if (pitcherShortage > 0)
+                    _ShortageActionRow(
+                      label: '外国人投手をあと $pitcherShortage 名獲得',
+                      buttonLabel: '投手の候補へ',
+                      onTap: () => _jumpToForeignSection(isPitcher: true),
+                    ),
+                  if (fielderShortage > 0)
+                    _ShortageActionRow(
+                      label: '外国人野手をあと $fielderShortage 名獲得',
+                      buttonLabel: '野手の候補へ',
+                      onTap: () => _jumpToForeignSection(isPitcher: false),
+                    ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildIntro() {
     final c = widget.controller;
     return Card(
@@ -520,9 +725,7 @@ class _OffseasonScreenState extends State<OffseasonScreen>
             ),
             const SizedBox(height: 4),
             const Text(
-              '次シーズンに向けて、引退する選手と入団する新人を決めてください。\n'
-              '引退・新人どちらも 0 名にすればチームを変えずに進めます。\n'
-              '他球団 (CPU) の入れ替えは「次シーズン開始」時に自動実行されます。',
+              '次シーズンに向けて、引退する選手と入団する新人を決めてください。',
               style: TextStyle(fontSize: 12),
             ),
             const SizedBox(height: 12),
@@ -598,7 +801,10 @@ class _SectionHeader extends StatelessWidget {
   final String title;
   final String subtitle;
 
-  const _SectionHeader({required this.title, required this.subtitle});
+  const _SectionHeader({
+    required this.title,
+    required this.subtitle,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -1146,6 +1352,114 @@ class _ForeignCandidateTile extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// 外国人枠の集計値。アラート / ボトムバー validation で使う。
+/// 「強制離脱」と「任意カット」を分けて保持しているのは、アラートが
+/// 「強制離脱に対する補充残数」だけで開閉するため（任意カットの過不足は
+/// ボトムバーの validation 文に任せる）。
+class _ForeignSlotStatus {
+  final int target;
+  final int pitcherTotal;
+  final int fielderTotal;
+  final int forcedPitcherDepart;
+  final int forcedFielderDepart;
+  final int pitcherAcquire;
+  final int fielderAcquire;
+
+  const _ForeignSlotStatus({
+    required this.target,
+    required this.pitcherTotal,
+    required this.fielderTotal,
+    required this.forcedPitcherDepart,
+    required this.forcedFielderDepart,
+    required this.pitcherAcquire,
+    required this.fielderAcquire,
+  });
+}
+
+/// 強制離脱アラート内の 1 行（離脱選手）。
+/// バッジ + 名前 + 年齢 + 当季成績。成績は離脱理由ではない（1/5 で一律確率）
+/// ものの、「今季こういう活躍をしていた選手が抜ける」という情報としては出す。
+class _DepartureLine extends StatelessWidget {
+  final Player player;
+  final SeasonController controller;
+
+  const _DepartureLine({required this.player, required this.controller});
+
+  @override
+  Widget build(BuildContext context) {
+    final stats = player.isPitcher
+        ? _pitcherSeasonLine(controller, player)
+        : _fielderSeasonLine(controller, player);
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _ForeignBadge(
+          label: player.isPitcher ? '投手' : '野手',
+          color: player.isPitcher ? Colors.deepPurple : Colors.indigo,
+        ),
+        const SizedBox(width: 6),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                '#${player.number} ${player.name}（${player.age}歳）',
+                style: const TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              Text(
+                stats,
+                style: TextStyle(
+                    fontSize: 11, color: Colors.grey.shade800),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// アラート内「やること」枠の 1 行（投手 or 野手の不足 + タブ移動ボタン）。
+class _ShortageActionRow extends StatelessWidget {
+  final String label;
+  final String buttonLabel;
+  final VoidCallback onTap;
+
+  const _ShortageActionRow({
+    required this.label,
+    required this.buttonLabel,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Expanded(
+          child: Text(
+            label,
+            style: const TextStyle(fontSize: 12),
+          ),
+        ),
+        TextButton(
+          onPressed: onTap,
+          style: TextButton.styleFrom(
+            padding:
+                const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+            minimumSize: Size.zero,
+            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          ),
+          child: Text(buttonLabel, style: const TextStyle(fontSize: 12)),
+        ),
+      ],
     );
   }
 }
