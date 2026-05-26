@@ -57,11 +57,25 @@ class _MainSeasonScreenState extends State<MainSeasonScreen> {
   /// SeasonController の通知に応じてセーブデータを自動更新するヘルパ
   late final AutoSaver _autoSaver;
 
+  /// 試合タブ内 (index 0) のルートスタック変化を検出するオブザーバ。
+  /// 「次の試合へ」ボタンは作戦画面ルートにいるときは no-op になるため、
+  /// その状態だと disable 表示にしたい。`_navigatorKeys[0].canPop()` の値が
+  /// 変わるタイミング（サブ画面 push / pop / 置換）でアドバンスバーを再描画。
+  late final _GameTabRouteObserver _gameTabObserver;
+
   @override
   void initState() {
     super.initState();
     _listenable = SeasonListenable(widget.controller);
     _autoSaver = AutoSaver(widget.controller, SaveService());
+    _gameTabObserver = _GameTabRouteObserver(() {
+      if (!mounted) return;
+      // observer は build 中に呼ばれることがあるので、フレーム終了後に setState
+      // して再入を避ける。
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) setState(() {});
+      });
+    });
     // シーズン開始直後は作戦画面で待機させたいので、Day 1 を自動消化はしない。
     // ユーザーが「次の試合へ」を押した時点で Day 1 が走り、結果が表示される。
   }
@@ -232,6 +246,7 @@ class _MainSeasonScreenState extends State<MainSeasonScreen> {
   Widget _buildTabNavigator(int index, Widget rootScreen) {
     return Navigator(
       key: _navigatorKeys[index],
+      observers: index == 0 ? [_gameTabObserver] : const [],
       onGenerateRoute: (settings) =>
           MaterialPageRoute(builder: (_) => rootScreen),
     );
@@ -283,6 +298,13 @@ class _MainSeasonScreenState extends State<MainSeasonScreen> {
     final ended = c.isSeasonOver;
     final rec =
         c.standings.records.firstWhere((r) => r.team.id == c.myTeamId);
+    // シーズン中の「次の試合へ」は、`_goToStrategy` がタブ 0 のルートに戻すだけ
+    // の動作。既にタブ 0 のルート（作戦画面）にいる場合は完全に no-op になるので
+    // ボタンを disable してユーザーに「ここでは効果がない」ことを示す。
+    // 試合の実進行は作戦画面内の「試合開始」ボタンが担う。
+    final atGameTabRoot = _selectedIndex == 0 &&
+        !(_navigatorKeys[0].currentState?.canPop() ?? false);
+    final canAdvance = ended || !atGameTabRoot;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
@@ -319,7 +341,9 @@ class _MainSeasonScreenState extends State<MainSeasonScreen> {
             onPressed: ended ? null : _advanceAll,
           ),
           ElevatedButton(
-            onPressed: ended ? _advanceToNextSeason : _goToStrategy,
+            onPressed: canAdvance
+                ? (ended ? _advanceToNextSeason : _goToStrategy)
+                : null,
             style: ElevatedButton.styleFrom(
               padding:
                   const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
@@ -332,6 +356,35 @@ class _MainSeasonScreenState extends State<MainSeasonScreen> {
         ],
       ),
     );
+  }
+}
+
+/// 試合タブの Navigator 内でルートが変化したことを上位 State に通知する
+/// オブザーバ。「次の試合へ」ボタンの enable/disable は `canPop()` の値に
+/// 依存するので、push/pop/replace/remove のいずれでも再描画させたい。
+class _GameTabRouteObserver extends NavigatorObserver {
+  final VoidCallback onRouteChanged;
+
+  _GameTabRouteObserver(this.onRouteChanged);
+
+  @override
+  void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    onRouteChanged();
+  }
+
+  @override
+  void didPop(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    onRouteChanged();
+  }
+
+  @override
+  void didRemove(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    onRouteChanged();
+  }
+
+  @override
+  void didReplace({Route<dynamic>? newRoute, Route<dynamic>? oldRoute}) {
+    onRouteChanged();
   }
 }
 
