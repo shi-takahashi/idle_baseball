@@ -9,9 +9,17 @@ class InPlayResult {
   final AtBatResultType result;
   final FieldingError? fieldingError;
 
+  /// 外野手の返球・クッション処理ミスで打者が本来の進塁先より +1 塁進む場合 true。
+  /// 例: 単打を打ったが返球エラーで打者が二塁まで、二塁打を打ったが中継エラーで
+  /// 打者が三塁まで。NPB の公式記録では打席結果はあくまで「単打」「二塁打」で、
+  /// 余分な進塁は失策。RBI も自然な打席結果ぶんしか付かない（押し出される
+  /// 走者が本塁を踏んだ場合、その得点は失策由来として打点に算入しない）。
+  final bool batterTakesExtraBase;
+
   const InPlayResult({
     required this.result,
     this.fieldingError,
+    this.batterTakesExtraBase = false,
   });
 }
 
@@ -19,10 +27,12 @@ class InPlayResult {
 class AtBatEndCheckResult {
   final AtBatResultType? result;
   final FieldingError? fieldingError;
+  final bool batterTakesExtraBase;
 
   const AtBatEndCheckResult({
     this.result,
     this.fieldingError,
+    this.batterTakesExtraBase = false,
   });
 
   /// 打席が終了したかどうか
@@ -39,6 +49,9 @@ class AtBatSimulationResult {
   final FieldingError? fieldingError; // フィールディングエラー
   final int batteryErrorRuns; // バッテリーエラーによる得点
 
+  /// 外野手のエラーで打者が +1 塁進む場合 true。詳細は [InPlayResult] 参照。
+  final bool batterTakesExtraBase;
+
   /// バッテリーエラー（WP/PB）で生還した走者
   /// 失点の責任投手を特定するために必要（インヘリット走者の場合は前任投手の責任）
   /// type は自責点判定に使用（WP=自責、PB=不自責）
@@ -52,6 +65,7 @@ class AtBatSimulationResult {
     this.additionalOuts = 0,
     this.fieldingError,
     this.batteryErrorRuns = 0,
+    this.batterTakesExtraBase = false,
     this.batteryErrorScorers = const [],
   });
 }
@@ -1313,8 +1327,13 @@ class AtBatSimulator {
 
   /// 二塁打の外野手エラーチェック（クッション処理ミス + 中継返球ミス）。
   /// 外野方向の二塁打で、外野手のミスにより打者が三塁まで進むケース。
-  /// 結果を triple に書き換える（走塁は _advanceOnTriple で処理される）。
-  /// 失策として cushion / throwing を記録するので、追加得点は不自責になる。
+  ///
+  /// NPB ルール上、エラーで余分に進塁した場合の打席記録は本来の打撃結果
+  /// （ここでは二塁打）のまま。エラーぶんの余計な進塁・得点は失策扱いで、
+  /// 打点にも算入されない。したがって result は `double_` のままにし、
+  /// `batterTakesExtraBase` フラグで「打者が +1 塁進む」ことを伝える。
+  /// 走塁本体は `_advanceOnDouble` が処理し、その後 game_simulator 側で
+  /// 打者を +1 塁進める後処理（押し出し走者は不自責の得点）が走る。
   InPlayResult _determineDoubleResult({
     required FieldPosition? fieldPosition,
     required int fielding,
@@ -1324,12 +1343,13 @@ class AtBatSimulator {
       if (_errorSimulator.checkDoubleError(fielding, fieldPosition,
           isForcedPlacement: isForcedPlacement)) {
         return InPlayResult(
-          result: AtBatResultType.triple,
+          result: AtBatResultType.double_,
           fieldingError: FieldingError(
             type: _errorSimulator.pickDoubleErrorType(),
             position: fieldPosition,
             runsScored: 0,
           ),
+          batterTakesExtraBase: true,
         );
       }
     }
@@ -1338,7 +1358,8 @@ class AtBatSimulator {
 
   /// 単打の外野手エラーチェック（中継・返球ミス）。
   /// 外野方向の単打で、外野手の返球ミスにより打者が二塁まで進むケース。
-  /// 結果を double_ に書き換え（走塁は _advanceOnDouble で処理される）。
+  /// `_determineDoubleResult` と同じく、result は `single` のまま保ち、
+  /// 打者の +1 塁進塁は `batterTakesExtraBase` フラグで伝える。
   /// 内野安打 / 外野手以外の単打にはクッション処理がないので適用しない。
   InPlayResult _determineSingleResult({
     required FieldPosition? fieldPosition,
@@ -1349,12 +1370,13 @@ class AtBatSimulator {
       if (_errorSimulator.checkSingleError(fielding, fieldPosition,
           isForcedPlacement: isForcedPlacement)) {
         return InPlayResult(
-          result: AtBatResultType.double_,
+          result: AtBatResultType.single,
           fieldingError: FieldingError(
             type: FieldingErrorType.throwing,
             position: fieldPosition,
             runsScored: 0,
           ),
+          batterTakesExtraBase: true,
         );
       }
     }
@@ -1834,6 +1856,7 @@ class AtBatSimulator {
           updatedRunners: currentRunners,
           additionalOuts: additionalOuts,
           fieldingError: atBatEndCheck.fieldingError,
+          batterTakesExtraBase: atBatEndCheck.batterTakesExtraBase,
           batteryErrorRuns: batteryErrorRuns,
           batteryErrorScorers: batteryErrorScorers,
         );
@@ -2327,6 +2350,7 @@ class AtBatSimulator {
         return AtBatEndCheckResult(
           result: inPlayResult.result,
           fieldingError: inPlayResult.fieldingError,
+          batterTakesExtraBase: inPlayResult.batterTakesExtraBase,
         );
     }
   }

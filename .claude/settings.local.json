@@ -37,7 +37,8 @@
       "Bash(rm /Users/takahashi-sh/Project/idle_baseball/.claude/projects/-Users-takahashi-sh-Project-idle-baseball/memory/feedback_league_distribution_check.md)",
       "Bash(rmdir /Users/takahashi-sh/Project/idle_baseball/.claude/projects/-Users-takahashi-sh-Project-idle-baseball/memory /Users/takahashi-sh/Project/idle_baseball/.claude/projects/-Users-takahashi-sh-Project-idle-baseball /Users/takahashi-sh/Project/idle_baseball/.claude/projects /Users/takahashi-sh/Project/idle_baseball/.claude)",
       "Bash(awk *)",
-      "Bash(wait %1)"
+      "Bash(wait %1)",
+      "Bash(flutter test *)"
     ]
   }
 }

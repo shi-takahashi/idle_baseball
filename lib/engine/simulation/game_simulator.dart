@@ -487,7 +487,7 @@ class GameSimulator {
       final runnersStarted = lastBalls == 3 && lastStrikes == 2;
 
       // 走塁処理（打席結果による進塁、盗塁後のランナー状態を使用）
-      final advanceResult = _advanceRunners(
+      final naturalAdvance = _advanceRunners(
         runners,
         resultType,
         batter,
@@ -496,6 +496,13 @@ class GameSimulator {
         pitchingTeam: pitchingTeamSnapshot,
         runnersStarted: runnersStarted,
       );
+      // 外野手エラーで打者が +1 塁進む場合の後処理。
+      // NPB ルール上「打席結果は本来の打撃ぶん（単打/二塁打）まで、余分な
+      // 進塁は失策」なので、ここで打者だけ追加で 1 つ進める。詰まる走者は
+      // 順送りに押し出し、本塁を踏んだぶんは失策得点として打点・自責点から除外。
+      final advanceResult = atBatResult.batterTakesExtraBase
+          ? _applyBatterExtraBaseFromError(naturalAdvance, batter)
+          : naturalAdvance;
 
       // 犠飛: 外野フライ + 3塁走者がタッチアップ生還 → 結果を sacrificeFly に上書き。
       // 集計側で「打数に含めない、犠飛として記録」になる。
@@ -516,11 +523,12 @@ class GameSimulator {
       // 打点が付かないケース（NPB 公式記録規則）:
       //   - エラー出塁で得点が入った場合
       //   - 併殺打の間に走者が生還した場合
+      //   - 外野手エラーで打者の +1 塁進塁に伴い押し出された走者の得点
       // 押し出し四球・犠飛・通常打席の得点は通常通り打点となる。
       final rbiCount = (resultType == AtBatResultType.reachedOnError ||
               resultType.isDoublePlay)
           ? 0
-          : runsScored;
+          : runsScored - advanceResult.errorScoringRunners.length;
       runners = advanceResult.newRunners;
 
       // アウトカウント（打席結果によるアウト）
@@ -561,6 +569,9 @@ class GameSimulator {
               (earnedRunsByPitcher[responsibleId] ?? 0) + 1;
         }
       }
+      final errorScorerIds = {
+        for (final s in advanceResult.errorScoringRunners) s.id,
+      };
       for (final scorer in advanceResult.scoringRunners) {
         // 打者自身（HR）は現在の投手の責任
         // 走者の場合は responsibilitySnapshot から責任投手を引く
@@ -573,10 +584,13 @@ class GameSimulator {
         //   - 打者自身がエラー絡み（= reachedOnError）の打者ではない限り、
         //     打者の得点は通常自責（HR）。
         //   - 走者がエラー出塁の走者なら不自責
+        //   - 外野手エラーの押し出しで生還した走者も不自責
         final isUnearnedRunner = scorer.id == batter.id
             ? false
             : (runnerIsUnearned[scorer.id] ?? false);
-        final isUnearned = inningWouldHaveEnded || isUnearnedRunner;
+        final isUnearned = inningWouldHaveEnded ||
+            isUnearnedRunner ||
+            errorScorerIds.contains(scorer.id);
         if (!isUnearned) {
           earnedRunsByPitcher[responsibleId] =
               (earnedRunsByPitcher[responsibleId] ?? 0) + 1;
@@ -1083,6 +1097,82 @@ class GameSimulator {
     );
   }
 
+  /// 外野手のエラーで打者が +1 塁進塁する場合の後処理。
+  ///
+  /// 二塁打 + 外野送球エラー等で打者が本来より 1 塁分多く進むケース。
+  /// `_advanceOnSingle` / `_advanceOnDouble` の結果を受け取り、その上で
+  /// 「打者だけ +1 塁」を適用する。打者の前にいる走者が詰まる場合は順送りに
+  /// 押し出し、本塁を踏んだぶんは [_RunnerAdvanceResult.errorScoringRunners]
+  /// に積む（打点・自責点から除外するため、RBI/ER 計算側で参照）。
+  _RunnerAdvanceResult _applyBatterExtraBaseFromError(
+    _RunnerAdvanceResult base,
+    Player batter,
+  ) {
+    Player? first = base.newRunners.first;
+    Player? second = base.newRunners.second;
+    Player? third = base.newRunners.third;
+    final newErrorScorers = <Player>[];
+
+    if (first?.id == batter.id) {
+      // 打者は 1 塁にいた（単打 + エラー）→ 2 塁へ。
+      // 2 塁・3 塁が詰まっていれば順送りで押し出し、3 塁から押し出された
+      // 走者は本塁を踏む（失策得点）。
+      first = null;
+      if (second == null) {
+        second = batter;
+      } else {
+        final pushedFromSecond = second;
+        second = batter;
+        if (third == null) {
+          third = pushedFromSecond;
+        } else {
+          newErrorScorers.add(third);
+          third = pushedFromSecond;
+        }
+      }
+    } else if (second?.id == batter.id) {
+      // 打者は 2 塁にいた（二塁打 + エラー）→ 3 塁へ。
+      // 3 塁が詰まっていれば押し出して本塁、その走者は失策得点。
+      second = null;
+      if (third == null) {
+        third = batter;
+      } else {
+        newErrorScorers.add(third);
+        third = batter;
+      }
+    } else if (third?.id == batter.id) {
+      // 打者は 3 塁にいた（三塁打 + エラー）→ 本塁へ。
+      // 現状は単打・二塁打側でしかフラグを立てないので到達しないが、将来
+      // 三塁打 + エラーで打者ホームインを実装する余地として残す。
+      third = null;
+      newErrorScorers.add(batter);
+    }
+    // 該当しないパターンは想定外。走塁が壊れないように元の advance を返す。
+    if (newErrorScorers.isEmpty &&
+        first == base.newRunners.first &&
+        second == base.newRunners.second &&
+        third == base.newRunners.third) {
+      return base;
+    }
+
+    return _RunnerAdvanceResult(
+      newRunners:
+          BaseRunners(first: first, second: second, third: third),
+      additionalOuts: base.additionalOuts,
+      tagUps: base.tagUps,
+      scoringRunners: [
+        ...base.scoringRunners,
+        ...newErrorScorers,
+      ],
+      errorScoringRunners: [
+        ...base.errorScoringRunners,
+        ...newErrorScorers,
+      ],
+      wasSacrificeFly: base.wasSacrificeFly,
+      wasGroundOutFieldersChoice: base.wasGroundOutFieldersChoice,
+    );
+  }
+
   /// ホームラン時の走塁
   _RunnerAdvanceResult _advanceOnHomeRun(BaseRunners runners, Player batter) {
     final scorers = <Player>[];
@@ -1515,6 +1605,13 @@ class _RunnerAdvanceResult {
   /// 打席結果による得点（HR で打者自身が含まれる場合もある）。
   final List<Player> scoringRunners;
 
+  /// `scoringRunners` のうち、外野手エラーで押し出されてホームインした走者。
+  /// 例: 二塁打 + 外野送球エラーで打者が三塁を取り、もともと一塁にいた走者が
+  /// 三塁から本塁へ押し出されたケース。本塁を踏むのは事実なので
+  /// `scoringRunners` にも含まれるが、NPB ルール上は失策由来の得点なので
+  /// 打点に算入しない / 自責点も付かない。
+  final List<Player> errorScoringRunners;
+
   /// 外野フライ + 3塁走者がタッチアップで生還したケース。
   /// 呼び出し側で打席結果を flyOut → sacrificeFly に書き換えるためのフラグ。
   final bool wasSacrificeFly;
@@ -1528,6 +1625,7 @@ class _RunnerAdvanceResult {
     this.additionalOuts = 0,
     this.tagUps = const [],
     this.scoringRunners = const [],
+    this.errorScoringRunners = const [],
     this.wasSacrificeFly = false,
     this.wasGroundOutFieldersChoice = false,
   });
