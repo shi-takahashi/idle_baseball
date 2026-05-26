@@ -406,7 +406,7 @@ class _IndividualStatsScreenState extends State<IndividualStatsScreen>
                   '負${p.losses}  '
                   'S${p.saves}  '
                   'H${p.holds}  '
-                  '${p.inningsPitchedDisplay}回  '
+                  '回${p.inningsPitchedDisplay}  '
                   '三${p.strikeoutsRecorded}  '
                   '四${p.walksAllowed}',
                   style: subStyle,
