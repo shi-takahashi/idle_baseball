@@ -25,6 +25,14 @@ class TeamRebuilder {
   /// 1/5 = キャリア平均 5 年で離脱する目安。優秀な選手も含めて確率は一律。
   static const double foreignDepartureChance = 0.20;
 
+  /// 1 シーズンで離脱する外国人選手の上限（自チーム・CPU 共通）。
+  /// 独立判定だと 4 人中 3 人以上の同時離脱が 2.7%（自チーム）、CPU は
+  /// 解除確率が能力依存で上振れするためそれよりさらに高くなる。3 人以上
+  /// 抜けると編成アラート領域が画面を圧迫するほか、急激な選手入替で
+  /// 能力分布も荒れるので、ハードキャップで丸める。上限超過分は乱数で
+  /// 残留させ、特定選手だけが優遇されない（=公平性）ようにする。
+  static const int maxForeignDeparturesPerSeason = 2;
+
   /// 1 チームに常時配置する外国人選手の理想枠（SPEC §4.1）。
   /// 投手 2（先発ローテ）+ 野手 2（控え）= 計 4 名。NPB の通常運用に近づける。
   /// `_applyForeignChanges` で「現状 - 離脱 + 獲得 = この枠数」を満たす整合性を要求する。
@@ -261,13 +269,26 @@ class TeamRebuilder {
       foreigners.add(p);
     }
 
-    for (final f in foreigners) {
-      if (_random.nextDouble() >= _cpuForeignReleaseChance(f)) continue;
-      // 離脱 → 新外国人で同じ枠を補充。
+    // 1. 各選手で離脱判定（強制 + 解除の合算確率）→ 抜ける候補を一度集める。
+    var departing = <Player>[
+      for (final f in foreigners)
+        if (_random.nextDouble() < _cpuForeignReleaseChance(f)) f,
+    ];
+    // 2. 上限超過時は乱数で残留者を選び直す（自チームと同じハードキャップ）。
+    if (departing.length > maxForeignDeparturesPerSeason) {
+      departing.shuffle(_random);
+      departing = departing.sublist(0, maxForeignDeparturesPerSeason);
+    }
+    final departingIds = {for (final p in departing) p.id};
+
+    // 3. 抜ける選手を 1 名ずつ新外国人で同じ枠に補充する。
+    for (final f in departing) {
       // 残るチーム内外国人と同苗字にならないよう、現役外国人の苗字を渡す。
       final remainingSurnames = <String>{
         for (final other in foreigners)
-          if (other.id != f.id && !retiredIds.contains(other.id))
+          if (other.id != f.id &&
+              !retiredIds.contains(other.id) &&
+              !departingIds.contains(other.id))
             foreignSurnameOf(other.name),
       };
       // 新外国人はロール未割り当てで生成。後の `_reassignPitcherRoles` で
@@ -799,10 +820,15 @@ class TeamRebuilder {
       foreigners.add(p);
     }
 
-    final departures = <Player>[
+    var departures = <Player>[
       for (final f in foreigners)
         if (_random.nextDouble() < foreignDepartureChance) f,
     ];
+    // 上限超過時は乱数で残留者を選び直す（先頭優遇を避けるためシャッフル）。
+    if (departures.length > maxForeignDeparturesPerSeason) {
+      departures.shuffle(_random);
+      departures = departures.sublist(0, maxForeignDeparturesPerSeason);
+    }
 
     // チームに残る現役外国人と同苗字にならないよう除外して候補を生成。
     // 候補同士も同苗字にならないよう、生成済み候補の苗字を追加していく。
