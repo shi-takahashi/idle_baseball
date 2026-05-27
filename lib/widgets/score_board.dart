@@ -684,7 +684,10 @@ class ScoreBoard extends StatelessWidget {
                 i,
                 atBat.pitches[i],
                 inPlayLabel: atBatResultDisplayName(atBat),
-                inPlayIsOut: atBat.result.isOut,
+                // 野選（fieldersChoice）は打席結果としてはアウトに含まれないが、
+                // 表示上は通常のゴロアウトと同じ「遊ゴロ」に揃えているので色も紫扱い。
+                inPlayIsOut: atBat.result.isOut ||
+                    atBat.result == AtBatResultType.fieldersChoice,
               ),
             if (atBat.rbiCount > 0)
               Padding(

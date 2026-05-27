@@ -33,8 +33,10 @@ String atBatResultDisplayName(AtBatResult atBat) {
       case AtBatResultType.reachedOnError:
         return '$posShortエラー'; // 「遊エラー」「三エラー」
       case AtBatResultType.fieldersChoice:
-        // バント失敗はそのまま、三遊ゴロの3塁封殺は「三ゴロ野選」等で表示。
-        return atBat.isBunt ? 'バント失敗' : '$posShortゴロ野選';
+        // バント失敗はそのまま、三遊ゴロの3塁封殺は通常のゴロアウトと同じ表示。
+        // 野選（前走者OUT・打者1塁SAFE）は走者の状況を次打者の行で確認できるため、
+        // 「遊ゴロ」とだけ出して見た目を簡潔にする。
+        return atBat.isBunt ? 'バント失敗' : '$posShortゴロ';
       default:
         return atBat.result.displayName;
     }
