@@ -1,8 +1,24 @@
 # 開発進捗
 
-## 最終更新: 2026-05-25(2)
+## 最終更新: 2026-05-27
 
-## 次回の作業方針: 実プレイ確認 → 細部の磨き込み
+## 次回の作業方針
+
+2026-05-27 で「1日1試合制約」「サブスク 3 種類の UI ゲート（時間スキップ / 広告消し /
+能力開示＆編集）」の土台実装が完了。実 SDK 連携は未着手。詳細は CHANGELOG.md。
+
+**今後の予定（優先度未確定）:**
+1. **広告の実装**（AdMob 等）— 現状はスタブの `ad_placeholder_screen.dart`
+2. **push 通知の実装** — 設定時刻にローカル通知（SPEC §1.1）
+3. **サブスク購入の実装**（RevenueCat）— 現状はデバッグメニュートグルで代用
+4. **ゲーム部分のバランス調整やバグ修正** — 引き続き磨き込み
+
+時間ゲート / サブスクゲートの**ロジック・UI** は完成しているので、上記 1-3 は
+「SDK 連携 + ストア審査回り」がメインの作業になる。
+
+---
+
+## 旧次回方針: 実プレイ確認 → 細部の磨き込み (2026-05-25)
 
 2026-05-25 で「過剰分散解消 + HR テーブル底上げ」「三振抑制 + 防御率の NPB
 レンジ化」が完了。詳細は CHANGELOG.md。
@@ -19,14 +35,19 @@
 
 **リーグ全体**: 打率 .262 / OPS .704 / K率 20.3% / BB率 7.2% で NPB ど真ん中。
 
-**残り課題:**
+**残り課題（ゲームバランス系）:**
 - 最多奪三振 213 はまだ NPB 上限 195 をやや上回る(許容範囲)
 - HR 王平均 41本 は NPB 近年(30-35)よりやや高め(打高方向、許容範囲)
 - バント発生数 / 犠飛発生数 / バント進塁成功率 等の構造調整(従来からの宿題)
 - 外国人選手の「当たり外れ感」が薄まった点の評価
-- 個人成績画面 UI 改善(2026-05-25 完了: 打率含めた表示、最多得点/最多ホールド削除、
-  Day 0 の該当選手なし表示)
-- 選手一覧・選手詳細に外国人タグ復活(2026-05-25 完了)
+
+**残り課題（収益化系、2026-05-27 で UI ゲートまで実装済み）:**
+- 広告 SDK 連携（現状: `ad_placeholder_screen.dart` のスタブ）
+- RevenueCat 連携 + 3 サブスク（時間スキップ / 広告消し / 能力開示＆編集）の購入導線
+- 結果確認時刻のローカルプッシュ通知（SPEC §1.1）
+- パラメータ非表示時の代替 UI（試合結果ベースの選手評価の見せ方）
+- 能力開示＆編集の UI ゲート: 守備力ベースの「守れる/守れない」表示は実装済み。
+  詳細指標（例: ポジション内の巧拙）の代替表現は別途検討
 
 ---
 
@@ -1101,6 +1122,8 @@ NavigationBar 1 番目のタブは作戦画面のほかに試合結果（DailySc
 ```
 lib/
 ├── main.dart                          # エントリーポイント
+├── dev/                               # 開発時のみのコード（本番ビルドで非表示の機能）
+│   └── debug_flags.dart               # kDebugMode 用フラグ（各サブスク購入状態を装う）
 ├── persistence/                       # 永続化（JSON ファイル方式）
 │   ├── save_service.dart              # ApplicationDocuments/save.json の I/O
 │   └── auto_saver.dart                # SeasonController のリスナで 500ms デバウンス自動保存
@@ -1110,20 +1133,21 @@ lib/
 │   ├── season_listenable.dart         # SeasonController を Flutter Listenable に変換
 │   ├── daily_screen.dart              # 1日の試合結果（自チーム試合 + 他2試合サマリー）
 │   ├── game_result_screen.dart        # 1試合詳細（外部から GameResult を受け取る）
+│   ├── ad_placeholder_screen.dart     # 試合結果確認前の全画面広告スタブ（実 SDK 連携前）
 │   ├── standings_screen.dart          # 順位表画面
 │   ├── individual_stats_screen.dart   # 個人成績ランキング（タイ対応）
 │   ├── team_list_screen.dart          # チーム一覧（チームタブのルート）
 │   ├── team_stats_screen.dart         # チーム別の全選手成績
 │   ├── player_list_screen.dart        # チーム所属選手一覧（先発/救援/野手/控え）
-│   ├── player_detail_screen.dart      # 選手1人の能力パラメータ詳細
-│   ├── player_edit_screen.dart        # 選手能力の編集（スライダー＋トグル）
+│   ├── player_detail_screen.dart      # 選手1人の能力パラメータ詳細（サブスクで開示）
+│   ├── player_edit_screen.dart        # 選手能力の編集（未購入は背番号と投手ロールのみ）
 │   ├── team_info_screen.dart          # チーム基本情報の表示
 │   ├── team_edit_screen.dart          # チーム名・略称・カラーの編集
 │   ├── team_schedule_screen.dart      # チーム単位の日程・結果（タップで試合詳細）
 │   ├── team_head_to_head_screen.dart  # チーム単位の対戦成績（相手チーム別）
 │   ├── strategy_screen.dart           # 作戦画面（次の試合の編成指定）
 │   ├── offseason_screen.dart          # オフシーズン編成（自チームの引退・新人加入の選択）
-│   └── settings_screen.dart           # 設定画面（オフシーズン進行 ON/OFF 等）
+│   └── settings_screen.dart           # 設定画面（オフシーズン進行・結果確認時刻・デバッグメニュー）
 ├── widgets/
 │   ├── score_board.dart               # スコアボード（9回時単一テーブル / 延長時 2分割固定）
 │   ├── batting_stats.dart             # 打撃成績（左:選手固定 / 右:位置〜イニング横スクロール）
@@ -1180,6 +1204,7 @@ lib/
     │   ├── lineup_planner.dart        # 当日の打順 + 守備配置を決定
     │   ├── batter_condition.dart      # 野手の調子（隠しパラメータ、Markov）
     │   ├── next_game_strategy.dart    # 次試合用の作戦（打順・守備配置・先発投手の上書き）
+    │   ├── unlock_gate.dart           # 1日1試合制約の解禁判定（純関数集合）
     │   └── season.dart                # エクスポート
     └── engine.dart                    # エクスポート
 
@@ -1200,6 +1225,7 @@ bin/                                    # 動作確認用スクリプト（dart 
 ├── test_lineup.dart                    # 打順変動 + 野手調子の推移確認
 ├── test_bunt.dart                      # バント結果分布・スリーバント・球数分布・守備位置別の挙動を検証
 ├── test_persist.dart                   # JSON 往復で全状態が一致するか
+├── test_unlock_gate.dart               # 1日1試合制約の時間ロジック（28 シナリオ）
 ├── test_next_season.dart               # シーズン終了 → 次シーズン Day 0 への遷移
 ├── test_aging.dart                     # 年齢曲線・能力変動の傾向確認
 ├── test_rebuild.dart                   # CPU 引退・新人加入・ポジション制約・ロール再編
@@ -1256,7 +1282,8 @@ docs/
 ├── DEVELOPMENT_ORDER.md       # 開発順序
 ├── PROGRESS.md                # 進捗（このファイル）
 ├── CHANGELOG.md               # 日付別の実装ログ
-└── ROSTER_EXPANSION_PLAN.md   # ロスター拡張＋ベンチ入り制の実装計画（フェーズA/B/C完了）
+├── ROSTER_EXPANSION_PLAN.md   # ロスター拡張＋ベンチ入り制の実装計画（フェーズA/B/C完了）
+└── DAILY_GATE_PLAN.md         # 1日1試合制約 + サブスクゲートの実装計画（全 5 チャンク完了）
 ```
 
 ---

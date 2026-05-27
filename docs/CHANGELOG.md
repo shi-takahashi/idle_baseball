@@ -5,6 +5,138 @@
 
 ---
 
+## 2026-05-27 「遊ゴロ野選」表示修正 + 盗塁の球速依存 + 球数疲労の球速統一 + 1日1試合制約 + 3 種類のサブスクゲート
+
+1 日で広範囲のリアリティ調整 + 収益化フレームの土台作りを実施。詳細は時系列で。
+
+### A. 「遊ゴロ野選」を「遊ゴロ」紫色に統一
+
+ユーザー指摘: 1,2塁の遊ゴロで 2塁走者を 3塁封殺・打者 1塁セーフのケースが「遊ゴロ野選」と
+青字で表示されていて、(1) 野選の意味の誤解を招く表記、(2) アウト系なのに青字で「攻撃に
+良い結果」のように見える、の 2 つの違和感。
+
+公認野球規則上、このケースは正しく fielders choice なので enum 名はそのまま維持。
+表示だけ通常のゴロアウトと同じ「遊ゴロ」に統一し、投球行の色判定にも fieldersChoice を
+out 扱いで加えて紫色に揃えた。走者状況は次打者行で読み取れる前提（表記をシンプルに）。
+
+- `lib/widgets/at_bat_result_label.dart`: `'$posShortゴロ野選'` → `'$posShortゴロ'`
+  （バント失敗は据え置き）
+- `lib/widgets/score_board.dart` の `inPlayIsOut`: `result.isOut || fieldersChoice`
+
+### B. 盗塁成功率に投球の球速差を反映
+
+ユーザー要望: 球速が速いほど盗塁失敗しやすく、遅いほど成功しやすい。総数が変わらない範囲で。
+
+走者は球種を事前に見えないので **試行確率には影響させず成功率にだけ反映**。`at_bat_simulator`
+の球種・球速生成を `simulateSteal` 呼び出しの**前**に並び替え、`StealSimulator` に
+`pitchSpeed` を渡せるよう拡張:
+
+- 基準 140 km/h、1 km/h ごとに ±0.25pt、上下クランプ ±3%
+- 例: ストレート 148 → -2%、カーブ 122 → +3%（クランプ上限）、スライダー 132 → +2%
+- 重み付き平均はほぼ中立になる設計
+
+検証 (24 シーズン × 6 チーム × 150 試合):
+
+| 指標 | 修正前 | 修正後 |
+|---|---|---|
+| 1試合あたり試行 | 0.496 | 0.486 |
+| 成功率 | 75.73% | 77.11% |
+| **150試合 1チーム SB** | **56.4** | **56.2** |
+
+合計 SB はほぼ変化なし。球速能力が「盗塁成功率」という新しい footprint を獲得
+（推測ゲームの足跡が一つ増えた）。
+
+### C. 球数疲労の球速低下を縮小 + 表示と内部を統一
+
+ユーザー指摘: 「150 km/h 投手が 100球で 143 km/h はおかしい。落ちても 2-3 km/h」。
+さらに **表示球速と内部計算用球速が別物**（`simulatePitch` 内で `effectiveSpeed = speed - drop`
+を計算していたが、`PitchResult.speed` には反映されていなかった）状態を解消。
+
+- `_fatigueSpeedReduction`: 7 → **3 km/h**（完全疲労時の最大低下）
+- `_generatePitchSpeed(avgSpeed, pitchType, fatigue: ...)` に疲労低下を織り込み、
+  返り値を「実際の球速」に統一
+- `simulatePitch` / inPlay 計算内の `effectiveSpeed = speed - drop` の二重計算を削除
+- UI 表示・盗塁成功率の球速補正・空振り率計算 すべて同じ値を使用
+
+完全疲労 (140球) 時の例: 150 → 147 km/h。中盤 100球時点では -1 km/h 程度。
+リーグ全体: 打率 .255 / OPS .701 / K率 19.3%（変化なし、副作用なし）。
+
+### D. 1日1試合制約（時間ゲート）の実装（チャンク 1〜5）
+
+`docs/DAILY_GATE_PLAN.md` に計画書を策定し、5 チャンクに分けて全実装。
+
+**チャンク 1**: コアロジック + 永続化
+- `lib/engine/season/unlock_gate.dart` (新規) — `UnlockGate` クラス（純関数集合）
+- `SeasonController` に `unlockHour` (0-23, デフォルト 21) / `lastUnlockAt`（DateTime?）追加
+- `selfTeamGamesPlayed` / `isInOnboarding` getter、`unlockGate(hasTimeSkipSub: ...)` /
+  `markGameViewed(now, ...)` メソッド
+- 計算ルール: `nextUnlockAt = max(lastUnlockAt + 12h, 設定時刻オカレンス)`
+- onboarding = `seasonYear == 1 && selfTeamGamesPlayed < 10`
+- 旧セーブ互換: 欠落フィールドは unlockHour=21 / lastUnlockAt=null
+- `bin/test_unlock_gate.dart` (新規、28 シナリオ全 PASS)
+- `bin/test_persist.dart` に往復確認追加
+
+**チャンク 4**: デバッグメニュー
+- `lib/dev/debug_flags.dart` (新規) — ChangeNotifier シングルトン
+- `SettingsScreen` 末尾に `kDebugMode` 限定セクション
+- 初期は `skipUnlockGate` / `pretendSubscribed` / `forceUnlockOnce` の 3 トグルだったが、
+  「サブスクを購入した状態の動きが見れれば良い」のユーザー指摘で 2 トグルに整理:
+  - `hasTimeSkipSub`（時間スキップサブスク）
+  - `hasAdRemovalSub`（広告消しサブスク）
+- 全てセッション限定（再起動でリセット）
+
+**チャンク 2**: 試合開始ボタンの挙動切替
+- ボタン文言「試合開始」→「**試合結果を確認する**」
+- 当初案ではボタン無効化 + サブテキスト「N月N日 HH:00 までお待ちください」だったが、
+  ユーザー指摘「邪魔。スタメン配置のエリアが削られる」で撤回 → **ボタンは常時押せる**、
+  押下時に未解禁ならダイアログ表示の形に統一
+- `_runNextGame` の `advanceDay()` 直後に `markGameViewed(now, ...)` を呼ぶ
+
+**チャンク 3**: 設定画面に「結果確認時刻」追加
+- 時単位ドロップダウン（00:00〜23:00）
+- 変更で `controller.unlockHour = v`、AutoSaver が永続化
+- `lastUnlockAt` は触らないので、12 h 制約が次の `nextUnlockAt` 計算に自然反映
+
+**チャンク 5**: 広告スタブ + サブスクフラグ統合
+- `lib/screens/ad_placeholder_screen.dart` (新規) — 黒背景 +「広告（仮）」 + 3 秒カウント
+  ダウン → 自動 pop。PopScope で戻るボタン無効
+- `_runNextGame` を async 化、広告フロー差し込み:
+  - 広告なし: onboarding 中 OR `DebugFlags.hasAdRemovalSub == true`
+  - 広告あり: それ以外
+- 未解禁ダイアログから時間スキップサブスクを 1 行誘導
+
+### E. 能力開示＆編集サブスクの UI ゲート
+
+ユーザー追加要望: 「選手能力開示＆能力編集」サブスクも実装。OFF だと能力非表示、編集も
+背番号と投手ロールだけ可能に。当初 SPEC.md は「パラメータ表示 +100円 → 編集 さらに+100円」
+の 2 段構えだったが、**1 サブスクに統合**する方針に変更。
+
+- `DebugFlags.hasAbilityDisclosureSub` 追加 + 開発者メニューにトグル追加
+- `lib/screens/player_detail_screen.dart`:
+  - サブスク未購入時は 1-10 能力値・球速・球種・打撃走塁カードを **非表示**
+  - 守備適性カードは「守れる/守れない」の 2 値表示に切替（数値は隠す）
+  - 守備適性だけは隠さないのは、守れないポジション配置で失策激増のペナルティがあり、
+    采配の前提条件として必須なため（SPEC §2.0）
+  - 年度別成績は引き続き表示（推測の手がかり）
+- `lib/screens/player_edit_screen.dart`:
+  - 当初は disabled で表示していたが、ユーザー指摘「編集できないものは表示したくない」で
+    レイアウト再構築
+  - 未購入時は「プロフィール（名前のみ表示専用）」+「背番号・起用」の 2 セクション構成
+  - 年齢・利き腕・打席は **完全非表示**（名前だけ誰かわかるよう残す）
+  - `_saveRestricted`: 背番号と投手ロールだけ更新（重複入れ替えダイアログは流用）
+- `docs/SPEC.md` §5.2 / §5.4 / 決定事項リスト更新（3 種類の独立サブスクへ）
+
+### 全体まとめ
+
+- UI バグ修正 1 件（遊ゴロ野選 → 遊ゴロ紫）
+- リアリティ調整 2 件（盗塁の球速依存 / 球速疲労の縮小と統一）
+- 1日1試合制約 + デバッグメニュー + 広告スタブ（5 チャンクで段階的に実装）
+- 能力開示＆編集サブスクの UI ゲート + SPEC 改訂（2段構え → 1 サブスク統合）
+
+`dart analyze lib/` クリーン。test_persist / test_unlock_gate 全 PASS。
+
+---
+
 ## 2026-05-25(2) 三振抑制 + 副次的に防御率を NPB レンジへ
 
 ### 背景
