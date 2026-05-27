@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../dev/debug_flags.dart';
 import '../engine/engine.dart';
 
 /// 作戦画面（次の試合の自チームの編成を指定する）
@@ -271,6 +272,8 @@ class StrategyScreenState extends State<StrategyScreen>
   // ---------------------------------------------------
   // 試合開始ボタン
   // ---------------------------------------------------
+  /// ボタンは常時押せる。時間ゲートに引っかかっている場合はタップ時に
+  /// ダイアログで理由を伝える（スタメン配置のスペースを削らない方針）。
   Widget _buildStartGameButton() {
     return Container(
       width: double.infinity,
@@ -282,11 +285,41 @@ class StrategyScreenState extends State<StrategyScreen>
       child: ElevatedButton.icon(
         onPressed: widget.onStartGame == null ? null : _onTapStartGame,
         icon: const Icon(Icons.play_arrow),
-        label: const Text('試合開始'),
+        label: const Text('試合結果を確認する'),
         style: ElevatedButton.styleFrom(
           padding: const EdgeInsets.symmetric(vertical: 12),
-          textStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+          textStyle:
+              const TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
         ),
+      ),
+    );
+  }
+
+  /// 「5月29日 21:00」のような表示用の文字列を組み立てる。
+  /// 設定時刻は時単位なので分はゼロ固定で 2 桁表示。
+  String _formatUnlockTime(DateTime t) {
+    final hh = t.hour.toString().padLeft(2, '0');
+    return '${t.month}月${t.day}日 $hh:00';
+  }
+
+  /// 未解禁時のダイアログ。次の解禁時刻と理由を伝える。
+  void _showLockedDialog(DateTime nextUnlock) {
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('まだ確認できません'),
+        content: Text(
+          '次の試合結果は\n'
+          '${_formatUnlockTime(nextUnlock)}\n'
+          'に公開されます。\n\n'
+          '※ 1日1試合の制約です。時間スキップサブスクを購入すれば、何度でも結果を確認できます。',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('閉じる'),
+          ),
+        ],
       ),
     );
   }
@@ -1342,9 +1375,17 @@ class StrategyScreenState extends State<StrategyScreen>
     return true;
   }
 
-  /// 「試合開始」を押された時のハンドラ。
-  /// 内部で [tryCommit] してから親に試合実行を依頼する。
+  /// 「試合結果を確認する」を押された時のハンドラ。
+  /// 1日1試合制約: 解禁前ならダイアログだけ出して試合は進めない。
+  /// 解禁中なら [tryCommit] してから親に試合実行を依頼する。
   void _onTapStartGame() {
+    final now = DateTime.now();
+    final hasTimeSkipSub = DebugFlags.instance.hasTimeSkipSub;
+    final gate = widget.controller.unlockGate(hasTimeSkipSub: hasTimeSkipSub);
+    if (!gate.isViewable(now)) {
+      _showLockedDialog(gate.nextUnlockAt(now));
+      return;
+    }
     if (!tryCommit()) return;
     widget.onStartGame?.call();
   }

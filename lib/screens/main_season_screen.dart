@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../dev/debug_flags.dart';
 import '../engine/engine.dart';
 import '../persistence/auto_saver.dart';
 import '../persistence/save_service.dart';
@@ -111,12 +112,19 @@ class _MainSeasonScreenState extends State<MainSeasonScreen> {
     _navigatorKeys[0].currentState?.popUntil((route) => route.isFirst);
   }
 
-  /// 作戦画面の「試合開始」ボタンから呼ぶ:
+  /// 作戦画面の「試合結果を確認する」ボタンから呼ぶ:
   /// 1日進めて、当日の結果画面 [DailyScreen] を試合タブの上に push する。
   /// 戻るで作戦画面に復帰 → 翌日の作戦が表示される。
   void _runNextGame() {
     if (widget.controller.isSeasonOver) return;
     widget.controller.advanceDay();
+    // 1日1試合制約: 試合視聴の消費を記録（onboarding 中は内部で no-op）。
+    // ここで lastUnlockAt = mostRecentUnlockHour(now) が記録され、次の解禁時刻が
+    // 12h + unlockHour ベースで計算される。
+    widget.controller.markGameViewed(
+      DateTime.now(),
+      hasTimeSkipSub: DebugFlags.instance.hasTimeSkipSub,
+    );
     if (_selectedIndex != 0) {
       setState(() => _selectedIndex = 0);
     }
