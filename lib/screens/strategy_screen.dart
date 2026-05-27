@@ -312,7 +312,8 @@ class StrategyScreenState extends State<StrategyScreen>
           '次の試合結果は\n'
           '${_formatUnlockTime(nextUnlock)}\n'
           'に公開されます。\n\n'
-          '※ 1日1試合の制約です。時間スキップサブスクを購入すれば、何度でも結果を確認できます。',
+          '※ 無料プレイは 1日1試合の制約です。\n'
+          '時間スキップサブスクを購入すると、何度でも結果を確認できます。',
         ),
         actions: [
           TextButton(

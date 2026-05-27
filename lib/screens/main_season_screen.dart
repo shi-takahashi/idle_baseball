@@ -4,6 +4,7 @@ import '../dev/debug_flags.dart';
 import '../engine/engine.dart';
 import '../persistence/auto_saver.dart';
 import '../persistence/save_service.dart';
+import 'ad_placeholder_screen.dart';
 import 'daily_screen.dart';
 import 'home_screen.dart' show SeasonLengthSelector;
 import 'individual_stats_screen.dart';
@@ -113,10 +114,33 @@ class _MainSeasonScreenState extends State<MainSeasonScreen> {
   }
 
   /// 作戦画面の「試合結果を確認する」ボタンから呼ぶ:
-  /// 1日進めて、当日の結果画面 [DailyScreen] を試合タブの上に push する。
-  /// 戻るで作戦画面に復帰 → 翌日の作戦が表示される。
-  void _runNextGame() {
+  /// 必要なら広告スタブを表示 → 1日進めて、当日の結果画面 [DailyScreen] を
+  /// 試合タブの上に push する。戻るで作戦画面に復帰 → 翌日の作戦が表示される。
+  ///
+  /// 広告は以下の場合スキップ:
+  ///  - onboarding 中（1シーズン目の最初の 10 試合）
+  ///  - 広告消しサブスク購入済み（現状は [DebugFlags] のフラグで代用）
+  void _runNextGame() async {
     if (widget.controller.isSeasonOver) return;
+
+    // 広告判定: onboarding 中 or 広告消しサブスクなら広告なし
+    final shouldShowAd = !widget.controller.isInOnboarding &&
+        !DebugFlags.instance.hasAdRemovalSub;
+
+    if (_selectedIndex != 0) {
+      setState(() => _selectedIndex = 0);
+    }
+    final navigator = _navigatorKeys[0].currentState;
+    if (navigator == null) return;
+
+    if (shouldShowAd) {
+      navigator.popUntil((route) => route.isFirst);
+      await navigator.push(MaterialPageRoute(
+        builder: (_) => const AdPlaceholderScreen(),
+      ));
+      if (!mounted) return;
+    }
+
     widget.controller.advanceDay();
     // 1日1試合制約: 試合視聴の消費を記録（onboarding 中は内部で no-op）。
     // ここで lastUnlockAt = mostRecentUnlockHour(now) が記録され、次の解禁時刻が
@@ -125,13 +149,13 @@ class _MainSeasonScreenState extends State<MainSeasonScreen> {
       DateTime.now(),
       hasTimeSkipSub: DebugFlags.instance.hasTimeSkipSub,
     );
-    if (_selectedIndex != 0) {
-      setState(() => _selectedIndex = 0);
-    }
-    final navigator = _navigatorKeys[0].currentState;
-    if (navigator == null) return;
-    navigator.popUntil((route) => route.isFirst);
-    navigator.push(MaterialPageRoute(
+
+    // 広告 push 後だと navigator state は既に変わっている可能性があるので
+    // 念のため取り直す。
+    final navigatorAfter = _navigatorKeys[0].currentState;
+    if (navigatorAfter == null) return;
+    navigatorAfter.popUntil((route) => route.isFirst);
+    navigatorAfter.push(MaterialPageRoute(
       builder: (_) => DailyScreen(
         controller: widget.controller,
         listenable: _listenable,
