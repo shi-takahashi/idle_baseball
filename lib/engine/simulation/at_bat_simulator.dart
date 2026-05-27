@@ -584,8 +584,10 @@ class AtBatSimulator {
   // 疲労ペナルティ（完全疲労 fatigue=1.0 時の最大値）。
   // 引っ張りすぎた投手（球数超過）は球威・制球を失い打たれる。なぜ100球前後で
   // 交代するのかの根拠になる。全投手共通カーブ（80球開始）に乗る。
-  // 疲労時の球速低下量（ストレート用）
-  static const int _fatigueSpeedReduction = 7;
+  // 疲労時の球速低下量（ストレートのみ、完全疲労時の最大低下）。
+  // 150 km/h 級でも 100 球を超えたあたりで 1-2 km/h、完全疲労（140 球）でも
+  // 3 km/h 程度の低下に留める（150→147 等）。NPB の終盤計測でも 2-3 km/h レンジ。
+  static const int _fatigueSpeedReduction = 3;
 
   // 疲労時のボール率増加
   static const double _fatigueBallModifier = 0.14;
@@ -747,11 +749,21 @@ class AtBatSimulator {
     }
   }
 
-  /// 球種に応じた球速を生成
-  int _generatePitchSpeed(int avgSpeed, PitchType pitchType) {
+  /// 球種に応じた球速を生成。
+  /// 疲労時はストレートの球速が低下する（完全疲労で -3 km/h まで）。
+  /// 変化球は本ゲームでは疲労による球速低下を入れない（被打率・空振り率の
+  /// ペナルティで疲労効果は十分出る、かつバランス調整を最小限に保つ）。
+  /// 戻り値は「実際に投げられた球速」で、UI 表示・内部計算とも同じ値を使う。
+  int _generatePitchSpeed(int avgSpeed, PitchType pitchType, {double fatigue = 0.0}) {
     final speedReduction = _speedReductions[pitchType] ?? 0;
     final baseSpeed = avgSpeed - speedReduction;
-    return generateSpeed(baseSpeed);
+    final raw = generateSpeed(baseSpeed);
+    if (pitchType == PitchType.fastball && fatigue > 0.0) {
+      final effectiveFatigue = _getEffectiveFatigue(fatigue, pitchType);
+      final drop = (effectiveFatigue * _fatigueSpeedReduction).round();
+      return raw - drop;
+    }
+    return raw;
   }
 
   /// 球速を生成（正規分布的、中央付近が出やすい）
@@ -790,15 +802,11 @@ class AtBatSimulator {
     // 球種に応じた実効疲労度を計算
     final effectiveFatigue = _getEffectiveFatigue(fatigue, pitchType);
 
-    // 球速による補正（ストレートのみ、速いほど空振り増）
-    // 疲労時はストレートの球速が低下
+    // 球速による補正（ストレートのみ、速いほど空振り増）。
+    // 疲労による球速低下は _generatePitchSpeed の時点で speed に織り込み済み。
     double speedModifier = 0.0;
-    int effectiveSpeed = speed;
     if (pitchType == PitchType.fastball) {
-      // 疲労による球速低下（最大5km/h）
-      final fatigueSpeedDrop = (effectiveFatigue * _fatigueSpeedReduction).round();
-      effectiveSpeed = speed - fatigueSpeedDrop;
-      final speedDiff = effectiveSpeed - _baseSpeed;
+      final speedDiff = speed - _baseSpeed;
       speedModifier = speedDiff * _speedModifierPerKm;
     }
 
@@ -829,10 +837,11 @@ class AtBatSimulator {
 
     // ストレートの非線形「球速空振りボーナス」（奪三振にのみ効く）。
     // 実効球速が _velocityWhiffThreshold を超えると非線形に空振りが急増。
+    // 疲労による球速低下は speed に既に反映済み。
     double velocityWhiffBonus = 0.0;
     if (pitchType == PitchType.fastball) {
       final effectiveVelocity =
-          effectiveSpeed + (paramValue - _basePitchParam) * _fastballRidePerPoint;
+          speed + (paramValue - _basePitchParam) * _fastballRidePerPoint;
       final over =
           (effectiveVelocity - _velocityWhiffThreshold).clamp(0, 8);
       velocityWhiffBonus = _velocityWhiffBonusByOver[over];
@@ -1137,13 +1146,11 @@ class AtBatSimulator {
     // 球種に応じた実効疲労度を計算
     final effectiveFatigue = _getEffectiveFatigue(fatigue, pitchType);
 
-    // 球速による補正（ストレートのみ、速いほどヒットが減る）
+    // 球速による補正（ストレートのみ、速いほどヒットが減る）。
+    // 疲労による球速低下は _generatePitchSpeed の時点で speed に織り込み済み。
     double speedModifier = 0.0;
     if (pitchType == PitchType.fastball) {
-      // 疲労による球速低下を考慮
-      final fatigueSpeedDrop = (effectiveFatigue * _fatigueSpeedReduction).round();
-      final effectiveSpeed = speed - fatigueSpeedDrop;
-      final speedDiff = effectiveSpeed - _baseSpeed;
+      final speedDiff = speed - _baseSpeed;
       speedModifier = speedDiff * _speedModifierPerKm;
     }
 
@@ -1649,7 +1656,7 @@ class AtBatSimulator {
         prevPitchType: prevPitchType,
         prevSameStreak: prevSameStreak,
       );
-      final speed = _generatePitchSpeed(avgSpeed, pitchType);
+      final speed = _generatePitchSpeed(avgSpeed, pitchType, fatigue: fatigue);
       final pitchParam =
           _getPitchParam(pitcher, pitchType, effectivePitcherCondition);
 
