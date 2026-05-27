@@ -9,12 +9,16 @@ import 'package:idle_baseball/engine/engine.dart';
 
 void main() {
   const seed = 42;
-  final controllerA = SeasonController.newSeason(random: Random(seed));
+  final controllerA =
+      SeasonController.newSeason(random: Random(seed), unlockHour: 19);
 
   // ある程度進めて履歴・統計を蓄積させる
   for (int i = 0; i < 10; i++) {
     controllerA.advanceDay();
   }
+
+  // 解禁時刻を変更 + 視聴イベントを記録（時間ゲート状態の永続化を確認するため）
+  controllerA.markGameViewed(DateTime(2026, 5, 28, 22, 30));
 
   // 自チーム作戦を 1 つセット（NextGameStrategy も復元できるか確認）
   final suggestion = controllerA.suggestedStrategyForMyTeam();
@@ -126,6 +130,14 @@ void main() {
   }
 
   _check('試合結果数', countResults(controllerA), countResults(controllerB));
+
+  // 時間ゲート関連の永続化確認
+  _check('unlockHour', controllerA.unlockHour, controllerB.unlockHour);
+  _check(
+    'lastUnlockAt',
+    controllerA.lastUnlockAt?.toIso8601String(),
+    controllerB.lastUnlockAt?.toIso8601String(),
+  );
 
   print('\nOK: 全項目一致');
 }

@@ -1,5 +1,7 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
+import '../dev/debug_flags.dart';
 import '../engine/engine.dart';
 
 /// 設定画面
@@ -40,6 +42,7 @@ class SettingsScreen extends StatelessWidget {
                 onChanged: (v) =>
                     controller.offseasonProgressionEnabled = v,
               ),
+              if (kDebugMode) const _DebugSection(),
             ],
           ),
         );
@@ -50,7 +53,8 @@ class SettingsScreen extends StatelessWidget {
 
 class _SectionHeader extends StatelessWidget {
   final String title;
-  const _SectionHeader({required this.title});
+  final Color? color;
+  const _SectionHeader({required this.title, this.color});
 
   @override
   Widget build(BuildContext context) {
@@ -61,9 +65,65 @@ class _SectionHeader extends StatelessWidget {
         style: TextStyle(
           fontSize: 12,
           fontWeight: FontWeight.bold,
-          color: Theme.of(context).colorScheme.primary,
+          color: color ?? Theme.of(context).colorScheme.primary,
         ),
       ),
+    );
+  }
+}
+
+/// 開発時のみ表示されるデバッグメニュー。
+/// 状態は [DebugFlags] のシングルトンに保持。永続化されず再起動でリセット。
+class _DebugSection extends StatelessWidget {
+  const _DebugSection();
+
+  @override
+  Widget build(BuildContext context) {
+    final flags = DebugFlags.instance;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const Divider(height: 32),
+        _SectionHeader(
+          title: '開発者メニュー (debug build only)',
+          color: Colors.orange.shade800,
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+          child: Text(
+            '※ いずれもセッション限定。再起動でリセットされます。本番ビルドでは表示されません。',
+            style: TextStyle(
+              fontSize: 11,
+              color: Colors.orange.shade700,
+            ),
+          ),
+        ),
+        ListenableBuilder(
+          listenable: flags,
+          builder: (context, _) {
+            return Column(
+              children: [
+                SwitchListTile(
+                  title: const Text('時間スキップサブスク（仮）'),
+                  subtitle: const Text(
+                    'ON で 1日1試合制約を無視し、何度でも結果を確認できる扱いにする。',
+                  ),
+                  value: flags.hasTimeSkipSub,
+                  onChanged: (v) => flags.hasTimeSkipSub = v,
+                ),
+                SwitchListTile(
+                  title: const Text('広告消しサブスク（仮）'),
+                  subtitle: const Text(
+                    'ON で結果確認前の全画面広告が非表示になる扱いにする。',
+                  ),
+                  value: flags.hasAdRemovalSub,
+                  onChanged: (v) => flags.hasAdRemovalSub = v,
+                ),
+              ],
+            );
+          },
+        ),
+      ],
     );
   }
 }

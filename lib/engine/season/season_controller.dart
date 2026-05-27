@@ -14,6 +14,7 @@ import 'next_game_strategy.dart';
 import 'player_season_stats.dart';
 import 'recent_form.dart';
 import 'schedule.dart';
+import 'unlock_gate.dart';
 import 'schedule_generator.dart';
 import 'scheduled_game.dart';
 import 'season_aggregator.dart';
@@ -56,6 +57,17 @@ class SeasonController {
   /// false: 加齢も入替もスキップし、前シーズンと同じ選手・同じパラメータで開始
   ///        （手動編集による変更は従来通り反映される）
   bool _offseasonProgressionEnabled;
+
+  /// 試合結果の解禁時刻（0-23 時、デフォルト 21）。1日1試合制約で使う。
+  /// 詳細は docs/DAILY_GATE_PLAN.md / [UnlockGate] 参照。
+  int _unlockHour;
+
+  /// 直近の「解禁が発生した時刻」。null = onboarding 中 + onboarding 直後の最初の解禁前。
+  /// 視聴で消費すると `markGameViewed` で「直近の解禁時刻ジャスト」が記録される。
+  DateTime? _lastUnlockAt;
+
+  /// onboarding 期間の閾値: 1シーズン目の自チーム消化試合数 < この値 なら onboarding 中。
+  static const int onboardingGameCount = 10;
 
   /// gameNumber → GameResult のマップ（未実行の試合はキーなし）
   final Map<int, GameResult> _results = {};
@@ -229,11 +241,15 @@ class SeasonController {
     required this.myTeamId,
     int gamesPerTeam = ScheduleGenerator.defaultGamesPerTeam,
     bool offseasonProgressionEnabled = true,
+    int unlockHour = 21,
+    DateTime? lastUnlockAt,
     GameSimulator? gameSimulator,
     Random? random,
   })  : _schedule = schedule,
         _gamesPerTeam = gamesPerTeam,
         _offseasonProgressionEnabled = offseasonProgressionEnabled,
+        _unlockHour = unlockHour,
+        _lastUnlockAt = lastUnlockAt,
         _aggregator = SeasonAggregator(teams),
         _gameSimulator = gameSimulator ?? GameSimulator(random: random),
         _rotationRandom = random ?? Random() {
@@ -281,6 +297,7 @@ class SeasonController {
     String myTeamId = 'team_phoenix',
     int gamesPerTeam = ScheduleGenerator.defaultGamesPerTeam,
     bool offseasonProgressionEnabled = true,
+    int unlockHour = 21,
   }) {
     final teams = TeamGenerator(random: random).generateLeague();
     final schedule = const ScheduleGenerator()
@@ -291,6 +308,7 @@ class SeasonController {
       myTeamId: myTeamId,
       gamesPerTeam: gamesPerTeam,
       offseasonProgressionEnabled: offseasonProgressionEnabled,
+      unlockHour: unlockHour,
       random: random,
     );
     // 自チームの投手ロール・スタメン野手は推測ゲームの一部としてユーザーが
@@ -376,6 +394,67 @@ class SeasonController {
   set offseasonProgressionEnabled(bool value) {
     if (_offseasonProgressionEnabled == value) return;
     _offseasonProgressionEnabled = value;
+    _notify();
+  }
+
+  // ---- 1日1試合制約（時間ゲート） ----
+  // 詳細仕様は docs/DAILY_GATE_PLAN.md / [UnlockGate] 参照。
+
+  /// 試合結果の解禁時刻（0-23 時）。設定画面から変更可能。
+  int get unlockHour => _unlockHour;
+
+  /// 直近の「解禁が発生した時刻」。null = onboarding 中 or 11試合目の初回解禁前。
+  DateTime? get lastUnlockAt => _lastUnlockAt;
+
+  /// 解禁時刻を変更する。`_lastUnlockAt` は触らないので、12h 制約は次の
+  /// `nextUnlockAt` 計算で自然に効く（同日中の再解禁を抑止）。
+  set unlockHour(int value) {
+    final clamped = value.clamp(0, 23);
+    if (_unlockHour == clamped) return;
+    _unlockHour = clamped;
+    _notify();
+  }
+
+  /// 自チームが今シーズン消化した試合数（GameResult ベースで数える）。
+  int get selfTeamGamesPlayed {
+    int count = 0;
+    for (final result in _results.values) {
+      if (result.homeTeam.id == myTeamId || result.awayTeam.id == myTeamId) {
+        count++;
+      }
+    }
+    return count;
+  }
+
+  /// onboarding 期間中か（1シーズン目 + 自チーム消化試合数 < 閾値）。
+  /// 2 シーズン目以降は常に false（推測ゲームの足場作りはシーズン1だけで十分）。
+  bool get isInOnboarding =>
+      _seasonYear == 1 && selfTeamGamesPlayed < onboardingGameCount;
+
+  /// 現在の状態から [UnlockGate] を構築する。
+  /// [hasTimeSkipSub] は将来課金で実装、現状は常に false。
+  UnlockGate unlockGate({bool hasTimeSkipSub = false}) {
+    return UnlockGate(
+      unlockHour: _unlockHour,
+      lastUnlockAt: _lastUnlockAt,
+      isInOnboarding: isInOnboarding,
+      hasTimeSkipSub: hasTimeSkipSub,
+    );
+  }
+
+  /// 試合結果を視聴したことを記録（解禁を消費）。
+  /// UI 層（試合進行が完了して結果画面を表示するタイミング）から呼ぶ。
+  ///
+  /// onboarding 中は `_lastUnlockAt` を触らない。それ以降は「直近の解禁時刻ジャスト」
+  /// （[now] 以前で最も近い設定時刻オカレンス）を記録する。
+  void markGameViewed(DateTime now, {bool hasTimeSkipSub = false}) {
+    final gate = unlockGate(hasTimeSkipSub: hasTimeSkipSub);
+    final newValue = gate.newLastUnlockAtOnView(now);
+    if (newValue == null) return; // onboarding 中など、更新不要
+    if (_lastUnlockAt != null && _lastUnlockAt!.isAtSameMomentAs(newValue)) {
+      return;
+    }
+    _lastUnlockAt = newValue;
     _notify();
   }
 
@@ -1601,6 +1680,9 @@ class SeasonController {
       'seasonYear': _seasonYear,
       'gamesPerTeam': _gamesPerTeam,
       'offseasonProgressionEnabled': _offseasonProgressionEnabled,
+      'unlockHour': _unlockHour,
+      if (_lastUnlockAt != null)
+        'lastUnlockAt': _lastUnlockAt!.toIso8601String(),
       'currentDay': _currentDay,
       'players': {
         for (final entry in allPlayers.entries)
@@ -1685,12 +1767,19 @@ class SeasonController {
     // オフシーズン進行フラグ。旧セーブには存在しないので true（現状の挙動）扱い。
     final offseasonProgressionEnabled =
         json['offseasonProgressionEnabled'] as bool? ?? true;
+    // 1日1試合制約。旧セーブには存在しないので unlockHour=21 / lastUnlockAt=null 扱い。
+    final unlockHour = json['unlockHour'] as int? ?? 21;
+    final lastUnlockAtStr = json['lastUnlockAt'] as String?;
+    final lastUnlockAt =
+        lastUnlockAtStr == null ? null : DateTime.parse(lastUnlockAtStr);
     final controller = SeasonController(
       teams: teams,
       schedule: schedule,
       myTeamId: json['myTeamId'] as String,
       gamesPerTeam: gamesPerTeam,
       offseasonProgressionEnabled: offseasonProgressionEnabled,
+      unlockHour: unlockHour,
+      lastUnlockAt: lastUnlockAt,
       random: random,
     );
 

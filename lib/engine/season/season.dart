@@ -14,3 +14,4 @@ export 'season_result.dart';
 export 'season_simulator.dart';
 export 'season_snapshot.dart';
 export 'standings.dart';
+export 'unlock_gate.dart';
