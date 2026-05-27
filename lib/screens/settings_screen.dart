@@ -30,6 +30,28 @@ class SettingsScreen extends StatelessWidget {
           ),
           body: ListView(
             children: [
+              const _SectionHeader(title: '試合結果の公開'),
+              ListTile(
+                title: const Text('結果確認時刻'),
+                subtitle: const Text(
+                  '毎日この時刻に試合結果が公開され、確認できるようになります。\n'
+                  '前回の解禁から最低 12 時間空ける制約があるため、時刻を早めても同日中の再解禁は発生しません。',
+                ),
+                trailing: DropdownButton<int>(
+                  value: controller.unlockHour,
+                  items: [
+                    for (int h = 0; h < 24; h++)
+                      DropdownMenuItem(
+                        value: h,
+                        child: Text('${h.toString().padLeft(2, '0')}:00'),
+                      ),
+                  ],
+                  onChanged: (v) {
+                    if (v != null) controller.unlockHour = v;
+                  },
+                ),
+              ),
+              const Divider(),
               const _SectionHeader(title: 'シーズン進行'),
               SwitchListTile(
                 title: const Text('オフシーズン進行'),
