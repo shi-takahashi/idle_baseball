@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../dev/debug_flags.dart';
 import '../engine/engine.dart';
 
 /// 選手能力の編集画面
@@ -66,6 +67,10 @@ class _PlayerEditScreenState extends State<PlayerEditScreen> {
   Player? _numberConflictPlayer;
 
   bool get _isPitcher => widget.initial.isPitcher;
+
+  /// 能力開示＆編集サブスク購入済みか。OFF だと能力系の編集が無効化され、
+  /// 背番号と投手ロールだけが編集可能になる（SPEC §コンセプト / §5）。
+  bool get _disclosed => DebugFlags.instance.hasAbilityDisclosureSub;
 
   // 球速の許容範囲。
   // 上限 165 = 試合中の調子+5km の揺らぎを乗せても 170km/h に収まり、
@@ -182,25 +187,61 @@ class _PlayerEditScreenState extends State<PlayerEditScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('選手編集'),
-        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-        actions: [
-          TextButton(
-            onPressed: _save,
-            child: const Text('保存'),
+    return ListenableBuilder(
+      listenable: DebugFlags.instance,
+      builder: (context, _) {
+        final disclosed = _disclosed;
+        return Scaffold(
+          appBar: AppBar(
+            title: const Text('選手編集'),
+            backgroundColor: Theme.of(context).colorScheme.inversePrimary,
+            actions: [
+              TextButton(
+                onPressed: _save,
+                child: const Text('保存'),
+              ),
+            ],
           ),
-        ],
-      ),
-      body: SingleChildScrollView(
+          body: SingleChildScrollView(
+            padding: const EdgeInsets.all(12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _buildBasicCard(disclosed: disclosed),
+                const SizedBox(height: 8),
+                if (disclosed)
+                  if (_isPitcher)
+                    ..._buildPitcherCards()
+                  else
+                    ..._buildFielderCards()
+                else
+                  _buildLockedHint(),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  /// サブスク未購入時に「ここから先は能力編集サブスクで解放」と知らせるカード。
+  Widget _buildLockedHint() {
+    return Card(
+      margin: EdgeInsets.zero,
+      color: Colors.amber.shade50,
+      child: Padding(
         padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
+        child: Row(
           children: [
-            _buildBasicCard(),
-            const SizedBox(height: 8),
-            if (_isPitcher) ..._buildPitcherCards() else ..._buildFielderCards(),
+            Icon(Icons.lock_outline, color: Colors.amber.shade800, size: 20),
+            const SizedBox(width: 8),
+            const Expanded(
+              child: Text(
+                '能力値の編集は「能力開示＆編集サブスク」で解放されます。\n'
+                '無料プレイで編集できるのは背番号と投手の起用ロールのみです。',
+                style: TextStyle(fontSize: 12),
+              ),
+            ),
           ],
         ),
       ),
@@ -210,7 +251,93 @@ class _PlayerEditScreenState extends State<PlayerEditScreen> {
   // ---------------------------------------------------
   // 基本情報
   // ---------------------------------------------------
-  Widget _buildBasicCard() {
+  /// 開示サブスク状態に応じて構造を切り替える:
+  ///  - 未購入: 「プロフィール（表示専用、名前のみ）」 +
+  ///            「背番号と起用」セクションの 2 枚カード
+  ///  - 購入済み: 既存どおり「基本情報」1 枚にまとめる（名前・背番号・年齢・利き手・
+  ///              打席・起用）
+  Widget _buildBasicCard({required bool disclosed}) {
+    if (!disclosed) return _buildLockedBasicCards();
+    return _buildFullBasicCard();
+  }
+
+  Widget _buildLockedBasicCards() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _Section(
+          title: 'プロフィール',
+          children: [
+            _LabelRow(
+              label: '名前',
+              child: Text(
+                widget.initial.name,
+                style: const TextStyle(fontSize: 14),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        _Section(
+          title: _isPitcher ? '背番号・起用' : '背番号',
+          children: [
+            _LabelRow(
+              label: '背番号',
+              child: SizedBox(
+                width: 80,
+                child: TextField(
+                  controller: _numberCtrl,
+                  keyboardType: TextInputType.number,
+                  maxLength: 3,
+                  inputFormatters: [
+                    FilteringTextInputFormatter.digitsOnly,
+                    LengthLimitingTextInputFormatter(3),
+                  ],
+                  decoration: InputDecoration(
+                    counterText: '',
+                    isDense: true,
+                    enabledBorder: _numberError != null
+                        ? const UnderlineInputBorder(
+                            borderSide: BorderSide(color: Colors.red))
+                        : null,
+                    focusedBorder: _numberError != null
+                        ? const UnderlineInputBorder(
+                            borderSide:
+                                BorderSide(color: Colors.red, width: 2))
+                        : null,
+                  ),
+                ),
+              ),
+            ),
+            if (_numberError != null) ...[
+              const SizedBox(height: 4),
+              Text(
+                _numberError!,
+                style: const TextStyle(fontSize: 11, color: Colors.red),
+              ),
+            ],
+            if (_isPitcher) ...[
+              const SizedBox(height: 12),
+              _LabelRow(
+                label: '起用',
+                child: DropdownButton<PitcherRole?>(
+                  value: _pitcherRole,
+                  isDense: true,
+                  onChanged: (v) => setState(() => _pitcherRole = v),
+                  items: [
+                    for (final r in PitcherRole.values)
+                      DropdownMenuItem(value: r, child: Text(r.displayName)),
+                  ],
+                ),
+              ),
+            ],
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildFullBasicCard() {
     return _Section(
       title: '基本情報',
       children: [
@@ -242,9 +369,6 @@ class _PlayerEditScreenState extends State<PlayerEditScreen> {
                   labelText: '背番号',
                   counterText: '',
                   isDense: true,
-                  // errorText は TextField の幅で折り返されて見切れるので、
-                  // 行の下に全幅で表示する（下の if (_numberError != null) の行）。
-                  // ここでは枠だけ赤くする。
                   enabledBorder: _numberError != null
                       ? const UnderlineInputBorder(
                           borderSide: BorderSide(color: Colors.red))
@@ -508,10 +632,66 @@ class _PlayerEditScreenState extends State<PlayerEditScreen> {
   // ---------------------------------------------------
   // 保存
   // ---------------------------------------------------
+  /// 能力開示＆編集サブスク未購入時の保存。背番号と投手ロールだけ更新する。
+  /// 背番号重複時の入れ替えダイアログはフル保存と同じく出す。
+  Future<void> _saveRestricted(Player p, int number) async {
+    _validateNumber();
+    if (_numberConflictPlayer != null) {
+      final other = _numberConflictPlayer!;
+      final swap = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: Text('背番号 $number は使用中'),
+          content: Text(
+            '${other.name} と背番号を入れ替えますか？\n\n'
+            '${other.name}: ${other.number} → ${p.number}\n'
+            '${p.name}: ${p.number} → $number',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('キャンセル'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('入れ替える'),
+            ),
+          ],
+        ),
+      );
+      if (swap != true) return;
+      widget.controller.updatePlayer(other.withNumber(p.number));
+    } else if (_numberError != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          duration: const Duration(seconds: 2),
+          content: Text(_numberError!),
+        ),
+      );
+      return;
+    }
+
+    var updated = p.withNumber(number);
+    if (_isPitcher && _pitcherRole != null && _pitcherRole != p.pitcherRole) {
+      updated = updated.withPitcherRole(_pitcherRole!);
+    }
+    widget.controller.updatePlayer(updated);
+    if (!mounted) return;
+    Navigator.of(context).pop();
+  }
+
   Future<void> _save() async {
     final p = widget.initial;
-    final name = _nameCtrl.text.trim().isEmpty ? p.name : _nameCtrl.text.trim();
     final number = int.tryParse(_numberCtrl.text) ?? p.number;
+
+    // 能力開示＆編集サブスク未購入の場合は、背番号と投手ロールのみ更新する。
+    // 名前・年齢・利き手・打席・各能力は原本そのまま（UI でも非編集にしてある）。
+    if (!_disclosed) {
+      await _saveRestricted(p, number);
+      return;
+    }
+
+    final name = _nameCtrl.text.trim().isEmpty ? p.name : _nameCtrl.text.trim();
     final age = (int.tryParse(_ageCtrl.text) ?? p.age).clamp(15, 60);
     final rawSpeed =
         int.tryParse(_speedCtrl.text) ?? (p.averageSpeed ?? 145);

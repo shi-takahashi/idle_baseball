@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../dev/debug_flags.dart';
 import '../engine/engine.dart';
 import 'player_edit_screen.dart';
 
@@ -27,7 +28,7 @@ class PlayerDetailScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
-      listenable: listenable,
+      listenable: Listenable.merge([listenable, DebugFlags.instance]),
       builder: (context, _) {
         final player = controller.findPlayerById(playerId);
         if (player == null) {
@@ -39,6 +40,7 @@ class PlayerDetailScreen extends StatelessWidget {
             body: const Center(child: Text('選手が見つかりません')),
           );
         }
+        final disclosed = DebugFlags.instance.hasAbilityDisclosureSub;
         return Scaffold(
           appBar: AppBar(
             title: Text(player.name),
@@ -68,14 +70,41 @@ class PlayerDetailScreen extends StatelessWidget {
                 _buildHeader(context, player),
                 const SizedBox(height: 12),
                 if (player.isPitcher)
-                  _buildPitcherBody(player)
+                  _buildPitcherBody(player, disclosed: disclosed)
                 else
-                  _buildFielderBody(player),
+                  _buildFielderBody(player, disclosed: disclosed),
+                if (!disclosed) ...[
+                  const SizedBox(height: 8),
+                  _buildLockedHint(),
+                ],
               ],
             ),
           ),
         );
       },
+    );
+  }
+
+  Widget _buildLockedHint() {
+    return Card(
+      margin: EdgeInsets.zero,
+      color: Colors.amber.shade50,
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Row(
+          children: [
+            Icon(Icons.lock_outline, color: Colors.amber.shade800, size: 20),
+            const SizedBox(width: 8),
+            const Expanded(
+              child: Text(
+                '能力値は非表示です。試合結果から推測してみましょう。\n'
+                '能力開示＆編集サブスクで全パラメータが見られるようになります。',
+                style: TextStyle(fontSize: 12),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -153,43 +182,45 @@ class PlayerDetailScreen extends StatelessWidget {
   // ---------------------------------------------------
   // 投手向け
   // ---------------------------------------------------
-  Widget _buildPitcherBody(Player player) {
+  Widget _buildPitcherBody(Player player, {required bool disclosed}) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _SectionCard(
-          title: '基本能力',
-          children: [
-            _SpeedRow(label: '球速', kmh: player.averageSpeed ?? 0),
-            _RatingRow(label: '伸び', value: player.fastball),
-            _RatingRow(label: '制球', value: player.control),
-          ],
-        ),
-        const SizedBox(height: 8),
-        _SectionCard(
-          title: '球種',
-          children: [
-            _PitchRow(label: 'スライダー', value: player.slider),
-            _PitchRow(label: 'カーブ', value: player.curve),
-            _PitchRow(label: 'スプリット', value: player.splitter),
-            _PitchRow(label: 'チェンジアップ', value: player.changeup),
-            _PitchRow(label: 'シュート', value: player.shoot),
-            _PitchRow(label: 'カットボール', value: player.cutter),
-            _PitchRow(label: 'シンカー', value: player.sinker),
-          ],
-        ),
-        const SizedBox(height: 8),
-        // 投手も打席に立つので簡易表示
-        _SectionCard(
-          title: '打撃・走塁（参考）',
-          children: [
-            _RatingRow(label: 'ミート', value: player.meet),
-            _RatingRow(label: '長打', value: player.power),
-            _RatingRow(label: '選球眼', value: player.eye),
-            _RatingRow(label: '走力', value: player.speed),
-          ],
-        ),
-        const SizedBox(height: 8),
+        if (disclosed) ...[
+          _SectionCard(
+            title: '基本能力',
+            children: [
+              _SpeedRow(label: '球速', kmh: player.averageSpeed ?? 0),
+              _RatingRow(label: '伸び', value: player.fastball),
+              _RatingRow(label: '制球', value: player.control),
+            ],
+          ),
+          const SizedBox(height: 8),
+          _SectionCard(
+            title: '球種',
+            children: [
+              _PitchRow(label: 'スライダー', value: player.slider),
+              _PitchRow(label: 'カーブ', value: player.curve),
+              _PitchRow(label: 'スプリット', value: player.splitter),
+              _PitchRow(label: 'チェンジアップ', value: player.changeup),
+              _PitchRow(label: 'シュート', value: player.shoot),
+              _PitchRow(label: 'カットボール', value: player.cutter),
+              _PitchRow(label: 'シンカー', value: player.sinker),
+            ],
+          ),
+          const SizedBox(height: 8),
+          // 投手も打席に立つので簡易表示
+          _SectionCard(
+            title: '打撃・走塁（参考）',
+            children: [
+              _RatingRow(label: 'ミート', value: player.meet),
+              _RatingRow(label: '長打', value: player.power),
+              _RatingRow(label: '選球眼', value: player.eye),
+              _RatingRow(label: '走力', value: player.speed),
+            ],
+          ),
+          const SizedBox(height: 8),
+        ],
         _PitcherYearByYearCard(controller: controller, playerId: player.id),
       ],
     );
@@ -198,30 +229,35 @@ class PlayerDetailScreen extends StatelessWidget {
   // ---------------------------------------------------
   // 野手向け
   // ---------------------------------------------------
-  Widget _buildFielderBody(Player player) {
+  Widget _buildFielderBody(Player player, {required bool disclosed}) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        if (disclosed) ...[
+          _SectionCard(
+            title: '打撃',
+            children: [
+              _RatingRow(label: 'ミート', value: player.meet),
+              _RatingRow(label: '長打', value: player.power),
+              _RatingRow(label: '選球眼', value: player.eye),
+            ],
+          ),
+          const SizedBox(height: 8),
+          _SectionCard(
+            title: '走塁・守備',
+            children: [
+              _RatingRow(label: '走力', value: player.speed),
+              _RatingRow(label: '肩', value: player.arm),
+            ],
+          ),
+          const SizedBox(height: 8),
+        ],
+        // 守備適性は能力非開示でも表示する（守れないポジションに置くと失策激増の
+        // 強制配置ペナルティがあるので、采配のためには「守れる/守れない」だけは必須。
+        // SPEC §2.0 参照）。能力非開示時は数値を隠して「守れる/守れない」の 2 値表示。
         _SectionCard(
-          title: '打撃',
-          children: [
-            _RatingRow(label: 'ミート', value: player.meet),
-            _RatingRow(label: '長打', value: player.power),
-            _RatingRow(label: '選球眼', value: player.eye),
-          ],
-        ),
-        const SizedBox(height: 8),
-        _SectionCard(
-          title: '走塁・守備',
-          children: [
-            _RatingRow(label: '走力', value: player.speed),
-            _RatingRow(label: '肩', value: player.arm),
-          ],
-        ),
-        const SizedBox(height: 8),
-        _SectionCard(
-          title: '守備力（ポジション別）',
-          children: _buildFieldingRows(player),
+          title: disclosed ? '守備力（ポジション別）' : '守備適性',
+          children: _buildFieldingRows(player, disclosed: disclosed),
         ),
         const SizedBox(height: 8),
         _FielderYearByYearCard(controller: controller, playerId: player.id),
@@ -229,27 +265,68 @@ class PlayerDetailScreen extends StatelessWidget {
     );
   }
 
-  List<Widget> _buildFieldingRows(Player player) {
+  List<Widget> _buildFieldingRows(Player player, {required bool disclosed}) {
     final map = player.fielding;
     if (map == null) {
       return [
-        const Padding(
-          padding: EdgeInsets.symmetric(vertical: 4),
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 4),
           child: Text(
-            '全ポジション可（基準値5）',
-            style: TextStyle(fontSize: 12, color: Colors.grey),
+            disclosed ? '全ポジション可（基準値5）' : '全ポジション守れる',
+            style: const TextStyle(fontSize: 12, color: Colors.grey),
           ),
         ),
       ];
     }
-    // すべてのポジションを並べ、守れないものはダッシュ表示
     return [
       for (final pos in DefensePosition.values)
-        _FieldingRow(
-          label: pos.displayName,
-          value: map[pos],
-        ),
+        if (disclosed)
+          _FieldingRow(label: pos.displayName, value: map[pos])
+        else
+          _FieldingAvailabilityRow(
+            label: pos.displayName,
+            canPlay: (map[pos] ?? 0) > 0,
+          ),
     ];
+  }
+}
+
+/// 能力非開示時の守備適性行。数値を見せず「守れる/守れない」だけ表示する。
+class _FieldingAvailabilityRow extends StatelessWidget {
+  final String label;
+  final bool canPlay;
+
+  const _FieldingAvailabilityRow({required this.label, required this.canPlay});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 96,
+            child: Text(
+              label,
+              style: TextStyle(
+                fontSize: 13,
+                color: canPlay ? null : Colors.grey,
+              ),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              canPlay ? '守れる' : '守れない',
+              style: TextStyle(
+                fontSize: 13,
+                color: canPlay ? Colors.green.shade700 : Colors.grey.shade500,
+                fontWeight: canPlay ? FontWeight.w500 : FontWeight.normal,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
 

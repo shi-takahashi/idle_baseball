@@ -34,4 +34,16 @@ class DebugFlags extends ChangeNotifier {
     _hasAdRemovalSub = value;
     notifyListeners();
   }
+
+  /// 能力開示＆編集サブスク購入済みとしてふるまう。
+  /// ON で選手の 1-10 能力値・球速・各球種が表示され、能力編集も可能になる。
+  /// OFF（未購入）状態では能力値は非表示で、編集できるのは背番号と投手ロールのみ。
+  /// 仕様詳細は SPEC.md §コンセプト「パラメータは見せない」/ §5「収益化モデル」参照。
+  bool _hasAbilityDisclosureSub = false;
+  bool get hasAbilityDisclosureSub => _hasAbilityDisclosureSub;
+  set hasAbilityDisclosureSub(bool value) {
+    if (_hasAbilityDisclosureSub == value) return;
+    _hasAbilityDisclosureSub = value;
+    notifyListeners();
+  }
 }

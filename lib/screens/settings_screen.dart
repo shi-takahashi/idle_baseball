@@ -141,6 +141,14 @@ class _DebugSection extends StatelessWidget {
                   value: flags.hasAdRemovalSub,
                   onChanged: (v) => flags.hasAdRemovalSub = v,
                 ),
+                SwitchListTile(
+                  title: const Text('能力開示＆編集サブスク（仮）'),
+                  subtitle: const Text(
+                    'ON で選手の 1-10 能力値・球速・球種が表示され、能力編集も可能になる扱いにする。',
+                  ),
+                  value: flags.hasAbilityDisclosureSub,
+                  onChanged: (v) => flags.hasAbilityDisclosureSub = v,
+                ),
               ],
             );
           },
