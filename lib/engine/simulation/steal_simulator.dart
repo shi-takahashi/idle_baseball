@@ -55,6 +55,16 @@ class StealSimulator {
   // 捕手の肩による盗塁成功率補正（1あたり、肩が強いほど成功率DOWN）
   static const double _catcherArmModifier = 0.025;
 
+  // 投球の球速による盗塁成功率補正。
+  // 速い球ほど捕手が早く受け取って二塁送球できるので成功率DOWN、
+  // 遅い変化球は走者にとって時間を稼ぎやすく成功率UP。
+  // 基準球速 140 km/h（リーグ平均球速近辺）から 1 km/h ごとに 0.25pt、
+  // 極端な球（剛速球・スローカーブ）でも ±3% で頭打ち。
+  // 重み付き平均（ストレート46% + 緩い変化球54%）でほぼ中立になるよう設計。
+  static const double _pitchSpeedBaseline = 140.0;
+  static const double _pitchSpeedModifierPerKm = 0.0025;
+  static const double _pitchSpeedModifierMax = 0.03;
+
   StealSimulator({Random? random}) : _random = random ?? Random();
 
   /// 走力ごとの試行確率を返す
@@ -64,20 +74,30 @@ class StealSimulator {
     return _attemptRateBySpeed[speed] ?? 0.0;
   }
 
-  /// 走力 vs 捕手肩から盗塁成功率を算出する
-  static double _successRateFor(int speed, int catcherArm) {
+  /// 走力 vs 捕手肩 + 球速から盗塁成功率を算出する。
+  /// [pitchSpeed] は投球の実球速 (km/h)、null なら球速補正なし（テスト用）。
+  static double _successRateFor(int speed, int catcherArm, {double? pitchSpeed}) {
     final speedDiff = speed - _baseSpeed;
     final armDiff = catcherArm - _baseArm;
+    final pitchSpeedDelta = pitchSpeed == null
+        ? 0.0
+        : ((_pitchSpeedBaseline - pitchSpeed) * _pitchSpeedModifierPerKm)
+            .clamp(-_pitchSpeedModifierMax, _pitchSpeedModifierMax);
     final rate = _baseStealSuccessRate +
         speedDiff * _speedSuccessModifier -
-        armDiff * _catcherArmModifier;
+        armDiff * _catcherArmModifier +
+        pitchSpeedDelta;
     return rate.clamp(0.50, 0.95);
   }
 
   /// 盗塁を試みるか判定し、試みる場合は成功/失敗を判定
   /// catcherArm: 捕手の肩の強さ（1-10、デフォルト5）
+  /// pitchSpeed: 投球の実球速 (km/h)。null なら球速補正なし。
+  ///   走者から球種は事前に見えないので試行確率には反映せず、捕手の受球タイミングが
+  ///   関わる成功率にのみ反映する。
   /// 戻り値: 盗塁の試みリスト（空なら盗塁なし）
-  List<StealAttempt> simulateSteal(BaseRunners runners, int outs, {int catcherArm = 5}) {
+  List<StealAttempt> simulateSteal(BaseRunners runners, int outs,
+      {int catcherArm = 5, double? pitchSpeed}) {
     // 盗塁可能なランナーを取得
     final candidates = runners.getStealCandidates();
     if (candidates.isEmpty) return [];
@@ -107,7 +127,7 @@ class StealSimulator {
       final firstRunner = candidates.firstWhere((c) => c.$2 == Base.first);
 
       final speed = secondRunner.$1.speed ?? _baseSpeed;
-      final successRate = _successRateFor(speed, catcherArm);
+      final successRate = _successRateFor(speed, catcherArm, pitchSpeed: pitchSpeed);
       final success = _random.nextDouble() < successRate;
 
       if (success) {
@@ -150,7 +170,7 @@ class StealSimulator {
       // 単独盗塁の場合
       final (runner, fromBase, toBase) = candidates.first;
       final speed = runner.speed ?? _baseSpeed;
-      final successRate = _successRateFor(speed, catcherArm);
+      final successRate = _successRateFor(speed, catcherArm, pitchSpeed: pitchSpeed);
       final success = _random.nextDouble() < successRate;
 
       return [

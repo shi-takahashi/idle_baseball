@@ -1625,10 +1625,9 @@ class AtBatSimulator {
         );
       }
 
-      // 1. 盗塁判定（投球前）
-      final stealAttempts = stealSimulator.simulateSteal(currentRunners, outs + additionalOuts, catcherArm: catcherArm);
-
-      // 2. 球種選択と投球
+      // 1. 球種・球速を先に決める（盗塁の成否判定で参照するため）。
+      // 走者は球種を事前に見えないので、試行確率には影響しないが、捕手が球を受けて
+      // 二塁送球するタイミングに球速が効くので成功率には反映される。
       // 疲労度を計算（投球数に基づく、全投手共通カーブ）
       final fatigue = _calculateFatigue(currentPitchCount);
       // 直前まで同じ球種を投げた連続数を計算（同球種連続ペナルティ用）
@@ -1653,6 +1652,14 @@ class AtBatSimulator {
       final speed = _generatePitchSpeed(avgSpeed, pitchType);
       final pitchParam =
           _getPitchParam(pitcher, pitchType, effectivePitcherCondition);
+
+      // 2. 盗塁判定（投球と同時に走者がスタート、球速で成否を補正）
+      final stealAttempts = stealSimulator.simulateSteal(
+        currentRunners,
+        outs + additionalOuts,
+        catcherArm: catcherArm,
+        pitchSpeed: speed.toDouble(),
+      );
       var pitch = simulatePitch(
         balls,
         strikes,
