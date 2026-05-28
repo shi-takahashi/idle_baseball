@@ -15,11 +15,7 @@ class PlayerEditScreen extends StatefulWidget {
   final SeasonController controller;
   final Player initial;
 
-  const PlayerEditScreen({
-    super.key,
-    required this.controller,
-    required this.initial,
-  });
+  const PlayerEditScreen({super.key, required this.controller, required this.initial});
 
   @override
   State<PlayerEditScreen> createState() => _PlayerEditScreenState();
@@ -86,15 +82,13 @@ class _PlayerEditScreenState extends State<PlayerEditScreen> {
     _nameCtrl = TextEditingController(text: p.name);
     _numberCtrl = TextEditingController(text: p.number.toString());
     _ageCtrl = TextEditingController(text: p.age.toString());
-    _speedCtrl =
-        TextEditingController(text: (p.averageSpeed ?? 145).toString());
+    _speedCtrl = TextEditingController(text: (p.averageSpeed ?? 145).toString());
 
     _bats = p.effectiveBatsBase;
     _throws = p.effectiveThrows;
     // 投手は必ずロールを持つ扱いにする（旧データ・CPU 生成で null の先発投手は
     // 「先発」ロールに正規化）。起用ドロップダウンの value が必ず項目と一致するよう。
-    _pitcherRole =
-        p.pitcherRole ?? (p.isPitcher ? PitcherRole.starter : null);
+    _pitcherRole = p.pitcherRole ?? (p.isPitcher ? PitcherRole.starter : null);
 
     _control = p.control ?? 5;
     _fastball = p.fastball ?? 5;
@@ -116,10 +110,7 @@ class _PlayerEditScreenState extends State<PlayerEditScreen> {
     _arm = p.arm ?? 5;
 
     // fielding マップを6ポジション分そろえる
-    _fielding = {
-      for (final pos in DefensePosition.values)
-        pos: p.fielding == null ? 5 : (p.fielding![pos] ?? 0),
-    };
+    _fielding = {for (final pos in DefensePosition.values) pos: p.fielding == null ? 5 : (p.fielding![pos] ?? 0)};
 
     _numberCtrl.addListener(_validateNumber);
   }
@@ -137,12 +128,7 @@ class _PlayerEditScreenState extends State<PlayerEditScreen> {
       final team = _findTeamOf(widget.initial.id);
       if (team != null) {
         final seen = <String>{};
-        for (final p in [
-          ...team.players,
-          ...team.startingRotation,
-          ...team.bullpen,
-          ...team.bench,
-        ]) {
+        for (final p in [...team.players, ...team.startingRotation, ...team.bullpen, ...team.bench]) {
           if (p.id == widget.initial.id) continue;
           if (!seen.add(p.id)) continue; // 重複参照（先発ローテと players の交差）を除外
           if (p.number == n) {
@@ -164,12 +150,7 @@ class _PlayerEditScreenState extends State<PlayerEditScreen> {
   /// 指定 id の選手が所属するチームを teams から探す。
   Team? _findTeamOf(String playerId) {
     for (final t in widget.controller.teams) {
-      for (final p in [
-        ...t.players,
-        ...t.startingRotation,
-        ...t.bullpen,
-        ...t.bench,
-      ]) {
+      for (final p in [...t.players, ...t.startingRotation, ...t.bullpen, ...t.bench]) {
         if (p.id == playerId) return t;
       }
     }
@@ -195,12 +176,7 @@ class _PlayerEditScreenState extends State<PlayerEditScreen> {
           appBar: AppBar(
             title: const Text('選手編集'),
             backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-            actions: [
-              TextButton(
-                onPressed: _save,
-                child: const Text('保存'),
-              ),
-            ],
+            actions: [TextButton(onPressed: _save, child: const Text('保存'))],
           ),
           body: SingleChildScrollView(
             padding: const EdgeInsets.all(12),
@@ -210,10 +186,7 @@ class _PlayerEditScreenState extends State<PlayerEditScreen> {
                 _buildBasicCard(disclosed: disclosed),
                 const SizedBox(height: 8),
                 if (disclosed)
-                  if (_isPitcher)
-                    ..._buildPitcherCards()
-                  else
-                    ..._buildFielderCards()
+                  if (_isPitcher) ..._buildPitcherCards() else ..._buildFielderCards()
                 else
                   _buildLockedHint(),
               ],
@@ -235,13 +208,7 @@ class _PlayerEditScreenState extends State<PlayerEditScreen> {
           children: [
             Icon(Icons.lock_outline, color: Colors.amber.shade800, size: 20),
             const SizedBox(width: 8),
-            const Expanded(
-              child: Text(
-                '能力値の編集は「能力開示＆編集サブスク」で解放されます。\n'
-                '無料プレイで編集できるのは背番号と投手の起用ロールのみです。',
-                style: TextStyle(fontSize: 12),
-              ),
-            ),
+            const Expanded(child: Text('ショップで「能力の表示と編集」を入手すると、選手の能力を自由に変更できるようになります。', style: TextStyle(fontSize: 12))),
           ],
         ),
       ),
@@ -270,10 +237,7 @@ class _PlayerEditScreenState extends State<PlayerEditScreen> {
           children: [
             _LabelRow(
               label: '名前',
-              child: Text(
-                widget.initial.name,
-                style: const TextStyle(fontSize: 14),
-              ),
+              child: Text(widget.initial.name, style: const TextStyle(fontSize: 14)),
             ),
           ],
         ),
@@ -289,33 +253,17 @@ class _PlayerEditScreenState extends State<PlayerEditScreen> {
                   controller: _numberCtrl,
                   keyboardType: TextInputType.number,
                   maxLength: 3,
-                  inputFormatters: [
-                    FilteringTextInputFormatter.digitsOnly,
-                    LengthLimitingTextInputFormatter(3),
-                  ],
+                  inputFormatters: [FilteringTextInputFormatter.digitsOnly, LengthLimitingTextInputFormatter(3)],
                   decoration: InputDecoration(
                     counterText: '',
                     isDense: true,
-                    enabledBorder: _numberError != null
-                        ? const UnderlineInputBorder(
-                            borderSide: BorderSide(color: Colors.red))
-                        : null,
-                    focusedBorder: _numberError != null
-                        ? const UnderlineInputBorder(
-                            borderSide:
-                                BorderSide(color: Colors.red, width: 2))
-                        : null,
+                    enabledBorder: _numberError != null ? const UnderlineInputBorder(borderSide: BorderSide(color: Colors.red)) : null,
+                    focusedBorder: _numberError != null ? const UnderlineInputBorder(borderSide: BorderSide(color: Colors.red, width: 2)) : null,
                   ),
                 ),
               ),
             ),
-            if (_numberError != null) ...[
-              const SizedBox(height: 4),
-              Text(
-                _numberError!,
-                style: const TextStyle(fontSize: 11, color: Colors.red),
-              ),
-            ],
+            if (_numberError != null) ...[const SizedBox(height: 4), Text(_numberError!, style: const TextStyle(fontSize: 11, color: Colors.red))],
             if (_isPitcher) ...[
               const SizedBox(height: 12),
               _LabelRow(
@@ -324,10 +272,7 @@ class _PlayerEditScreenState extends State<PlayerEditScreen> {
                   value: _pitcherRole,
                   isDense: true,
                   onChanged: (v) => setState(() => _pitcherRole = v),
-                  items: [
-                    for (final r in PitcherRole.values)
-                      DropdownMenuItem(value: r, child: Text(r.displayName)),
-                  ],
+                  items: [for (final r in PitcherRole.values) DropdownMenuItem(value: r, child: Text(r.displayName))],
                 ),
               ),
             ],
@@ -348,10 +293,7 @@ class _PlayerEditScreenState extends State<PlayerEditScreen> {
               flex: 3,
               child: TextField(
                 controller: _nameCtrl,
-                decoration: const InputDecoration(
-                  labelText: '名前',
-                  isDense: true,
-                ),
+                decoration: const InputDecoration(labelText: '名前', isDense: true),
               ),
             ),
             const SizedBox(width: 8),
@@ -361,34 +303,19 @@ class _PlayerEditScreenState extends State<PlayerEditScreen> {
                 controller: _numberCtrl,
                 keyboardType: TextInputType.number,
                 maxLength: 3,
-                inputFormatters: [
-                  FilteringTextInputFormatter.digitsOnly,
-                  LengthLimitingTextInputFormatter(3),
-                ],
+                inputFormatters: [FilteringTextInputFormatter.digitsOnly, LengthLimitingTextInputFormatter(3)],
                 decoration: InputDecoration(
                   labelText: '背番号',
                   counterText: '',
                   isDense: true,
-                  enabledBorder: _numberError != null
-                      ? const UnderlineInputBorder(
-                          borderSide: BorderSide(color: Colors.red))
-                      : null,
-                  focusedBorder: _numberError != null
-                      ? const UnderlineInputBorder(
-                          borderSide: BorderSide(color: Colors.red, width: 2))
-                      : null,
+                  enabledBorder: _numberError != null ? const UnderlineInputBorder(borderSide: BorderSide(color: Colors.red)) : null,
+                  focusedBorder: _numberError != null ? const UnderlineInputBorder(borderSide: BorderSide(color: Colors.red, width: 2)) : null,
                 ),
               ),
             ),
           ],
         ),
-        if (_numberError != null) ...[
-          const SizedBox(height: 4),
-          Text(
-            _numberError!,
-            style: const TextStyle(fontSize: 11, color: Colors.red),
-          ),
-        ],
+        if (_numberError != null) ...[const SizedBox(height: 4), Text(_numberError!, style: const TextStyle(fontSize: 11, color: Colors.red))],
         const SizedBox(height: 8),
         _LabelRow(
           label: '年齢',
@@ -398,15 +325,8 @@ class _PlayerEditScreenState extends State<PlayerEditScreen> {
               controller: _ageCtrl,
               keyboardType: TextInputType.number,
               maxLength: 2,
-              inputFormatters: [
-                FilteringTextInputFormatter.digitsOnly,
-                LengthLimitingTextInputFormatter(2),
-              ],
-              decoration: const InputDecoration(
-                isDense: true,
-                suffixText: '歳',
-                counterText: '',
-              ),
+              inputFormatters: [FilteringTextInputFormatter.digitsOnly, LengthLimitingTextInputFormatter(2)],
+              decoration: const InputDecoration(isDense: true, suffixText: '歳', counterText: ''),
             ),
           ),
         ),
@@ -447,10 +367,7 @@ class _PlayerEditScreenState extends State<PlayerEditScreen> {
               value: _pitcherRole,
               isDense: true,
               onChanged: (v) => setState(() => _pitcherRole = v),
-              items: [
-                for (final r in PitcherRole.values)
-                  DropdownMenuItem(value: r, child: Text(r.displayName)),
-              ],
+              items: [for (final r in PitcherRole.values) DropdownMenuItem(value: r, child: Text(r.displayName))],
             ),
           ),
         ],
@@ -474,9 +391,7 @@ class _PlayerEditScreenState extends State<PlayerEditScreen> {
                 child: TextField(
                   controller: _speedCtrl,
                   keyboardType: TextInputType.number,
-                  inputFormatters: [
-                    FilteringTextInputFormatter.digitsOnly,
-                  ],
+                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                   decoration: const InputDecoration(
                     isDense: true,
                     suffixText: 'km/h',
@@ -488,83 +403,31 @@ class _PlayerEditScreenState extends State<PlayerEditScreen> {
             ],
           ),
           const SizedBox(height: 8),
-          _Slider1to10(
-            label: '伸び',
-            value: _fastball,
-            onChanged: (v) => setState(() => _fastball = v),
-          ),
-          _Slider1to10(
-            label: '制球',
-            value: _control,
-            onChanged: (v) => setState(() => _control = v),
-          ),
+          _Slider1to10(label: '伸び', value: _fastball, onChanged: (v) => setState(() => _fastball = v)),
+          _Slider1to10(label: '制球', value: _control, onChanged: (v) => setState(() => _control = v)),
         ],
       ),
       const SizedBox(height: 8),
       _Section(
         title: '球種',
         children: [
-          _ToggleSlider(
-            label: 'スライダー',
-            value: _slider,
-            onChanged: (v) => setState(() => _slider = v),
-          ),
-          _ToggleSlider(
-            label: 'カーブ',
-            value: _curve,
-            onChanged: (v) => setState(() => _curve = v),
-          ),
-          _ToggleSlider(
-            label: 'スプリット',
-            value: _splitter,
-            onChanged: (v) => setState(() => _splitter = v),
-          ),
-          _ToggleSlider(
-            label: 'チェンジアップ',
-            value: _changeup,
-            onChanged: (v) => setState(() => _changeup = v),
-          ),
-          _ToggleSlider(
-            label: 'シュート',
-            value: _shoot,
-            onChanged: (v) => setState(() => _shoot = v),
-          ),
-          _ToggleSlider(
-            label: 'カットボール',
-            value: _cutter,
-            onChanged: (v) => setState(() => _cutter = v),
-          ),
-          _ToggleSlider(
-            label: 'シンカー',
-            value: _sinker,
-            onChanged: (v) => setState(() => _sinker = v),
-          ),
+          _ToggleSlider(label: 'スライダー', value: _slider, onChanged: (v) => setState(() => _slider = v)),
+          _ToggleSlider(label: 'カーブ', value: _curve, onChanged: (v) => setState(() => _curve = v)),
+          _ToggleSlider(label: 'スプリット', value: _splitter, onChanged: (v) => setState(() => _splitter = v)),
+          _ToggleSlider(label: 'チェンジアップ', value: _changeup, onChanged: (v) => setState(() => _changeup = v)),
+          _ToggleSlider(label: 'シュート', value: _shoot, onChanged: (v) => setState(() => _shoot = v)),
+          _ToggleSlider(label: 'カットボール', value: _cutter, onChanged: (v) => setState(() => _cutter = v)),
+          _ToggleSlider(label: 'シンカー', value: _sinker, onChanged: (v) => setState(() => _sinker = v)),
         ],
       ),
       const SizedBox(height: 8),
       _Section(
         title: '打撃・走塁（参考）',
         children: [
-          _Slider1to10(
-            label: 'ミート',
-            value: _meet,
-            onChanged: (v) => setState(() => _meet = v),
-          ),
-          _Slider1to10(
-            label: '長打',
-            value: _power,
-            onChanged: (v) => setState(() => _power = v),
-          ),
-          _Slider1to10(
-            label: '選球眼',
-            value: _eye,
-            onChanged: (v) => setState(() => _eye = v),
-          ),
-          _Slider1to10(
-            label: '走力',
-            value: _speed,
-            onChanged: (v) => setState(() => _speed = v),
-          ),
+          _Slider1to10(label: 'ミート', value: _meet, onChanged: (v) => setState(() => _meet = v)),
+          _Slider1to10(label: '長打', value: _power, onChanged: (v) => setState(() => _power = v)),
+          _Slider1to10(label: '選球眼', value: _eye, onChanged: (v) => setState(() => _eye = v)),
+          _Slider1to10(label: '走力', value: _speed, onChanged: (v) => setState(() => _speed = v)),
         ],
       ),
     ];
@@ -578,37 +441,17 @@ class _PlayerEditScreenState extends State<PlayerEditScreen> {
       _Section(
         title: '打撃',
         children: [
-          _Slider1to10(
-            label: 'ミート',
-            value: _meet,
-            onChanged: (v) => setState(() => _meet = v),
-          ),
-          _Slider1to10(
-            label: '長打',
-            value: _power,
-            onChanged: (v) => setState(() => _power = v),
-          ),
-          _Slider1to10(
-            label: '選球眼',
-            value: _eye,
-            onChanged: (v) => setState(() => _eye = v),
-          ),
+          _Slider1to10(label: 'ミート', value: _meet, onChanged: (v) => setState(() => _meet = v)),
+          _Slider1to10(label: '長打', value: _power, onChanged: (v) => setState(() => _power = v)),
+          _Slider1to10(label: '選球眼', value: _eye, onChanged: (v) => setState(() => _eye = v)),
         ],
       ),
       const SizedBox(height: 8),
       _Section(
         title: '走塁・守備',
         children: [
-          _Slider1to10(
-            label: '走力',
-            value: _speed,
-            onChanged: (v) => setState(() => _speed = v),
-          ),
-          _Slider1to10(
-            label: '肩',
-            value: _arm,
-            onChanged: (v) => setState(() => _arm = v),
-          ),
+          _Slider1to10(label: '走力', value: _speed, onChanged: (v) => setState(() => _speed = v)),
+          _Slider1to10(label: '肩', value: _arm, onChanged: (v) => setState(() => _arm = v)),
         ],
       ),
       const SizedBox(height: 8),
@@ -648,26 +491,15 @@ class _PlayerEditScreenState extends State<PlayerEditScreen> {
             '${p.name}: ${p.number} → $number',
           ),
           actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('キャンセル'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('入れ替える'),
-            ),
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('キャンセル')),
+            FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('入れ替える')),
           ],
         ),
       );
       if (swap != true) return;
       widget.controller.updatePlayer(other.withNumber(p.number));
     } else if (_numberError != null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          duration: const Duration(seconds: 2),
-          content: Text(_numberError!),
-        ),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(duration: const Duration(seconds: 2), content: Text(_numberError!)));
       return;
     }
 
@@ -693,8 +525,7 @@ class _PlayerEditScreenState extends State<PlayerEditScreen> {
 
     final name = _nameCtrl.text.trim().isEmpty ? p.name : _nameCtrl.text.trim();
     final age = (int.tryParse(_ageCtrl.text) ?? p.age).clamp(15, 60);
-    final rawSpeed =
-        int.tryParse(_speedCtrl.text) ?? (p.averageSpeed ?? 145);
+    final rawSpeed = int.tryParse(_speedCtrl.text) ?? (p.averageSpeed ?? 145);
     final speed = rawSpeed.clamp(_minSpeed, _maxSpeed);
 
     // 背番号が同一チーム内の他選手と重複している場合は、入れ替え確認ダイアログを
@@ -712,14 +543,8 @@ class _PlayerEditScreenState extends State<PlayerEditScreen> {
             '$name: ${p.number} → $number',
           ),
           actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('キャンセル'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('入れ替える'),
-            ),
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('キャンセル')),
+            FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('入れ替える')),
           ],
         ),
       );
@@ -728,12 +553,7 @@ class _PlayerEditScreenState extends State<PlayerEditScreen> {
       widget.controller.updatePlayer(other.withNumber(p.number));
     } else if (_numberError != null) {
       // 競合相手は特定できないがエラーが残っている（タイミングの問題）→ 保存を止める
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          duration: const Duration(seconds: 2),
-          content: Text(_numberError!),
-        ),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(duration: const Duration(seconds: 2), content: Text(_numberError!)));
       return;
     }
 
@@ -776,12 +596,9 @@ class _PlayerEditScreenState extends State<PlayerEditScreen> {
     if (!mounted) return;
     // 球速が範囲外で補正された場合だけ通知する
     if (_isPitcher && rawSpeed != speed) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          duration: const Duration(seconds: 2),
-          content: Text('球速を $speed km/h に補正しました（許容: $_minSpeed〜$_maxSpeed）'),
-        ),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(duration: const Duration(seconds: 2), content: Text('球速を $speed km/h に補正しました（許容: $_minSpeed〜$_maxSpeed）')));
     }
 
     Navigator.of(context).pop();
@@ -807,11 +624,7 @@ class _Section extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Text(
-              title,
-              style: const TextStyle(
-                  fontSize: 13, fontWeight: FontWeight.bold),
-            ),
+            Text(title, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
             const Divider(height: 12),
             ...children,
           ],
@@ -831,9 +644,7 @@ class _LabelRow extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       children: [
-        SizedBox(
-            width: 96,
-            child: Text(label, style: const TextStyle(fontSize: 13))),
+        SizedBox(width: 96, child: Text(label, style: const TextStyle(fontSize: 13))),
         Expanded(child: child),
       ],
     );
@@ -846,36 +657,19 @@ class _Slider1to10 extends StatelessWidget {
   final int value;
   final ValueChanged<int> onChanged;
 
-  const _Slider1to10({
-    required this.label,
-    required this.value,
-    required this.onChanged,
-  });
+  const _Slider1to10({required this.label, required this.value, required this.onChanged});
 
   @override
   Widget build(BuildContext context) {
     return Row(
       children: [
-        SizedBox(
-            width: 96,
-            child: Text(label, style: const TextStyle(fontSize: 13))),
+        SizedBox(width: 96, child: Text(label, style: const TextStyle(fontSize: 13))),
         Expanded(
-          child: Slider(
-            min: 1,
-            max: 10,
-            divisions: 9,
-            value: value.toDouble().clamp(1, 10),
-            label: '$value',
-            onChanged: (v) => onChanged(v.round()),
-          ),
+          child: Slider(min: 1, max: 10, divisions: 9, value: value.toDouble().clamp(1, 10), label: '$value', onChanged: (v) => onChanged(v.round())),
         ),
         SizedBox(
           width: 24,
-          child: Text(
-            '$value',
-            textAlign: TextAlign.right,
-            style: const TextStyle(fontSize: 13),
-          ),
+          child: Text('$value', textAlign: TextAlign.right, style: const TextStyle(fontSize: 13)),
         ),
       ],
     );
@@ -889,11 +683,7 @@ class _ToggleSlider extends StatelessWidget {
   final int? value;
   final ValueChanged<int?> onChanged;
 
-  const _ToggleSlider({
-    required this.label,
-    required this.value,
-    required this.onChanged,
-  });
+  const _ToggleSlider({required this.label, required this.value, required this.onChanged});
 
   @override
   Widget build(BuildContext context) {
@@ -902,36 +692,15 @@ class _ToggleSlider extends StatelessWidget {
       children: [
         SizedBox(
           width: 96,
-          child: Text(
-            label,
-            style: TextStyle(
-              fontSize: 13,
-              color: enabled ? null : Colors.grey,
-            ),
-          ),
+          child: Text(label, style: TextStyle(fontSize: 13, color: enabled ? null : Colors.grey)),
         ),
-        Switch(
-          value: enabled,
-          onChanged: (on) => onChanged(on ? 5 : null),
-          materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-        ),
+        Switch(value: enabled, onChanged: (on) => onChanged(on ? 5 : null), materialTapTargetSize: MaterialTapTargetSize.shrinkWrap),
         Expanded(
           child: enabled
-              ? Slider(
-                  min: 1,
-                  max: 10,
-                  divisions: 9,
-                  value: value!.toDouble().clamp(1, 10),
-                  label: '$value',
-                  onChanged: (v) => onChanged(v.round()),
-                )
+              ? Slider(min: 1, max: 10, divisions: 9, value: value!.toDouble().clamp(1, 10), label: '$value', onChanged: (v) => onChanged(v.round()))
               : Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 12),
-                  child: Text(
-                    'なし',
-                    style: TextStyle(
-                        fontSize: 12, color: Colors.grey.shade500),
-                  ),
+                  child: Text('なし', style: TextStyle(fontSize: 12, color: Colors.grey.shade500)),
                 ),
         ),
         SizedBox(
@@ -939,10 +708,7 @@ class _ToggleSlider extends StatelessWidget {
           child: Text(
             enabled ? '$value' : '-',
             textAlign: TextAlign.right,
-            style: TextStyle(
-              fontSize: 13,
-              color: enabled ? null : Colors.grey,
-            ),
+            style: TextStyle(fontSize: 13, color: enabled ? null : Colors.grey),
           ),
         ),
       ],

@@ -18,12 +18,7 @@ class PlayerDetailScreen extends StatelessWidget {
   final Listenable listenable;
   final String playerId;
 
-  const PlayerDetailScreen({
-    super.key,
-    required this.controller,
-    required this.listenable,
-    required this.playerId,
-  });
+  const PlayerDetailScreen({super.key, required this.controller, required this.listenable, required this.playerId});
 
   @override
   Widget build(BuildContext context) {
@@ -33,10 +28,7 @@ class PlayerDetailScreen extends StatelessWidget {
         final player = controller.findPlayerById(playerId);
         if (player == null) {
           return Scaffold(
-            appBar: AppBar(
-              title: const Text('選手'),
-              backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-            ),
+            appBar: AppBar(title: const Text('選手'), backgroundColor: Theme.of(context).colorScheme.inversePrimary),
             body: const Center(child: Text('選手が見つかりません')),
           );
         }
@@ -52,10 +44,7 @@ class PlayerDetailScreen extends StatelessWidget {
                 onPressed: () {
                   Navigator.of(context).push(
                     MaterialPageRoute(
-                      builder: (_) => PlayerEditScreen(
-                        controller: controller,
-                        initial: player,
-                      ),
+                      builder: (_) => PlayerEditScreen(controller: controller, initial: player),
                     ),
                   );
                 },
@@ -69,14 +58,8 @@ class PlayerDetailScreen extends StatelessWidget {
               children: [
                 _buildHeader(context, player),
                 const SizedBox(height: 12),
-                if (player.isPitcher)
-                  _buildPitcherBody(player, disclosed: disclosed)
-                else
-                  _buildFielderBody(player, disclosed: disclosed),
-                if (!disclosed) ...[
-                  const SizedBox(height: 8),
-                  _buildLockedHint(),
-                ],
+                if (player.isPitcher) _buildPitcherBody(player, disclosed: disclosed) else _buildFielderBody(player, disclosed: disclosed),
+                if (!disclosed) ...[const SizedBox(height: 8), _buildLockedHint()],
               ],
             ),
           ),
@@ -95,13 +78,7 @@ class PlayerDetailScreen extends StatelessWidget {
           children: [
             Icon(Icons.lock_outline, color: Colors.amber.shade800, size: 20),
             const SizedBox(width: 8),
-            const Expanded(
-              child: Text(
-                '能力値は非表示です。試合結果から推測してみましょう。\n'
-                '能力開示＆編集サブスクで全パラメータが見られるようになります。',
-                style: TextStyle(fontSize: 12),
-              ),
-            ),
+            const Expanded(child: Text('ショップで「能力の表示と編集」を入手すると、選手の能力を見られるようになります。', style: TextStyle(fontSize: 12))),
           ],
         ),
       ),
@@ -138,38 +115,17 @@ class PlayerDetailScreen extends StatelessWidget {
               width: 48,
               height: 48,
               alignment: Alignment.center,
-              decoration: BoxDecoration(
-                color: Colors.grey.shade200,
-                borderRadius: BorderRadius.circular(24),
-              ),
-              child: Text(
-                '#${player.number}',
-                style: const TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
+              decoration: BoxDecoration(color: Colors.grey.shade200, borderRadius: BorderRadius.circular(24)),
+              child: Text('#${player.number}', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
             ),
             const SizedBox(width: 12),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    player.name,
-                    style: const TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
+                  Text(player.name, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
                   const SizedBox(height: 4),
-                  Wrap(
-                    spacing: 6,
-                    runSpacing: 4,
-                    children: [
-                      for (final t in tags) _Chip(label: t),
-                    ],
-                  ),
+                  Wrap(spacing: 6, runSpacing: 4, children: [for (final t in tags) _Chip(label: t)]),
                 ],
               ),
             ),
@@ -271,10 +227,7 @@ class PlayerDetailScreen extends StatelessWidget {
       return [
         Padding(
           padding: const EdgeInsets.symmetric(vertical: 4),
-          child: Text(
-            disclosed ? '全ポジション可（基準値5）' : '全ポジション守れる',
-            style: const TextStyle(fontSize: 12, color: Colors.grey),
-          ),
+          child: Text(disclosed ? '全ポジション可（基準値5）' : '全ポジション守れる', style: const TextStyle(fontSize: 12, color: Colors.grey)),
         ),
       ];
     }
@@ -283,10 +236,7 @@ class PlayerDetailScreen extends StatelessWidget {
         if (disclosed)
           _FieldingRow(label: pos.displayName, value: map[pos])
         else
-          _FieldingAvailabilityRow(
-            label: pos.displayName,
-            canPlay: (map[pos] ?? 0) > 0,
-          ),
+          _FieldingAvailabilityRow(label: pos.displayName, canPlay: (map[pos] ?? 0) > 0),
     ];
   }
 }
@@ -306,13 +256,7 @@ class _FieldingAvailabilityRow extends StatelessWidget {
         children: [
           SizedBox(
             width: 96,
-            child: Text(
-              label,
-              style: TextStyle(
-                fontSize: 13,
-                color: canPlay ? null : Colors.grey,
-              ),
-            ),
+            child: Text(label, style: TextStyle(fontSize: 13, color: canPlay ? null : Colors.grey)),
           ),
           Expanded(
             child: Text(
@@ -349,13 +293,7 @@ class _SectionCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Text(
-              title,
-              style: const TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
+            Text(title, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
             const Divider(height: 12),
             ...children,
           ],
@@ -378,10 +316,7 @@ class _RatingRow extends StatelessWidget {
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
         children: [
-          SizedBox(
-            width: 96,
-            child: Text(label, style: const TextStyle(fontSize: 13)),
-          ),
+          SizedBox(width: 96, child: Text(label, style: const TextStyle(fontSize: 13))),
           Expanded(child: _RatingMeter(value: value)),
           const SizedBox(width: 8),
           SizedBox(
@@ -389,10 +324,7 @@ class _RatingRow extends StatelessWidget {
             child: Text(
               value == null ? '-' : '$value',
               textAlign: TextAlign.right,
-              style: const TextStyle(
-                fontSize: 13,
-                fontFeatures: [FontFeature.tabularFigures()],
-              ),
+              style: const TextStyle(fontSize: 13, fontFeatures: [FontFeature.tabularFigures()]),
             ),
           ),
         ],
@@ -417,21 +349,10 @@ class _PitchRow extends StatelessWidget {
         children: [
           SizedBox(
             width: 96,
-            child: Text(
-              label,
-              style: TextStyle(
-                fontSize: 13,
-                color: disabled ? Colors.grey : null,
-              ),
-            ),
+            child: Text(label, style: TextStyle(fontSize: 13, color: disabled ? Colors.grey : null)),
           ),
           Expanded(
-            child: disabled
-                ? Text(
-                    '投げない',
-                    style: TextStyle(fontSize: 12, color: Colors.grey.shade500),
-                  )
-                : _RatingMeter(value: value),
+            child: disabled ? Text('投げない', style: TextStyle(fontSize: 12, color: Colors.grey.shade500)) : _RatingMeter(value: value),
           ),
           const SizedBox(width: 8),
           SizedBox(
@@ -439,11 +360,7 @@ class _PitchRow extends StatelessWidget {
             child: Text(
               disabled ? '-' : '$value',
               textAlign: TextAlign.right,
-              style: TextStyle(
-                fontSize: 13,
-                color: disabled ? Colors.grey : null,
-                fontFeatures: const [FontFeature.tabularFigures()],
-              ),
+              style: TextStyle(fontSize: 13, color: disabled ? Colors.grey : null, fontFeatures: const [FontFeature.tabularFigures()]),
             ),
           ),
         ],
@@ -468,21 +385,10 @@ class _FieldingRow extends StatelessWidget {
         children: [
           SizedBox(
             width: 96,
-            child: Text(
-              label,
-              style: TextStyle(
-                fontSize: 13,
-                color: canPlay ? null : Colors.grey,
-              ),
-            ),
+            child: Text(label, style: TextStyle(fontSize: 13, color: canPlay ? null : Colors.grey)),
           ),
           Expanded(
-            child: canPlay
-                ? _RatingMeter(value: value)
-                : Text(
-                    '守れない',
-                    style: TextStyle(fontSize: 12, color: Colors.grey.shade500),
-                  ),
+            child: canPlay ? _RatingMeter(value: value) : Text('守れない', style: TextStyle(fontSize: 12, color: Colors.grey.shade500)),
           ),
           const SizedBox(width: 8),
           SizedBox(
@@ -490,11 +396,7 @@ class _FieldingRow extends StatelessWidget {
             child: Text(
               canPlay ? '$value' : '-',
               textAlign: TextAlign.right,
-              style: TextStyle(
-                fontSize: 13,
-                color: canPlay ? null : Colors.grey,
-                fontFeatures: const [FontFeature.tabularFigures()],
-              ),
+              style: TextStyle(fontSize: 13, color: canPlay ? null : Colors.grey, fontFeatures: const [FontFeature.tabularFigures()]),
             ),
           ),
         ],
@@ -516,10 +418,7 @@ class _SpeedRow extends StatelessWidget {
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
         children: [
-          SizedBox(
-            width: 96,
-            child: Text(label, style: const TextStyle(fontSize: 13)),
-          ),
+          SizedBox(width: 96, child: Text(label, style: const TextStyle(fontSize: 13))),
           Expanded(child: _SpeedMeter(kmh: kmh)),
           const SizedBox(width: 8),
           SizedBox(
@@ -527,10 +426,7 @@ class _SpeedRow extends StatelessWidget {
             child: Text(
               '${kmh}km',
               textAlign: TextAlign.right,
-              style: const TextStyle(
-                fontSize: 13,
-                fontFeatures: [FontFeature.tabularFigures()],
-              ),
+              style: const TextStyle(fontSize: 13, fontFeatures: [FontFeature.tabularFigures()]),
             ),
           ),
         ],
@@ -557,10 +453,7 @@ class _RatingMeter extends StatelessWidget {
           Container(height: 8, color: Colors.grey.shade200),
           FractionallySizedBox(
             widthFactor: ratio,
-            child: Container(
-              height: 8,
-              color: _colorFor(v),
-            ),
+            child: Container(height: 8, color: _colorFor(v)),
           ),
         ],
       ),
@@ -586,8 +479,7 @@ class _SpeedMeter extends StatelessWidget {
   Widget build(BuildContext context) {
     const minKmh = 130;
     const maxKmh = 160;
-    final ratio =
-        ((kmh - minKmh) / (maxKmh - minKmh)).clamp(0.0, 1.0);
+    final ratio = ((kmh - minKmh) / (maxKmh - minKmh)).clamp(0.0, 1.0);
     return ClipRRect(
       borderRadius: BorderRadius.circular(3),
       child: Stack(
@@ -595,10 +487,7 @@ class _SpeedMeter extends StatelessWidget {
           Container(height: 8, color: Colors.grey.shade200),
           FractionallySizedBox(
             widthFactor: ratio,
-            child: Container(
-              height: 8,
-              color: _colorFor(kmh),
-            ),
+            child: Container(height: 8, color: _colorFor(kmh)),
           ),
         ],
       ),
@@ -627,10 +516,7 @@ class _Chip extends StatelessWidget {
         borderRadius: BorderRadius.circular(10),
         border: Border.all(color: Colors.grey.shade300),
       ),
-      child: Text(
-        label,
-        style: const TextStyle(fontSize: 11),
-      ),
+      child: Text(label, style: const TextStyle(fontSize: 11)),
     );
   }
 }
@@ -644,10 +530,7 @@ class _FielderYearByYearCard extends StatelessWidget {
   final SeasonController controller;
   final String playerId;
 
-  const _FielderYearByYearCard({
-    required this.controller,
-    required this.playerId,
-  });
+  const _FielderYearByYearCard({required this.controller, required this.playerId});
 
   @override
   Widget build(BuildContext context) {
@@ -664,8 +547,7 @@ class _FielderYearByYearCard extends StatelessWidget {
         children: [
           Padding(
             padding: EdgeInsets.symmetric(vertical: 4),
-            child: Text('出場なし',
-                style: TextStyle(fontSize: 12, color: Colors.grey)),
+            child: Text('出場なし', style: TextStyle(fontSize: 12, color: Colors.grey)),
           ),
         ],
       );
@@ -708,29 +590,30 @@ class _FielderYearByYearCard extends StatelessWidget {
             ],
             rows: [
               for (final row in rows)
-                DataRow(cells: [
-                  DataCell(Text('${row.year}',
-                      style: const TextStyle(fontSize: 12))),
-                  _rateCell(row.stats.battingAverage),
-                  _numCell(row.stats.games),
-                  _numCell(row.stats.plateAppearances),
-                  _numCell(row.stats.atBats),
-                  _numCell(row.stats.hits),
-                  _numCell(row.stats.doubles),
-                  _numCell(row.stats.triples),
-                  _numCell(row.stats.homeRuns),
-                  _numCell(row.stats.rbi),
-                  _numCell(row.stats.stolenBases),
-                  _numCell(row.stats.runs),
-                  _numCell(row.stats.walks),
-                  _numCell(row.stats.hitByPitch),
-                  _numCell(row.stats.strikeouts),
-                  _numCell(row.stats.sacrificeBunts + row.stats.sacFlies),
-                  _numCell(row.stats.errors),
-                  _rateCell(row.stats.onBasePct),
-                  _rateCell(row.stats.sluggingPct),
-                  _rateCell(row.stats.ops),
-                ]),
+                DataRow(
+                  cells: [
+                    DataCell(Text('${row.year}', style: const TextStyle(fontSize: 12))),
+                    _rateCell(row.stats.battingAverage),
+                    _numCell(row.stats.games),
+                    _numCell(row.stats.plateAppearances),
+                    _numCell(row.stats.atBats),
+                    _numCell(row.stats.hits),
+                    _numCell(row.stats.doubles),
+                    _numCell(row.stats.triples),
+                    _numCell(row.stats.homeRuns),
+                    _numCell(row.stats.rbi),
+                    _numCell(row.stats.stolenBases),
+                    _numCell(row.stats.runs),
+                    _numCell(row.stats.walks),
+                    _numCell(row.stats.hitByPitch),
+                    _numCell(row.stats.strikeouts),
+                    _numCell(row.stats.sacrificeBunts + row.stats.sacFlies),
+                    _numCell(row.stats.errors),
+                    _rateCell(row.stats.onBasePct),
+                    _rateCell(row.stats.sluggingPct),
+                    _rateCell(row.stats.ops),
+                  ],
+                ),
             ],
           ),
         ),
@@ -744,10 +627,7 @@ class _PitcherYearByYearCard extends StatelessWidget {
   final SeasonController controller;
   final String playerId;
 
-  const _PitcherYearByYearCard({
-    required this.controller,
-    required this.playerId,
-  });
+  const _PitcherYearByYearCard({required this.controller, required this.playerId});
 
   @override
   Widget build(BuildContext context) {
@@ -763,8 +643,7 @@ class _PitcherYearByYearCard extends StatelessWidget {
         children: [
           Padding(
             padding: EdgeInsets.symmetric(vertical: 4),
-            child: Text('登板なし',
-                style: TextStyle(fontSize: 12, color: Colors.grey)),
+            child: Text('登板なし', style: TextStyle(fontSize: 12, color: Colors.grey)),
           ),
         ],
       );
@@ -806,38 +685,30 @@ class _PitcherYearByYearCard extends StatelessWidget {
             ],
             rows: [
               for (final row in rows)
-                DataRow(cells: [
-                  DataCell(Text('${row.year}',
-                      style: const TextStyle(fontSize: 12))),
-                  _numCell(row.stats.games),
-                  _numCell(row.stats.wins),
-                  _numCell(row.stats.losses),
-                  _numCell(row.stats.saves),
-                  DataCell(Text(
-                      row.stats.outsRecorded == 0
-                          ? '-'
-                          : row.stats.era.toStringAsFixed(2),
-                      style: const TextStyle(fontSize: 12))),
-                  _numCell(row.stats.starts),
-                  _numCell(row.stats.completeGames),
-                  _numCell(row.stats.shutouts),
-                  _numCell(row.stats.qualityStarts),
-                  _numCell(row.stats.holds),
-                  DataCell(Text(row.stats.inningsPitchedDisplay,
-                      style: const TextStyle(fontSize: 12))),
-                  _numCell(row.stats.hitsAllowed),
-                  _numCell(row.stats.homeRunsAllowed),
-                  _numCell(row.stats.walksAllowed),
-                  _numCell(row.stats.hitBatsmen),
-                  _numCell(row.stats.strikeoutsRecorded),
-                  _numCell(row.stats.runsAllowed),
-                  _numCell(row.stats.earnedRuns),
-                  DataCell(Text(
-                      row.stats.outsRecorded == 0
-                          ? '-'
-                          : row.stats.whip.toStringAsFixed(2),
-                      style: const TextStyle(fontSize: 12))),
-                ]),
+                DataRow(
+                  cells: [
+                    DataCell(Text('${row.year}', style: const TextStyle(fontSize: 12))),
+                    _numCell(row.stats.games),
+                    _numCell(row.stats.wins),
+                    _numCell(row.stats.losses),
+                    _numCell(row.stats.saves),
+                    DataCell(Text(row.stats.outsRecorded == 0 ? '-' : row.stats.era.toStringAsFixed(2), style: const TextStyle(fontSize: 12))),
+                    _numCell(row.stats.starts),
+                    _numCell(row.stats.completeGames),
+                    _numCell(row.stats.shutouts),
+                    _numCell(row.stats.qualityStarts),
+                    _numCell(row.stats.holds),
+                    DataCell(Text(row.stats.inningsPitchedDisplay, style: const TextStyle(fontSize: 12))),
+                    _numCell(row.stats.hitsAllowed),
+                    _numCell(row.stats.homeRunsAllowed),
+                    _numCell(row.stats.walksAllowed),
+                    _numCell(row.stats.hitBatsmen),
+                    _numCell(row.stats.strikeoutsRecorded),
+                    _numCell(row.stats.runsAllowed),
+                    _numCell(row.stats.earnedRuns),
+                    DataCell(Text(row.stats.outsRecorded == 0 ? '-' : row.stats.whip.toStringAsFixed(2), style: const TextStyle(fontSize: 12))),
+                  ],
+                ),
             ],
           ),
         ),
@@ -846,11 +717,9 @@ class _PitcherYearByYearCard extends StatelessWidget {
   }
 }
 
-DataCell _numCell(int v) =>
-    DataCell(Text('$v', style: const TextStyle(fontSize: 12)));
+DataCell _numCell(int v) => DataCell(Text('$v', style: const TextStyle(fontSize: 12)));
 
-DataCell _rateCell(double v) =>
-    DataCell(Text(v.toStringAsFixed(3), style: const TextStyle(fontSize: 12)));
+DataCell _rateCell(double v) => DataCell(Text(v.toStringAsFixed(3), style: const TextStyle(fontSize: 12)));
 
 class _Hd extends StatelessWidget {
   final String label;
@@ -858,9 +727,6 @@ class _Hd extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Text(
-      label,
-      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
-    );
+    return Text(label, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold));
   }
 }
