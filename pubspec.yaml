@@ -41,6 +41,12 @@ dependencies:
   # AdMob: 試合結果確認前のインタースティシャル広告
   google_mobile_ads: ^6.0.0
 
+  # ローカルプッシュ通知: 結果確認時刻に「本日の試合結果が出ました」通知
+  flutter_local_notifications: ^18.0.1
+  # zonedSchedule で必要（端末の現地時刻ベースで予約）
+  timezone: ^0.10.0
+  flutter_timezone: ^4.0.0
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

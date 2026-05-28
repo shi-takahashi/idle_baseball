@@ -5,6 +5,75 @@
 
 ---
 
+## 2026-05-28(2) ローカルプッシュ通知の実装
+
+SPEC §1.1「試合結果の時刻設定・通知」をローカル通知 (`flutter_local_notifications`) で
+実装。Android のみ対応、iOS は後フェーズ。
+
+### 仕様（ユーザー確定）
+
+- **「次に試合が解禁される時刻」に通知を 1 件だけ予約**（同 ID で常に上書き）
+- **試合視聴後**に「次回ぶん」を再予約
+- **結果確認時刻 (`unlockHour`) 変更時**は予約を消して新時刻で再予約
+- **通知 OFF 切替時**: 予約をキャンセル
+- **通知 ON 切替時**: 権限要求 + 次回ぶんを 1 件予約
+- **デフォルト ON**（初回起動時に Android 13+ なら権限ダイアログ）
+
+### 変更
+
+- **パッケージ追加**: `flutter_local_notifications: ^18.0.1` /
+  `timezone: ^0.10.0` / `flutter_timezone: ^4.0.0`
+- **`lib/services/notification_service.dart` (新規)**: プラグイン初期化・タイムゾーン
+  ロード・権限要求・`scheduleNextUnlock(DateTime)` / `cancelScheduled()` の薄い API
+- **`lib/services/notification_scheduler.dart` (新規)**: `SeasonController` の状態から
+  「予約 or キャンセル」を判定するオーケストレータ。`reevaluate(controller)` がべき等で
+  呼び出し側はトリガーごとに呼ぶだけでよい
+- **`SeasonController`**:
+  - `notificationsEnabled: bool` フィールド追加（デフォルト true、JSON 永続化対応、
+    旧セーブ互換は true 扱い）
+  - getter/setter（setter は `_notify()` 経由）
+- **`SettingsScreen`**:
+  - 「結果公開時に通知する」トグルを追加（`unlockHour` ドロップダウンの直下）
+  - ON 切替時は `NotificationService.requestPermission()` を呼んでから reevaluate
+  - `unlockHour` 変更時にも reevaluate を発火
+- **`MainSeasonScreen`**:
+  - `initState` の postFrame で初回 reevaluate（+ 通知 ON なら権限要求）
+  - `_runNextGame` の `markGameViewed` 直後に reevaluate（視聴で「次回」が動く）
+- **`main.dart`**: `NotificationService.initialize()` をアプリ起動時に発火
+- **AndroidManifest.xml**:
+  - `POST_NOTIFICATIONS` / `RECEIVE_BOOT_COMPLETED` / `VIBRATE` パーミッション
+  - `ScheduledNotificationReceiver` / `ScheduledNotificationBootReceiver`（再起動後に
+    予約済み通知を復元するため）
+- **`android/app/build.gradle.kts`**:
+  - `isCoreLibraryDesugaringEnabled = true`
+  - `coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")` を追加
+  - flutter_local_notifications が `ZonedDateTime` 等の Java 8+ API を Android 21 でも
+    動かすために必要
+
+### 再評価判定（`NotificationScheduler.reevaluate`）
+
+以下は cancel:
+- `notificationsEnabled == false`
+- `isSeasonOver == true`（オフシーズン中は試合がない）
+- `gate.isViewable(now) == true`（既に解禁済み、ユーザーは今すぐ見れる）
+
+それ以外は `gate.nextUnlockAt(now)` を `zonedSchedule` で予約。
+`AndroidScheduleMode.inexactAllowWhileIdle` を使用（exact alarm 権限不要、Doze 中も発火）。
+
+### 検証
+
+- `dart analyze lib/` クリーン（既存 info 4 件のみ）
+- `flutter build apk --debug` 成功
+- `test_persist` / `test_unlock_gate` 全 PASS（`notificationsEnabled` の JSON 往復含む）
+
+### 残り
+
+- 実機での通知発火確認（時刻ピッカーで近い時刻に変更してテスト）
+- iOS 対応（Info.plist 設定 + `DarwinInitializationSettings`）
+- 通知タップでアプリ起動時の挙動（現状はアプリを開くだけ。試合タブに直行等は未実装）
+
+---
+
 ## 2026-05-28 AdMob インタースティシャル広告の実装（スタブ → 実 SDK 連携）
 
 `DAILY_GATE_PLAN.md` チャンク 5 で残していた「広告 SDK 連携」を実装。

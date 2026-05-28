@@ -66,6 +66,11 @@ class SeasonController {
   /// 視聴で消費すると `markGameViewed` で「直近の解禁時刻ジャスト」が記録される。
   DateTime? _lastUnlockAt;
 
+  /// 結果確認時刻にローカル通知を出すか（デフォルト true）。
+  /// 設定画面の通知トグルから変更可能。OFF にすると `NotificationService` 側で
+  /// 予約をキャンセル、ON で次回ぶんを 1 件予約する。
+  bool _notificationsEnabled;
+
   /// onboarding 期間の閾値: 1シーズン目の自チーム消化試合数 < この値 なら onboarding 中。
   static const int onboardingGameCount = 10;
 
@@ -243,6 +248,7 @@ class SeasonController {
     bool offseasonProgressionEnabled = true,
     int unlockHour = 21,
     DateTime? lastUnlockAt,
+    bool notificationsEnabled = true,
     GameSimulator? gameSimulator,
     Random? random,
   })  : _schedule = schedule,
@@ -250,6 +256,7 @@ class SeasonController {
         _offseasonProgressionEnabled = offseasonProgressionEnabled,
         _unlockHour = unlockHour,
         _lastUnlockAt = lastUnlockAt,
+        _notificationsEnabled = notificationsEnabled,
         _aggregator = SeasonAggregator(teams),
         _gameSimulator = gameSimulator ?? GameSimulator(random: random),
         _rotationRandom = random ?? Random() {
@@ -298,6 +305,7 @@ class SeasonController {
     int gamesPerTeam = ScheduleGenerator.defaultGamesPerTeam,
     bool offseasonProgressionEnabled = true,
     int unlockHour = 21,
+    bool notificationsEnabled = true,
   }) {
     final teams = TeamGenerator(random: random).generateLeague();
     final schedule = const ScheduleGenerator()
@@ -309,6 +317,7 @@ class SeasonController {
       gamesPerTeam: gamesPerTeam,
       offseasonProgressionEnabled: offseasonProgressionEnabled,
       unlockHour: unlockHour,
+      notificationsEnabled: notificationsEnabled,
       random: random,
     );
     // 自チームの投手ロール・スタメン野手は推測ゲームの一部としてユーザーが
@@ -412,6 +421,15 @@ class SeasonController {
     final clamped = value.clamp(0, 23);
     if (_unlockHour == clamped) return;
     _unlockHour = clamped;
+    _notify();
+  }
+
+  /// 結果確認時刻にローカル通知を出すか。デフォルト true。
+  bool get notificationsEnabled => _notificationsEnabled;
+
+  set notificationsEnabled(bool value) {
+    if (_notificationsEnabled == value) return;
+    _notificationsEnabled = value;
     _notify();
   }
 
@@ -1683,6 +1701,7 @@ class SeasonController {
       'unlockHour': _unlockHour,
       if (_lastUnlockAt != null)
         'lastUnlockAt': _lastUnlockAt!.toIso8601String(),
+      'notificationsEnabled': _notificationsEnabled,
       'currentDay': _currentDay,
       'players': {
         for (final entry in allPlayers.entries)
@@ -1772,6 +1791,9 @@ class SeasonController {
     final lastUnlockAtStr = json['lastUnlockAt'] as String?;
     final lastUnlockAt =
         lastUnlockAtStr == null ? null : DateTime.parse(lastUnlockAtStr);
+    // 通知 ON/OFF。旧セーブには存在しないので true（デフォルト）扱い。
+    final notificationsEnabled =
+        json['notificationsEnabled'] as bool? ?? true;
     final controller = SeasonController(
       teams: teams,
       schedule: schedule,
@@ -1780,6 +1802,7 @@ class SeasonController {
       offseasonProgressionEnabled: offseasonProgressionEnabled,
       unlockHour: unlockHour,
       lastUnlockAt: lastUnlockAt,
+      notificationsEnabled: notificationsEnabled,
       random: random,
     );
 

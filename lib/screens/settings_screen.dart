@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 
 import '../dev/debug_flags.dart';
 import '../engine/engine.dart';
+import '../services/notification_scheduler.dart';
+import '../services/notification_service.dart';
 
 /// 設定画面
 ///
@@ -33,10 +35,7 @@ class SettingsScreen extends StatelessWidget {
               const _SectionHeader(title: '試合結果の公開'),
               ListTile(
                 title: const Text('結果確認時刻'),
-                subtitle: const Text(
-                  '毎日この時刻に試合結果が公開され、確認できるようになります。\n'
-                  '前回の解禁から最低 12 時間空ける制約があるため、時刻を早めても同日中の再解禁は発生しません。',
-                ),
+                subtitle: const Text('毎日この時刻に試合結果が公開されます。'),
                 trailing: DropdownButton<int>(
                   value: controller.unlockHour,
                   items: [
@@ -47,9 +46,27 @@ class SettingsScreen extends StatelessWidget {
                       ),
                   ],
                   onChanged: (v) {
-                    if (v != null) controller.unlockHour = v;
+                    if (v != null) {
+                      controller.unlockHour = v;
+                      // 解禁時刻が変わったら通知も新時刻で予約し直す。
+                      NotificationScheduler.reevaluate(controller);
+                    }
                   },
                 ),
+              ),
+              SwitchListTile(
+                title: const Text('結果公開時に通知する'),
+                subtitle: const Text('結果が公開されたらお知らせします。'),
+                value: controller.notificationsEnabled,
+                onChanged: (v) async {
+                  controller.notificationsEnabled = v;
+                  if (v) {
+                    // Android 13+ は OFF → ON の瞬間に権限要求ダイアログを出す。
+                    // 拒否されても予約は試みる（次回起動時に再評価される）。
+                    await NotificationService.requestPermission();
+                  }
+                  await NotificationScheduler.reevaluate(controller);
+                },
               ),
               const Divider(),
               const _SectionHeader(title: 'シーズン進行'),
@@ -149,11 +166,86 @@ class _DebugSection extends StatelessWidget {
                   value: flags.hasAbilityDisclosureSub,
                   onChanged: (v) => flags.hasAbilityDisclosureSub = v,
                 ),
+                ListTile(
+                  title: const Text('通知の予約状況を確認'),
+                  subtitle: const Text(
+                    'OS に登録されている予約通知を一覧表示。Day10 視聴後に Day11 用の'
+                    '予約が入っているかの切り分けに使う。',
+                  ),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => _showPendingNotifications(context),
+                ),
               ],
             );
           },
         ),
       ],
+    );
+  }
+
+  Future<void> _showPendingNotifications(BuildContext context) async {
+    final pending = await NotificationService.pendingRequests();
+    final lastScheduled = NotificationService.lastScheduledFor;
+    if (!context.mounted) return;
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) {
+        return AlertDialog(
+          title: const Text('予約通知の状況'),
+          content: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'OS への予約件数: ${pending.length}',
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  '最後に scheduleNextUnlock した時刻: '
+                  '${lastScheduled?.toString() ?? "(まだ予約していない / 再起動でリセット済み)"}',
+                  style: const TextStyle(fontSize: 12),
+                ),
+                const Divider(height: 24),
+                if (pending.isEmpty)
+                  const Text(
+                    '予約はありません。\n'
+                    '- 通知 OFF\n'
+                    '- onboarding 中（Day10 未満）\n'
+                    '- 既に解禁済み（gate.isViewable == true）\n'
+                    '- シーズン終了中\n'
+                    'のいずれかに該当している可能性があります。',
+                    style: TextStyle(fontSize: 12),
+                  )
+                else
+                  ...pending.map((p) => Padding(
+                        padding: const EdgeInsets.only(bottom: 8),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text('id=${p.id}',
+                                style: const TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.bold)),
+                            Text('title: ${p.title ?? "(null)"}',
+                                style: const TextStyle(fontSize: 12)),
+                            Text('body: ${p.body ?? "(null)"}',
+                                style: const TextStyle(fontSize: 12)),
+                          ],
+                        ),
+                      )),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('閉じる'),
+            ),
+          ],
+        );
+      },
     );
   }
 }

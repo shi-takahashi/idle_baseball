@@ -7,6 +7,8 @@ import '../engine/engine.dart';
 import '../persistence/auto_saver.dart';
 import '../persistence/save_service.dart';
 import '../services/ad_service.dart';
+import '../services/notification_scheduler.dart';
+import '../services/notification_service.dart';
 import 'daily_screen.dart';
 import 'home_screen.dart' show SeasonLengthSelector;
 import 'individual_stats_screen.dart';
@@ -82,6 +84,17 @@ class _MainSeasonScreenState extends State<MainSeasonScreen> {
     });
     // シーズン開始直後は作戦画面で待機させたいので、Day 1 を自動消化はしない。
     // ユーザーが「次の試合へ」を押した時点で Day 1 が走り、結果が表示される。
+
+    // 通知の予約をブート時に再評価。初回起動 + 通知 ON (デフォルト) の場合は
+    // ここで Android 13+ の権限要求ダイアログが出る（拒否されても予約は試みる）。
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted) return;
+      if (widget.controller.notificationsEnabled) {
+        await NotificationService.requestPermission();
+      }
+      if (!mounted) return;
+      await NotificationScheduler.reevaluate(widget.controller);
+    });
   }
 
   @override
@@ -154,6 +167,8 @@ class _MainSeasonScreenState extends State<MainSeasonScreen> {
       DateTime.now(),
       hasTimeSkipSub: DebugFlags.instance.hasTimeSkipSub,
     );
+    // 視聴で「直近の解禁を消費」したので、次回ぶんの通知を予約し直す。
+    unawaited(NotificationScheduler.reevaluate(widget.controller));
 
     // 広告 push 後だと navigator state は既に変わっている可能性があるので
     // 念のため取り直す。
