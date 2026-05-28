@@ -256,10 +256,13 @@ class _MainSeasonScreenState extends State<MainSeasonScreen> {
         bottomNavigationBar: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            ListenableBuilder(
-              listenable: _listenable,
-              builder: (context, _) => _buildAdvanceBar(),
-            ),
+            // AdvanceBar は試合タブにいる時だけ表示。他のタブ（成績・チーム・
+            // ショップ・設定）では試合の進行操作と無関係なので、エリアごと隠す。
+            if (_selectedIndex == 0)
+              ListenableBuilder(
+                listenable: _listenable,
+                builder: (context, _) => _buildAdvanceBar(),
+              ),
             NavigationBar(
               selectedIndex: _selectedIndex,
               onDestinationSelected: _onSelect,
@@ -351,7 +354,9 @@ class _MainSeasonScreenState extends State<MainSeasonScreen> {
     // の動作。既にタブ 0 のルート（作戦画面）にいる場合は完全に no-op になるので
     // ボタンを disable してユーザーに「ここでは効果がない」ことを示す。
     // 試合の実進行は作戦画面内の「試合開始」ボタンが担う。
-    final atGameTabRoot = _selectedIndex == 0 &&
+    // AdvanceBar 自体が試合タブにいる時だけ表示される前提なので、ここでは
+    // `canPop()` だけで「作戦画面ルートにいるか」を判定すればよい。
+    final atGameTabRoot =
         !(_navigatorKeys[0].currentState?.canPop() ?? false);
     final canAdvance = ended || !atGameTabRoot;
     return Container(
