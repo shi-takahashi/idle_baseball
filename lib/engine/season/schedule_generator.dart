@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import '../models/team.dart';
 import 'schedule.dart';
 import 'scheduled_game.dart';
@@ -34,31 +36,44 @@ class ScheduleGenerator {
   }
 
   /// 1チームあたりの試合数を指定して日程を生成（UI 連携用の薄いラッパー）。
+  ///
+  /// [random] を渡すと 5 ラウンドの順序をシャッフルする。シーズン跨ぎで
+  /// 開幕カードや 3 連戦の組み合わせが毎年変わるようにするための引数。
+  /// null（デフォルト）の場合はサークル法の順序そのままで決定論的（既存
+  /// 計測スクリプトの後方互換のため）。
   Schedule generateForGamesPerTeam(
     List<Team> teams,
     int gamesPerTeam, {
     int gamesPerCard = 3,
+    Random? random,
   }) {
     return generate(
       teams,
       gamesPerCard: gamesPerCard,
       halves: halvesForGamesPerTeam(gamesPerTeam),
+      random: random,
     );
   }
 
   /// 指定チームで日程を生成
   /// `gamesPerCard`: 1連戦の試合数（デフォルト3）
   /// `halves`: 前半・後半を何周するか（デフォルト2 = 30試合シーズン）
+  /// `random`: 渡すと 5 ラウンドの順序をシャッフル（毎シーズン異なる日程に）。
+  ///           null なら決定論的（計測スクリプト用）。
   Schedule generate(
     List<Team> teams, {
     int gamesPerCard = 3,
     int halves = 2,
+    Random? random,
   }) {
     if (teams.length != 6) {
       throw ArgumentError('現在は6チームのみ対応（${teams.length}チームが渡されました）');
     }
 
     final rounds = _circleMethodRounds(teams); // 5ラウンド × 3ペア
+    if (random != null) {
+      rounds.shuffle(random);
+    }
 
     final scheduled = <ScheduledGame>[];
     int day = 0;

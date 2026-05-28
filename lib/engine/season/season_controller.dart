@@ -308,8 +308,13 @@ class SeasonController {
     bool notificationsEnabled = true,
   }) {
     final teams = TeamGenerator(random: random).generateLeague();
-    final schedule = const ScheduleGenerator()
-        .generateForGamesPerTeam(teams, gamesPerTeam);
+    // 日程は 5 ラウンドのサークル法。random を渡すことでラウンド順をシャッフルし、
+    // 毎シーズン開幕カードや 3 連戦の組み合わせが変わるようにする。
+    final schedule = const ScheduleGenerator().generateForGamesPerTeam(
+      teams,
+      gamesPerTeam,
+      random: random ?? Random(),
+    );
     final controller = SeasonController(
       teams: teams,
       schedule: schedule,
@@ -1144,8 +1149,12 @@ class SeasonController {
       _lastSeasonActiveBullpenIds = null;
     }
 
-    _schedule = const ScheduleGenerator()
-        .generateForGamesPerTeam(teams, _gamesPerTeam);
+    // 次シーズンの日程もラウンド順をシャッフルする（_rotationRandom を使い回し）。
+    _schedule = const ScheduleGenerator().generateForGamesPerTeam(
+      teams,
+      _gamesPerTeam,
+      random: _rotationRandom,
+    );
     _aggregator = SeasonAggregator(teams);
     _results.clear();
     _recentForms.clear();
