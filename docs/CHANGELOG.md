@@ -5,6 +5,65 @@
 
 ---
 
+## 2026-05-28(4) ナビ磨き + ホーム誤タップ防止 + 文言調整 + 日程シャッフル
+
+ナビ再編後の磨き込み。ユーザーレビューでの指摘ベースに 4 件まとめて対応。
+
+### A. 「次の試合へ」エリアを試合タブ以外で非表示
+
+成績・チーム・ショップ・設定タブにいる時、AdvanceBar の「次の試合へ」が押せて
+しまう問題。試合タブ以外では試合進行と無関係なので、ボタンエリアごと隠す方向で
+解消。試合タブの作戦画面ルートにいる時は従来どおり disable のまま。
+
+- `lib/screens/main_season_screen.dart`: `bottomNavigationBar` の Column 内で
+  `if (_selectedIndex == 0)` でガード。`_buildAdvanceBar` 内の `atGameTabRoot`
+  判定は `canPop()` だけに簡略化（試合タブ前提のため）。
+
+### B. ホーム画面の「新規シーズン」誤タップ防止
+
+「続きから」のすぐ下に同じ大きさで並んでいて、誤タップでセーブが消える事故が
+起こりやすかった問題。2 段ガード:
+
+1. **ボタンスタイル**: 「新規シーズン」→「**最初から始める**」にリネーム +
+   `OutlinedButton`（fontSize 16）→ `TextButton`（fontSize 13、grey.600）。
+   間の余白も 16 → 32 で「続きから」と視覚的に切り離し。
+2. **確認ダイアログ**: タイトル「新規シーズン開始」→「**最初から始めますか？**」、
+   警告を**赤背景のアラートボックス**で強調（`Icons.warning_amber_rounded` +
+   「今のチーム・選手・成績はすべて消えて、元には戻せません。」）、確定ボタンを
+   「開始」→「最初から始める」（赤文字）に変更。
+
+既存セーブがない初回起動時はシンプルな試合数選択ダイアログのまま（警告非表示）。
+
+### C. 試合画面の文言調整
+
+- `daily_screen.dart` / `game_result_screen.dart`:
+  - 「ブリザーズ @ フェニックス」→「ブリザーズ **vs** フェニックス」
+  - 「勝者: ブリザーズ」→「**勝利チーム**: ブリザーズ」
+- `scheduled_game.dart` の `toString()` は UI に出ないので据え置き。
+
+### D. シーズン日程をシーズン跨ぎでシャッフル
+
+「開幕戦が毎シーズン必ず ブリザーズ vs フェニックス になる」問題。サークル法で
+決定論的に生成していた 5 ラウンドの順序を Random でシャッフルすることで、
+毎シーズン開幕カードと 3 連戦の組み合わせが変わるように。
+
+- `lib/engine/season/schedule_generator.dart`: `generate` /
+  `generateForGamesPerTeam` に optional な `Random?` を追加。渡された時だけ
+  `rounds.shuffle(random)` でラウンド順をシャッフル。
+- `lib/engine/season/season_controller.dart`:
+  - newSeason factory: `random ?? Random()` を `ScheduleGenerator` に渡す
+  - シーズン跨ぎの `_schedule` 再生成: `_rotationRandom` を流用
+- `bin/measure_*` / `bin/test_*` は `Random` を渡さないので従来どおり決定論的
+  （既存計測スクリプトの数値は影響を受けない、後方互換）
+
+### 検証
+
+- `dart analyze lib/` クリーン（既存 info 4 件のみ）
+- `flutter build apk --debug` 成功
+- `test_persist` / `test_next_season` / `test_games_per_team` 全 PASS
+
+---
+
 ## 2026-05-28(3) ナビゲーション再編 + ショップタブ追加
 
 サブスク購入の入口を作るための準備。NavigationBar に「ショップ」を追加するため、
