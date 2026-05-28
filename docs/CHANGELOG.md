@@ -5,6 +5,56 @@
 
 ---
 
+## 2026-05-28 AdMob インタースティシャル広告の実装（スタブ → 実 SDK 連携）
+
+`DAILY_GATE_PLAN.md` チャンク 5 で残していた「広告 SDK 連携」を実装。
+Android のみ対応、iOS は SPEC 通り後回し。
+
+### 変更
+
+- **パッケージ追加**: `google_mobile_ads: ^6.0.0`（`pubspec.yaml`）
+- **`lib/services/ad_service.dart` (新規)**: インタースティシャル広告の管理シングルトン。
+  - `initialize()`: `MobileAds.instance.initialize()` + 最初の広告を先読み
+  - `showInterstitial({onClosed})`: 先読み済みがあれば表示、無ければ即 onClosed で
+    フォールスルー（試合フローを止めない）。表示後は次回ぶんを自動で先読み
+  - 広告 ID: `kDebugMode` なら Google 公式テスト ID
+    (`ca-app-pub-3940256099942544/1033173712`)、リリースは空文字 + `TODO(admob)`。
+    本番 ID 差し替え忘れでも `load` がエラーになり広告が出ない（≠ 課金事故）安全側
+- **`lib/main.dart`**: 起動時に `AdService.initialize()` を発火（`unawaited` で待たない）
+- **`lib/screens/main_season_screen.dart`**: `_runNextGame` の広告フローを
+  `AdPlaceholderScreen` push → `AdService.showInterstitial` 呼び出しに置換。
+  `Completer` で広告閉了を待ってから `advanceDay` → `markGameViewed` → `DailyScreen` push
+- **`lib/screens/ad_placeholder_screen.dart` 削除**: 3 秒スタブは役目終了。
+  失敗時にスタブを表示する案は「広告が出る時と出ない時で挙動が変わるのは不自然」で不採用
+- **`android/app/src/main/AndroidManifest.xml`**: `com.google.android.gms.ads.APPLICATION_ID`
+  meta-data を追加。値は Google 公式のテスト用 App ID
+  (`ca-app-pub-3940256099942544~3347511713`)。`TODO(admob)` で本番差し替えポイントを明示
+
+### 設計判断
+
+- **広告ロード失敗時はスルー**: shift_kobo 方式と同じ。試合は止めない
+- **先読み**: 起動時 + 表示直後の双方で常に「次の 1 枚」を用意。タップ即表示
+- **広告タイミング**: onboarding 中（自チーム 10 試合未満）と広告消しサブスク
+  購入済みは既存どおりスキップ。判定は呼び出し側（`MainSeasonScreen._runNextGame`）に維持
+- **iOS**: パッケージは両 OS でビルド可能だが、`Info.plist` の `GADApplicationIdentifier`
+  と iOS 用本番 ID 設定は未対応。iOS リリース時に追加
+
+### 検証
+
+- `dart analyze lib/` クリーン（既存 info 4 件のみ、今回の変更由来はゼロ）
+- `flutter build apk --debug` 成功
+- `test_persist` / `test_unlock_gate` 全 PASS
+
+### 残り（広告関連）
+
+- AdMob でのアプリ登録 + 本番広告ユニット ID / App ID 発行
+- 本番 ID 差し替え（`ad_service.dart` の `_productionInterstitialAdUnitIdAndroid` /
+  AndroidManifest の APPLICATION_ID）
+- iOS Info.plist 対応（iOS リリース前）
+- 広告頻度の調整（現状は試合ごとに毎回、onboarding と広告消しサブスク以外）
+
+---
+
 ## 2026-05-27 「遊ゴロ野選」表示修正 + 盗塁の球速依存 + 球数疲労の球速統一 + 1日1試合制約 + 3 種類のサブスクゲート
 
 1 日で広範囲のリアリティ調整 + 収益化フレームの土台作りを実施。詳細は時系列で。

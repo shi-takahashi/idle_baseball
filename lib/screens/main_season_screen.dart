@@ -1,10 +1,12 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../dev/debug_flags.dart';
 import '../engine/engine.dart';
 import '../persistence/auto_saver.dart';
 import '../persistence/save_service.dart';
-import 'ad_placeholder_screen.dart';
+import '../services/ad_service.dart';
 import 'daily_screen.dart';
 import 'home_screen.dart' show SeasonLengthSelector;
 import 'individual_stats_screen.dart';
@@ -135,9 +137,12 @@ class _MainSeasonScreenState extends State<MainSeasonScreen> {
 
     if (shouldShowAd) {
       navigator.popUntil((route) => route.isFirst);
-      await navigator.push(MaterialPageRoute(
-        builder: (_) => const AdPlaceholderScreen(),
-      ));
+      // 先読み済み広告があれば表示、無ければ即 onClosed で試合フローへ。
+      // 失敗時にスタブ画面を出すと「広告が出る時と出ない時がある」が
+      // ユーザーから見て不自然なので、何も出さずスルーする。
+      final completer = Completer<void>();
+      AdService.showInterstitial(onClosed: completer.complete);
+      await completer.future;
       if (!mounted) return;
     }
 

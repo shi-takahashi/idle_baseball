@@ -38,7 +38,8 @@
       "Bash(rmdir /Users/takahashi-sh/Project/idle_baseball/.claude/projects/-Users-takahashi-sh-Project-idle-baseball/memory /Users/takahashi-sh/Project/idle_baseball/.claude/projects/-Users-takahashi-sh-Project-idle-baseball /Users/takahashi-sh/Project/idle_baseball/.claude/projects /Users/takahashi-sh/Project/idle_baseball/.claude)",
       "Bash(awk *)",
       "Bash(wait %1)",
-      "Bash(flutter test *)"
+      "Bash(flutter test *)",
+      "Bash(flutter pub *)"
     ]
   }
 }

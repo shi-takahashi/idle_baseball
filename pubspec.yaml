@@ -38,6 +38,9 @@ dependencies:
   # 永続化用: アプリの documents ディレクトリを取得して save.json を保存する
   path_provider: ^2.1.4
 
+  # AdMob: 試合結果確認前のインタースティシャル広告
+  google_mobile_ads: ^6.0.0
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
