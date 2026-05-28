@@ -45,7 +45,7 @@ class _GameResultScreenState extends State<GameResultScreen>
     final result = widget.gameResult;
     return Scaffold(
       appBar: AppBar(
-        title: Text('${result.awayTeamName} @ ${result.homeTeamName}'),
+        title: Text('${result.awayTeamName} vs ${result.homeTeamName}'),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
         bottom: TabBar(
           controller: _tabController,
@@ -72,7 +72,7 @@ class _GameResultScreenState extends State<GameResultScreen>
                 ScoreBoard(gameResult: result),
                 const SizedBox(height: 16),
                 Text(
-                  result.winner != null ? '勝者: ${result.winner}' : '引き分け',
+                  result.winner != null ? '勝利チーム: ${result.winner}' : '引き分け',
                   style: Theme.of(context).textTheme.titleLarge,
                   textAlign: TextAlign.center,
                 ),

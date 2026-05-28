@@ -128,7 +128,7 @@ class _DailyScreenState extends State<DailyScreen>
         children: [
           // 自チーム試合のヘッダ
           Text(
-            '${myGame.awayTeamName} @ ${myGame.homeTeamName}',
+            '${myGame.awayTeamName} vs ${myGame.homeTeamName}',
             style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
             textAlign: TextAlign.center,
           ),
@@ -136,7 +136,7 @@ class _DailyScreenState extends State<DailyScreen>
           ScoreBoard(gameResult: myGame),
           const SizedBox(height: 12),
           Text(
-            myGame.winner != null ? '勝者: ${myGame.winner}' : '引き分け',
+            myGame.winner != null ? '勝利チーム: ${myGame.winner}' : '引き分け',
             style: Theme.of(context).textTheme.titleMedium,
             textAlign: TextAlign.center,
           ),
