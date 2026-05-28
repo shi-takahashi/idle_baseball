@@ -123,16 +123,19 @@ class _HomeScreenState extends State<HomeScreen> {
                         style: TextStyle(fontSize: 20),
                       ),
                     ),
-                    const SizedBox(height: 16),
-                    OutlinedButton(
+                    const SizedBox(height: 32),
+                    // 誤タップ防止のため、続きからより明らかに目立たないスタイルに。
+                    // 「これまでのデータが消える」破壊的アクションなので、メインの
+                    // 動線（続きから）から視覚的に切り離す。実行時の確認ダイアログ
+                    // でさらに 1 段ガードする。
+                    TextButton(
                       onPressed: _newSeason,
-                      style: OutlinedButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 48, vertical: 16),
+                      style: TextButton.styleFrom(
+                        foregroundColor: Colors.grey.shade600,
                       ),
                       child: const Text(
-                        '新規シーズン',
-                        style: TextStyle(fontSize: 16),
+                        '最初から始める',
+                        style: TextStyle(fontSize: 13),
                       ),
                     ),
                   ] else
@@ -181,15 +184,40 @@ class _NewSeasonDialogState extends State<_NewSeasonDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final isOverwrite = widget.showOverwriteWarning;
     return AlertDialog(
-      title: const Text('新規シーズン開始'),
+      title: Text(isOverwrite ? '最初から始めますか？' : '新規シーズン開始'),
       content: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          if (widget.showOverwriteWarning) ...[
-            const Text('現在のセーブデータは上書きされます。'),
-            const SizedBox(height: 12),
+          if (isOverwrite) ...[
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.red.shade50,
+                border: Border.all(color: Colors.red.shade200),
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(Icons.warning_amber_rounded,
+                      color: Colors.red.shade700, size: 20),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      '今のチーム・選手・成績はすべて消えて、元には戻せません。',
+                      style: TextStyle(
+                        color: Colors.red.shade900,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
           ],
           const Text('1シーズンの試合数:'),
           const SizedBox(height: 8),
@@ -206,7 +234,10 @@ class _NewSeasonDialogState extends State<_NewSeasonDialog> {
         ),
         TextButton(
           onPressed: () => Navigator.of(context).pop(_selected),
-          child: const Text('開始'),
+          style: isOverwrite
+              ? TextButton.styleFrom(foregroundColor: Colors.red.shade700)
+              : null,
+          child: Text(isOverwrite ? '最初から始める' : '開始'),
         ),
       ],
     );
