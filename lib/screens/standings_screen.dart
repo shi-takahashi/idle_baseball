@@ -2,73 +2,57 @@ import 'package:flutter/material.dart';
 
 import '../engine/engine.dart';
 
-/// 順位表画面
+/// 順位表のコンテンツ部分（Scaffold/AppBar なし）。
+///
+/// `StatsScreen` の「順位表」タブから埋め込まれる。再描画は親が
+/// ListenableBuilder でラップする前提なので、ここでは listenable を取らない。
 ///
 /// 現時点の6チームの順位を表示。自チームは太字＋青色ハイライト。
 /// 左：順位 + チーム名（固定） / 右：戦績・打率・本塁打・盗塁・防御率・失策（横スクロール）
-class StandingsScreen extends StatelessWidget {
+class StandingsView extends StatelessWidget {
   final SeasonController controller;
-  final Listenable listenable;
 
-  const StandingsScreen({
-    super.key,
-    required this.controller,
-    required this.listenable,
-  });
+  const StandingsView({super.key, required this.controller});
 
   @override
   Widget build(BuildContext context) {
-    return ListenableBuilder(
-      listenable: listenable,
-      builder: (context, _) {
-        final sorted = controller.standings.sorted;
-        final leader = sorted.isEmpty ? null : sorted.first;
-        final rows = <_StandingsRow>[
-          for (int i = 0; i < sorted.length; i++)
-            _buildRowData(i + 1, sorted[i], leader),
-        ];
+    final sorted = controller.standings.sorted;
+    final leader = sorted.isEmpty ? null : sorted.first;
+    final rows = <_StandingsRow>[
+      for (int i = 0; i < sorted.length; i++)
+        _buildRowData(i + 1, sorted[i], leader),
+    ];
 
-        return Scaffold(
-          appBar: AppBar(
-            title: const Text('順位表'),
-            backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-            automaticallyImplyLeading: false,
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          child: Align(
+            alignment: Alignment.centerLeft,
+            child: Text(
+              'Day ${controller.currentDay} / ${controller.totalDays} 終了時点',
+              style: TextStyle(fontSize: 13, color: Colors.grey.shade700),
+            ),
           ),
-          body: Column(
-            children: [
-              Padding(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                child: Align(
-                  alignment: Alignment.centerLeft,
-                  child: Text(
-                    'Day ${controller.currentDay} / ${controller.totalDays} 終了時点',
-                    style:
-                        TextStyle(fontSize: 13, color: Colors.grey.shade700),
+        ),
+        Expanded(
+          child: SingleChildScrollView(
+            scrollDirection: Axis.vertical,
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildFixedTable(rows),
+                Expanded(
+                  child: SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: _buildScrollTable(rows),
                   ),
                 ),
-              ),
-              Expanded(
-                child: SingleChildScrollView(
-                  scrollDirection: Axis.vertical,
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      _buildFixedTable(rows),
-                      Expanded(
-                        child: SingleChildScrollView(
-                          scrollDirection: Axis.horizontal,
-                          child: _buildScrollTable(rows),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ],
+              ],
+            ),
           ),
-        );
-      },
+        ),
+      ],
     );
   }
 

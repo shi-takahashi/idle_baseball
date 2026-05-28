@@ -5,6 +5,55 @@
 
 ---
 
+## 2026-05-28(3) ナビゲーション再編 + ショップタブ追加
+
+サブスク購入の入口を作るための準備。NavigationBar に「ショップ」を追加するため、
+順位表と個人成績を「成績」タブに統合して 5 タブを維持。
+
+### タブ構成
+
+| 旧 | 新 |
+|---|---|
+| 試合 / 順位表 / 個人成績 / チーム / 設定 | 試合 / **成績** / チーム / **ショップ** / 設定 |
+
+新「成績」タブは内部 TabBar で 3 つに切り替え:
+- 順位表（旧 StandingsScreen）
+- 打撃（旧 IndividualStatsScreen の打撃タブ）
+- 投手（旧 IndividualStatsScreen の投手タブ）
+
+### 変更
+
+- **`lib/screens/standings_screen.dart`**: `StandingsScreen` → `StandingsView` に
+  リネーム。Scaffold/AppBar を剥がして Column のみ返す埋め込み用ウィジェットに
+- **`lib/screens/individual_stats_screen.dart`**: `IndividualStatsScreen` を
+  `BatterRankingView` / `PitcherRankingView` の 2 つに分解。それぞれ Scaffold なし。
+  共通ヘルパ `_topNWithTies` はトップレベル関数化、ランキングカード行は
+  `_BatterRankingCard` / `_PitcherRankingCard` クラスに切り出し
+- **`lib/screens/stats_screen.dart` (新規)**: 3 タブの親 Scaffold + TabBar
+- **`lib/screens/shop_screen.dart` (新規)**: サブスク 3 種類のカード骨組み
+  - 時間スキップ / 広告を消す / 能力の表示と編集（月額 100 円表示）
+  - `DebugFlags` を購読、購入済みフラグでチップ表示に切替
+  - 「購入する」ボタンは `SnackBar('ストアでの購入は近日対応予定です。')` を出すだけ
+  - RevenueCat 連携時にここの `onPressed` を実購入処理に差し替える
+- **`lib/screens/main_season_screen.dart`**: NavigationBar の destinations と
+  IndexedStack の children を 5 タブ新構成に置換。`Icons.storefront` でショップタブ
+
+### UI コピー
+
+`feedback_user_facing_copy` に従いエンドユーザー視点で簡潔に:
+- ショップ最上部: 「お好きなものを選んでお楽しみください。」
+- 時間スキップ: 「試合結果を待たずに、何度でも続けて確認できます。」
+- 広告を消す: 「試合結果の前に流れる広告を非表示にします。」
+- 能力の表示と編集: 「選手の能力を表示し、自由に編集できるようになります。」
+
+### 検証
+
+- `dart analyze lib/` クリーン（既存 info 4 件のみ）
+- `flutter build apk --debug` 成功
+- `test_persist` PASS
+
+---
+
 ## 2026-05-28(2) ローカルプッシュ通知の実装
 
 SPEC §1.1「試合結果の時刻設定・通知」をローカル通知 (`flutter_local_notifications`) で

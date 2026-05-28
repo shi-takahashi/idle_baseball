@@ -11,11 +11,11 @@ import '../services/notification_scheduler.dart';
 import '../services/notification_service.dart';
 import 'daily_screen.dart';
 import 'home_screen.dart' show SeasonLengthSelector;
-import 'individual_stats_screen.dart';
 import 'offseason_screen.dart';
 import 'season_listenable.dart';
 import 'settings_screen.dart';
-import 'standings_screen.dart';
+import 'shop_screen.dart';
+import 'stats_screen.dart';
 import 'strategy_screen.dart';
 import 'team_list_screen.dart';
 
@@ -43,7 +43,7 @@ class _MainSeasonScreenState extends State<MainSeasonScreen> {
   int _selectedIndex = 0;
 
   /// 各タブの Navigator キー
-  /// 順序: 試合 / 順位表 / 個人成績 / チーム / 設定
+  /// 順序: 試合 / 成績 / チーム / ショップ / 設定
   final List<GlobalKey<NavigatorState>> _navigatorKeys = [
     GlobalKey<NavigatorState>(),
     GlobalKey<NavigatorState>(),
@@ -228,24 +228,21 @@ class _MainSeasonScreenState extends State<MainSeasonScreen> {
             ),
             _buildTabNavigator(
               1,
-              StandingsScreen(
+              StatsScreen(
                 controller: widget.controller,
                 listenable: _listenable,
               ),
             ),
             _buildTabNavigator(
               2,
-              IndividualStatsScreen(
+              TeamListScreen(
                 controller: widget.controller,
                 listenable: _listenable,
               ),
             ),
             _buildTabNavigator(
               3,
-              TeamListScreen(
-                controller: widget.controller,
-                listenable: _listenable,
-              ),
+              const ShopScreen(),
             ),
             _buildTabNavigator(
               4,
@@ -273,15 +270,15 @@ class _MainSeasonScreenState extends State<MainSeasonScreen> {
                 ),
                 NavigationDestination(
                   icon: Icon(Icons.leaderboard),
-                  label: '順位表',
-                ),
-                NavigationDestination(
-                  icon: Icon(Icons.bar_chart),
-                  label: '個人成績',
+                  label: '成績',
                 ),
                 NavigationDestination(
                   icon: Icon(Icons.groups_2),
                   label: 'チーム',
+                ),
+                NavigationDestination(
+                  icon: Icon(Icons.storefront),
+                  label: 'ショップ',
                 ),
                 NavigationDestination(
                   icon: Icon(Icons.settings),
