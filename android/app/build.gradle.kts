@@ -6,7 +6,7 @@ plugins {
 }
 
 android {
-    namespace = "io.github.shitakahashi.eyebaseball"
+    namespace = "com.tak_labs.eye_baseball"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
@@ -24,7 +24,7 @@ android {
 
     defaultConfig {
         // 公開後は変更不可。io.github.<GitHubユーザー名>.<アプリ> 形式。
-        applicationId = "io.github.shitakahashi.eyebaseball"
+        applicationId = "com.tak_labs.eye_baseball"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = flutter.minSdkVersion

@@ -1,4 +1,4 @@
-package io.github.shitakahashi.eyebaseball
+package com.tak_labs.eye_baseball
 
 import io.flutter.embedding.android.FlutterActivity
 

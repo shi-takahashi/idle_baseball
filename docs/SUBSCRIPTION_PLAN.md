@@ -100,9 +100,10 @@ Play での販売を始めるための一回限りの登録。コードは触ら
 - [ ] Play Console で**アプリを新規作成**（アプリ名・デフォルト言語・無料/有料=無料）
 - [ ] **決済プロファイル（販売者アカウント）**を作成（Setup → Payments profile）。
       これが無いと有料商品を作れない。住所・銀行口座・税情報の入力あり
-- [x] パッケージ名（applicationId）を確定 = **`io.github.shitakahashi.eyebaseball`**
+- [x] パッケージ名（applicationId）を確定 = **`com.tak_labs.eye_baseball`**
       （2026-05-29 設定済。`build.gradle.kts` の namespace/applicationId・MainActivity の
-      package・ディレクトリまで変更済）。RevenueCat / Play 双方で使う。**公開後は変更不可**
+      package・ディレクトリまで変更済）。所有ドメイン `tak-labs.com` 由来（ハイフンは
+      package 名で不可のため `-`→`_` の正規変換）。RevenueCat / Play 双方で使う。**公開後は変更不可**
 
 **完了の目安**: Play Console に空のアプリ枠があり、販売者プロファイルが「有効」。
 
