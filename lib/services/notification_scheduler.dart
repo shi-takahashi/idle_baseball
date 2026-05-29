@@ -21,11 +21,18 @@ class NotificationScheduler {
   /// - 通知 OFF
   /// - シーズン終了（オフシーズン中は試合がないので通知不要）
   /// - 既に解禁済み（ユーザーは今すぐ見れる状態。通知の意味なし）
+  ///   時間スキップサブスク購入中は常に解禁済み扱いになるため、ここで
+  ///   キャンセルされる（解禁時刻を待つ必要がない人に通知しない）。
   ///
   /// それ以外は `unlockGate.nextUnlockAt(now)` の時刻に予約する。
+  ///
+  /// [hasTimeSkipSub]: 時間スキップサブスク購入済みなら true（`markGameViewed`
+  /// と同様に呼び出し側から渡す。現状は `DebugFlags.instance.hasTimeSkipSub`、
+  /// 将来 RevenueCat 連携で差し替え）。
   static Future<void> reevaluate(
     SeasonController controller, {
     DateTime? now,
+    bool hasTimeSkipSub = false,
   }) async {
     if (!controller.notificationsEnabled) {
       await NotificationService.cancelScheduled();
@@ -36,7 +43,7 @@ class NotificationScheduler {
       return;
     }
     final n = now ?? DateTime.now();
-    final gate = controller.unlockGate();
+    final gate = controller.unlockGate(hasTimeSkipSub: hasTimeSkipSub);
     if (gate.isViewable(n)) {
       // もう見れる状態。通知してもユーザー視点で「もう知ってる」なので不要。
       await NotificationService.cancelScheduled();

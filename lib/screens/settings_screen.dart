@@ -49,7 +49,10 @@ class SettingsScreen extends StatelessWidget {
                     if (v != null) {
                       controller.unlockHour = v;
                       // 解禁時刻が変わったら通知も新時刻で予約し直す。
-                      NotificationScheduler.reevaluate(controller);
+                      NotificationScheduler.reevaluate(
+                        controller,
+                        hasTimeSkipSub: DebugFlags.instance.hasTimeSkipSub,
+                      );
                     }
                   },
                 ),
@@ -65,7 +68,10 @@ class SettingsScreen extends StatelessWidget {
                     // 拒否されても予約は試みる（次回起動時に再評価される）。
                     await NotificationService.requestPermission();
                   }
-                  await NotificationScheduler.reevaluate(controller);
+                  await NotificationScheduler.reevaluate(
+                    controller,
+                    hasTimeSkipSub: DebugFlags.instance.hasTimeSkipSub,
+                  );
                 },
               ),
               const Divider(),
@@ -81,7 +87,7 @@ class SettingsScreen extends StatelessWidget {
                 onChanged: (v) =>
                     controller.offseasonProgressionEnabled = v,
               ),
-              if (kDebugMode) const _DebugSection(),
+              if (kDebugMode) _DebugSection(controller: controller),
             ],
           ),
         );
@@ -114,7 +120,9 @@ class _SectionHeader extends StatelessWidget {
 /// 開発時のみ表示されるデバッグメニュー。
 /// 状態は [DebugFlags] のシングルトンに保持。永続化されず再起動でリセット。
 class _DebugSection extends StatelessWidget {
-  const _DebugSection();
+  final SeasonController controller;
+
+  const _DebugSection({required this.controller});
 
   @override
   Widget build(BuildContext context) {
@@ -148,7 +156,15 @@ class _DebugSection extends StatelessWidget {
                     'ON で 1日1試合制約を無視し、何度でも結果を確認できる扱いにする。',
                   ),
                   value: flags.hasTimeSkipSub,
-                  onChanged: (v) => flags.hasTimeSkipSub = v,
+                  onChanged: (v) {
+                    flags.hasTimeSkipSub = v;
+                    // 時間スキップ ON で「常に解禁中」になるため予約通知は不要、
+                    // OFF に戻したら次回解禁ぶんを予約し直す。
+                    NotificationScheduler.reevaluate(
+                      controller,
+                      hasTimeSkipSub: v,
+                    );
+                  },
                 ),
                 SwitchListTile(
                   title: const Text('広告消しサブスク（仮）'),

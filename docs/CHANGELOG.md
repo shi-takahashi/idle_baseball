@@ -50,6 +50,37 @@
 
 ---
 
+## 2026-05-29(2) 時間スキップサブスク購入時に解禁通知を送らないよう修正
+
+**バグ**: 時間スキップサブスク購入中でも「次の解禁時刻」のプッシュ通知が予約され
+続けていた。時間スキップ購入者は常に解禁中（待つ必要がない）ので、解禁時刻通知は
+無意味かつ煩わしい。
+
+**原因**: `NotificationScheduler.reevaluate` が解禁判定で `controller.unlockGate()`
+を**引数なし**で呼んでおり、`hasTimeSkipSub` がデフォルトの `false` 固定になっていた。
+`UnlockGate.isViewable` は `hasTimeSkipSub == true` なら常に `true`（＝通知キャンセル）
+を返すのに、`false` 固定のせいで「未解禁」と判定され `nextUnlockAt` に予約していた。
+
+**修正**:
+- `lib/services/notification_scheduler.dart`: `reevaluate` に `hasTimeSkipSub`
+  引数を追加し `unlockGate(hasTimeSkipSub: ...)` に伝播（`markGameViewed` と同じ流儀で
+  サービス層を `DebugFlags` から切り離す）。
+- 呼び出し 4 箇所で `DebugFlags.instance.hasTimeSkipSub` を渡す:
+  - `lib/screens/main_season_screen.dart`: 起動時の再評価 / 試合視聴後の再予約
+  - `lib/screens/settings_screen.dart`: 解禁時刻変更時 / 通知 ON/OFF トグル時
+- `lib/screens/settings_screen.dart`: デバッグメニュー「時間スキップサブスク（仮）」
+  トグルでも即 `reevaluate` するよう `_DebugSection` に `controller` を渡した
+  （ON で予約取消・OFF で再予約。すぐ下の「通知の予約状況を確認」で検証できる）。
+
+将来 RevenueCat 連携時は、購入完了/失効のコールバックでも同様に `reevaluate` を
+呼ぶ必要がある（現状の `DebugFlags` 参照を実購入状態に差し替え）。
+
+### 検証
+
+- `flutter analyze`（変更 3 ファイル）クリーン。
+
+---
+
 ## 2026-05-28(4) ナビ磨き + ホーム誤タップ防止 + 文言調整 + 日程シャッフル
 
 ナビ再編後の磨き込み。ユーザーレビューでの指摘ベースに 4 件まとめて対応。

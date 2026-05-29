@@ -93,7 +93,10 @@ class _MainSeasonScreenState extends State<MainSeasonScreen> {
         await NotificationService.requestPermission();
       }
       if (!mounted) return;
-      await NotificationScheduler.reevaluate(widget.controller);
+      await NotificationScheduler.reevaluate(
+        widget.controller,
+        hasTimeSkipSub: DebugFlags.instance.hasTimeSkipSub,
+      );
     });
   }
 
@@ -168,7 +171,10 @@ class _MainSeasonScreenState extends State<MainSeasonScreen> {
       hasTimeSkipSub: DebugFlags.instance.hasTimeSkipSub,
     );
     // 視聴で「直近の解禁を消費」したので、次回ぶんの通知を予約し直す。
-    unawaited(NotificationScheduler.reevaluate(widget.controller));
+    unawaited(NotificationScheduler.reevaluate(
+      widget.controller,
+      hasTimeSkipSub: DebugFlags.instance.hasTimeSkipSub,
+    ));
 
     // 広告 push 後だと navigator state は既に変わっている可能性があるので
     // 念のため取り直す。
