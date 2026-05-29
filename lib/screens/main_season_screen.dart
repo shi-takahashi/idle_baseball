@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../dev/debug_flags.dart';
@@ -395,11 +396,13 @@ class _MainSeasonScreenState extends State<MainSeasonScreen> {
               ],
             ),
           ),
-          IconButton(
-            icon: const Icon(Icons.fast_forward),
-            tooltip: '残り全日を一括シミュレート（デバッグ）',
-            onPressed: ended ? null : _advanceAll,
-          ),
+          // 「残り全日を一括シミュレート」はデバッグ専用。本番ビルドでは出さない。
+          if (kDebugMode)
+            IconButton(
+              icon: const Icon(Icons.fast_forward),
+              tooltip: '残り全日を一括シミュレート（デバッグ）',
+              onPressed: ended ? null : _advanceAll,
+            ),
           ElevatedButton(
             onPressed: canAdvance
                 ? (ended ? _advanceToNextSeason : _goToStrategy)
