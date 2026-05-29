@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 
 import '../engine/engine.dart';
+import '../persistence/onboarding_service.dart';
 import '../persistence/save_service.dart';
 import 'main_season_screen.dart';
+import 'onboarding_screen.dart';
 
 /// ホーム画面
 ///
@@ -16,6 +18,7 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   final _saveService = SaveService();
+  final _onboardingService = OnboardingService();
   bool _checking = true;
   bool _hasSave = false;
 
@@ -80,6 +83,15 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _enterSeason(SeasonController controller) async {
+    // 初回のみオンボーディング（ゲーム説明）を表示してから本編へ
+    if (!await _onboardingService.hasSeen()) {
+      if (!mounted) return;
+      await Navigator.of(context).push(
+        MaterialPageRoute(builder: (_) => const OnboardingScreen()),
+      );
+      await _onboardingService.markSeen();
+    }
+    if (!mounted) return;
     await Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => MainSeasonScreen(controller: controller),
