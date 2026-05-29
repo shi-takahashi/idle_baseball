@@ -1,4 +1,4 @@
-package com.example.idle_baseball
+package io.github.shitakahashi.eyebaseball
 
 import io.flutter.embedding.android.FlutterActivity
 

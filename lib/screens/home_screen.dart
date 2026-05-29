@@ -105,7 +105,7 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('放置系プロ野球'),
+        title: const Text('眼力ベースボール'),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
       ),
       body: Center(
@@ -115,10 +115,19 @@ class _HomeScreenState extends State<HomeScreen> {
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   const Text(
-                    '放置系プロ野球\nGMになろう！',
+                    '眼力ベースボール',
                     style: TextStyle(
-                      fontSize: 28,
+                      fontSize: 32,
                       fontWeight: FontWeight.bold,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    '〜放置シミュレーション〜',
+                    style: TextStyle(
+                      fontSize: 15,
+                      color: Colors.grey.shade600,
                     ),
                     textAlign: TextAlign.center,
                   ),

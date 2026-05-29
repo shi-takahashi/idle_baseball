@@ -40,7 +40,8 @@
       "Bash(wait %1)",
       "Bash(flutter test *)",
       "Bash(flutter pub *)",
-      "Bash(flutter devices *)"
+      "Bash(flutter devices *)",
+      "WebSearch"
     ]
   }
 }
