@@ -69,13 +69,18 @@ launch 後に実データを見て調整してよい。
 実装時に「どの権利がどの画面を解放するか」を見失わないための対応表。
 （Entitlement ID / Product ID は提案。あとで変更可）
 
-| サブスク | Entitlement ID（案） | Play 商品 ID（案） | 既存フラグ | 主な消費箇所 |
+| サブスク | Entitlement ID（案） | Play 商品 ID | 既存フラグ | 主な消費箇所 |
 |---|---|---|---|---|
 | 時間スキップ | `time_skip` | `sub_time_skip` | `DebugFlags.hasTimeSkipSub` | `unlock_gate.dart`（解禁判定）/ 通知 `reevaluate` / 広告判定 |
-| 広告削除 | `ad_removal` | `sub_ad_removal` | `DebugFlags.hasAdRemovalSub` | `main_season_screen._runNextGame`（広告スキップ） |
+| 広告非表示 | `ad_removal` | `sub_ad_hidden` | `DebugFlags.hasAdRemovalSub` | `main_season_screen._runNextGame`（広告スキップ） |
 | 能力開示＆編集 | `ability_disclosure` | `sub_ability_disclosure` | `DebugFlags.hasAbilityDisclosureSub` | `player_detail_screen` / `player_edit_screen` |
 
 価格はいずれも月額 ¥100 程度（SPEC §5）。自動更新サブスク。
+
+> 2026-05-30: Play Console で 3 商品を作成・有効化済み（フェーズ2 完了）。
+> ユーザー表示名「広告削除」→**「広告非表示」**、商品 ID `sub_ad_removal`→**`sub_ad_hidden`** に変更。
+> Entitlement ID（RevenueCat 側、フェーズ3 で作成）は `ad_removal` のまま据え置き。
+> 内部のフラグ名 `hasAdRemovalSub` も変更しない（Play 商品 ID だけが `sub_ad_hidden`）。
 
 ---
 
@@ -110,56 +115,114 @@ Play での販売を始めるための一回限りの登録。コードは触ら
 
 ---
 
-### フェーズ 1: コード下準備 + 署名付きビルドを内部テストへ
+### フェーズ 1: コード下準備 + 署名付きビルドを内部テストへ ✅ 2026-05-30 完了
 
 商品テストの前提となる「課金ライブラリ入り AAB がトラックに乗っている」状態を作る。
 
-- [ ] `pubspec.yaml` に `purchases_flutter` を追加（最新安定版）。`flutter pub get`
+- [x] `pubspec.yaml` に `purchases_flutter` を追加（`^10.2.0`）。`flutter pub get`（2026-05-30 済。`equatable` も間接追加）
 - [x] `android/app/build.gradle.kts` の `applicationId` を確定値に（2026-05-29 済）
-- [ ] **アップロード鍵（署名）の作成**（`keytool` で keystore 生成 → `key.properties` →
-      `build.gradle` の signingConfig）。**keystore はバックアップ必須**（紛失すると更新不可）
-- [ ] `flutter build appbundle --release` が通る
-- [ ] Play App Signing を有効化して AAB を **内部テスト（Internal testing）トラック**にアップロード
-- [ ] アプリの最低限の必須項目（コンテンツのレーティング、データセーフティ、プライバシー
-      ポリシー URL 等）を、内部テスト配信に必要な範囲で埋める
+- [x] **アップロード鍵（署名）** — keytool で新規作成せず、**shift_kobo と同じ keystore を使い回し**
+      （`/Users/takahashi-sh/pdf_mate_key.jks`、エイリアス `pdf_mate`）。`key.properties` を
+      shift_kobo からコピー、`build.gradle.kts`（Kotlin DSL）に signingConfig を配線
+      （key.properties が無い環境では debug 署名にフォールバック）。2026-05-30 済
+- [x] `flutter build appbundle --release` が通る（2026-05-30。release 署名を SHA-256 一致で確認:
+      `FD:F4:1D:5D:5A:27:86:46:8C:66:E3:BE:05:A9:9E:2B:34:C6:3B:07:D1:8B:AC:5C:26:C3:32:FA:93:30:A3:BF`）
+- [x] Play App Signing を有効化して AAB を **内部テスト（Internal testing）トラック**にアップロード
+      （2026-05-30。AABアップロード時に自動有効化、公開済み）
+- [~] アプリの最低限の必須項目（コンテンツのレーティング、データセーフティ、プライバシー
+      ポリシー URL 等）→ **内部テストでは不要だったため未入力。製品版公開時にフェーズ6で対応**
 
 **完了の目安**: 内部テストの招待リンクから実機にインストールできる（中身は現状のままでOK）。
+→ 2026-05-30 実機インストール確認済み。
 
 > メモ: ここで広告 SDK（AdMob 本番 ID）も同時に差し替えるかは別途判断。本計画はサブスクに集中。
 
 ---
 
-### フェーズ 2: Play Console でサブスク商品を 3 つ作る
+### フェーズ 2: Play Console でサブスク商品を 3 つ作る ✅ 2026-05-30 完了
 
-- [ ] 収益化 → 商品 → 定期購入 で 3 商品を作成（上の対応表の Product ID）
-  - [ ] `sub_time_skip`（時間スキップ）
-  - [ ] `sub_ad_removal`（広告削除）
-  - [ ] `sub_ability_disclosure`（能力開示＆編集）
-- [ ] 各商品に**基本プラン**を追加（自動更新 / 請求期間=毎月 / 価格 ¥100 程度）
-- [ ] 必要なら特典（無料トライアル等）を設定（最初は無しでよい）
-- [ ] 各商品を**有効化**
+- [x] 収益化 → 商品 → 定期購入 で 3 商品を作成（上の対応表の Product ID）
+  - [x] `sub_time_skip`（時間スキップ）
+  - [x] `sub_ad_hidden`（広告非表示）← 当初案 `sub_ad_removal` から変更
+  - [x] `sub_ability_disclosure`（能力開示＆編集）
+- [x] 各商品に**基本プラン**を追加（自動更新 / 請求期間=毎月 / 価格 ¥100 程度）
+- [x] 特典（無料トライアル等）は設定せず（最初は無し）
+- [x] 各商品を**有効化**
 
 **完了の目安**: 3 つの定期購入が「有効」。商品 ID を控える。
+→ 2026-05-30 完了。確定した Play 商品 ID は上の対応表を参照（`sub_time_skip` /
+  `sub_ad_hidden` / `sub_ability_disclosure`）。
 
 ---
 
 ### フェーズ 3: RevenueCat 設定（外部サービス・管理画面）
 
-- [ ] RevenueCat アカウント作成 → **Project** 作成
-- [ ] Project に **Google Play アプリ**を追加（パッケージ名を入力）
-- [ ] **Google Cloud サービスアカウント連携**（つまずきポイント①）
-  - [ ] Google Cloud Console でサービスアカウント作成 → **JSON 鍵**をダウンロード
-  - [ ] Play Console の「ユーザーと権限」でそのサービスアカウントに権限付与
-        （財務データ閲覧・注文管理など）
-  - [ ] Google Play Android Developer API を有効化
-  - [ ] （任意）リアルタイム通知（Pub/Sub）を設定すると更新反映が速くなる
-  - [ ] RevenueCat に JSON 鍵をアップロード（**権限反映に最大 24〜36h**。焦らない）
+#### 背景：なぜ 3 者（RevenueCat / Play Console / Google Cloud）が出てくるのか
+
+ユーザーがアプリでサブスクを買うと決済は Google（Play）が処理するが、アプリ側は
+「本当に買ったか / まだ有効か / 解約していないか」を**検証**する必要がある。RevenueCat は
+この検証と「誰が今どの権利を持つか」の管理を肩代わりする外部サービス。そのため RevenueCat は
+Google に「この購入は有効か？」と**問い合わせる権限**を必要とする。
+
+| 登場人物 | 役割（たとえ） | 持っているもの |
+|---|---|---|
+| **Play Console** | お店＋レジ | 商品（3 サブスク）・注文・売上 |
+| **Google Cloud** | Google API の窓口＋「ロボット社員」の在籍場所 | API の仕組み・サービスアカウント |
+| **RevenueCat** | 外部の会員名簿管理人 | ロボットの鍵を使い Google に購入の有効性を問い合わせ |
+
+**なぜ Google Cloud？** Google の購入データ読み取り API は Google Cloud 経由で提供され、
+人間でなく**プログラム（RevenueCat のサーバー）が自動で叩く**には「サービスアカウント」という
+**ロボット用アカウント**が要る。これは Google Cloud で作る。その **JSON 鍵 = ロボットのパスワード**。
+RevenueCat はこの鍵で「あなたの代理（ロボット）」として Google に問い合わせる。
+
+繋ぐのに必要だった 4 つ:
+```
+① ロボットを作る（Google Cloud）— サービスアカウント作成 → JSON 鍵ダウンロード
+② ロボットに権限を与える（Play Console）— 招待 + 売上データの表示 / 注文と定期購入の管理
+③ ロボットが叩く API を開通（Google Cloud）— API を 2 つ有効化（下記）
+④ RevenueCat に鍵を渡す（RevenueCat）— JSON アップロード
+```
+
+#### 実手順（2026-05-30 実施。当初計画からの差分を反映）
+
+- [x] RevenueCat アカウント作成 → **Project** 作成（2026-05-30）
+  - クレカ入力は **Add it later でスキップ**（無料枠: 月間トラッキング収益 $2,500 まで無料、
+    超過分のみ 1%。固定月額なし。無料開始にクレカ不要）
+  - 初回ウィザードの「おすすめセットアップ」（Pro 1 Entitlement + Monthly/Yearly/Lifetime）は
+    **我々の 3 独立サブスク設計と違う**ので採用せず、**Go to dashboard で抜けて手動構築**
+- [x] Project に **Google Play アプリ**を追加（Apps & providers、パッケージ `com.tak_labs.eye_baseball`）
+- [~] **Google Cloud サービスアカウント連携**（つまずきポイント①）
+  - [x] ① Google Cloud Console でサービスアカウント作成 → **JSON 鍵**をダウンロード
+        （鍵は機密。**git 管理下に置かない**）
+  - [x] ③-a **Google Play Android Developer API を有効化**（購入・サブスクを読むため）
+  - [x] ② Play Console「ユーザーと権限」でサービスアカウントを招待 + 権限付与:
+        **「売上データの表示」**（View financial data）+ **「注文と定期購入の管理」**（Manage orders）
+        の 2 つ。「管理者（すべての権限）」は付けない（最小権限）
+  - [x] ③-b **★当初計画に無かった: Cloud Pub/Sub API も有効化が必要**。RevenueCat の
+        save 時に `Google Cloud Pub/Sub API must first be enabled` エラー → Google Cloud の
+        「API とサービス → ライブラリ」で **Cloud Pub/Sub API** を有効化（リアルタイム購入通知用）
+  - [x] ④ RevenueCat に JSON 鍵をアップロード → Save changes → `App updated successfully`
+  - [ ] **★反映待ち**: 認証情報ステータスの 3 チェックのうち `subscriptions API` のみ赤
+        （`inappproducts` / `monetization` は緑）。Play 権限の**反映ラグ**（最大 24〜36h、
+        subscriptions のチェックが最も遅れる）。「Credentials need attention」の **↻ で再チェック**
+        し、緑になるのを待つ。緑になるまで **Product 取り込み（下記）は不可**
 - [ ] **Entitlement** を 3 つ作成（`time_skip` / `ad_removal` / `ability_disclosure`）
-- [ ] **Product** を 3 つ取り込み、それぞれ対応する Entitlement に紐付け
+      ← API 連携なしで作れるので**反映待ちの間に先行作成可**。Entitlement ID は据え置き
+      （広告非表示でも `ad_removal`。変わったのは Play 商品 ID `sub_ad_hidden` だけ）
+- [ ] **Product** を 3 つ取り込み（`sub_time_skip` / `sub_ad_hidden` / `sub_ability_disclosure`）、
+      それぞれ対応する Entitlement に紐付け ← **subscriptions API が緑になってから**
 - [ ] **Offering**（例: `default`）を作り、3 つの Package を載せる
-- [ ] **Android 公開 API キー**を控える（Project settings → API keys）
+      （3 サブスクは独立購入なので、期間違いでなく **3 つの custom package** を 1 Offering に並べる）
+- [ ] **Android 公開 API キー**を控える（Project settings → API keys。フェーズ4 で使用）
 
 **完了の目安**: RevenueCat 上で 3 商品が認識され、Offering にパッケージが並ぶ。
+
+> 当初計画との主な差分:
+> - **Cloud Pub/Sub API の有効化が追加で必要**だった（API は計 2 つ有効化）。当初は
+>   「Pub/Sub はリアルタイム通知の任意設定」と書いていたが、現行 RevenueCat は credentials の
+>   save 自体に Pub/Sub API 有効化を要求する
+> - 初回ウィザードのおすすめ構成は不採用（3 独立サブスク設計に合わないため手動構築）
+> - 広告非表示の Play 商品 ID は `sub_ad_hidden`（Entitlement ID は `ad_removal` のまま）
 
 ---
 
