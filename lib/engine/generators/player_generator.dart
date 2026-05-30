@@ -109,6 +109,9 @@ class PlayerGenerator {
     final speed = _sampleSpeed(age, rookieType, meanBonus: abilityBoost * 2.0);
     final fastball = _sample1to10(age, rookieType, meanBonus: abilityBoost);
     final control = _sample1to10(age, rookieType, meanBonus: abilityBoost);
+    // スタミナ: フラット生成（先発/救援はロール選定側で決め、生成時に偏らせない）。
+    // 試合内の疲労開始球数を決める（at_bat_simulator の疲労カーブ）。
+    final stamina = _sample1to10(age, rookieType, meanBonus: abilityBoost);
 
     // 球種: ストレート + 変化球。各変化球を独立確率で抽選する。保有確率は
     // NPB 2016 の「投じた投手の割合」（images/breaking-ball.png）に準拠。
@@ -182,6 +185,7 @@ class PlayerGenerator {
       shoot: breakingPairs['shoot']?.current,
       cutter: breakingPairs['cutter']?.current,
       sinker: breakingPairs['sinker']?.current,
+      stamina: stamina.current,
       throws: throws,
       meet: meet.current,
       power: power.current,
@@ -196,6 +200,7 @@ class PlayerGenerator {
         'eye': eye.potential,
         'fastball': fastball.potential,
         'control': control.potential,
+        'stamina': stamina.potential,
         for (final e in breakingPairs.entries) e.key: e.value.potential,
         ...hiddenPotentials,
       },
@@ -639,6 +644,7 @@ class PlayerGenerator {
     final speed = _sampleSpeed(age, null, meanBonus: 2.0);
     final fastball = _sample1to10(age, null);
     final control = _sample1to10(age, null, meanBonus: -1.0); // 制球 -1
+    final stamina = _sample1to10(age, null); // スタミナ（日本人と同じフラット生成）
 
     // 変化球抽選（通常投手と同じ枠だが保有率は外国人独自）
     const breakingProbs = <String, double>{
@@ -688,6 +694,7 @@ class PlayerGenerator {
       shoot: breakingPairs['shoot']?.current,
       cutter: breakingPairs['cutter']?.current,
       sinker: breakingPairs['sinker']?.current,
+      stamina: stamina.current,
       throws: throws,
       meet: meet.current,
       power: power.current,
@@ -702,6 +709,7 @@ class PlayerGenerator {
         'eye': eye.potential,
         'fastball': fastball.potential,
         'control': control.potential,
+        'stamina': stamina.potential,
         for (final e in breakingPairs.entries) e.key: e.value.potential,
       },
       potentialAverageSpeed: speed.potential,

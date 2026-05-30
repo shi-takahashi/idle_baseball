@@ -18,6 +18,7 @@ class Player {
   final int? shoot; // シュート（1〜10）、nullの場合は投げられない
   final int? cutter; // カットボール（1〜10）、nullの場合は投げられない
   final int? sinker; // シンカー（1〜10）、nullの場合は投げられない
+  final int? stamina; // スタミナ（1〜10）、投手のみ。試合内の疲労開始球数を決める
 
   // 野手能力
   final int? meet; // ミート力（1〜10）
@@ -49,7 +50,8 @@ class Player {
   // ---- ポテンシャル（隠しパラメータ）----
   // 加齢成長時の上限値。生成時に確定し、UI には表示しない。
   // - potentials: 1〜10 の能力（meet, power, speed, eye, arm, fastball,
-  //   control, slider, curve, splitter, changeup, shoot, cutter, sinker）の上限。
+  //   control, stamina, slider, curve, splitter, changeup, shoot, cutter,
+  //   sinker）の上限。
   //   キーは Player の同名フィールドの文字列。
   // - potentialFielding: 守備力（ポジションごと）の上限。
   // - potentialAverageSpeed: 球速（km/h）の上限。
@@ -80,6 +82,7 @@ class Player {
     this.shoot,
     this.cutter,
     this.sinker,
+    this.stamina,
     this.meet,
     this.power,
     this.speed,
@@ -138,6 +141,7 @@ class Player {
         shoot: shoot,
         cutter: cutter,
         sinker: sinker,
+        stamina: stamina,
         meet: meet,
         power: power,
         speed: speed,
@@ -170,6 +174,7 @@ class Player {
         shoot: shoot,
         cutter: cutter,
         sinker: sinker,
+        stamina: stamina,
         meet: meet,
         power: power,
         speed: speed,
@@ -240,6 +245,7 @@ class Player {
       if (shoot != null) 'shoot': shoot,
       if (cutter != null) 'cutter': cutter,
       if (sinker != null) 'sinker': sinker,
+      if (stamina != null) 'stamina': stamina,
       if (meet != null) 'meet': meet,
       if (power != null) 'power': power,
       if (speed != null) 'speed': speed,
@@ -309,6 +315,7 @@ class Player {
       shoot: json['shoot'] as int?,
       cutter: json['cutter'] as int?,
       sinker: json['sinker'] as int?,
+      stamina: json['stamina'] as int?,
       meet: json['meet'] as int?,
       power: json['power'] as int?,
       speed: json['speed'] as int?,

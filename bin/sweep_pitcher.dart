@@ -10,6 +10,7 @@ import 'package:idle_baseball/engine/engine.dart';
 ///   dart run bin/sweep_pitcher.dart velocity   # 球速 130-160 スイープ
 ///   dart run bin/sweep_pitcher.dart control    # 制球 1-9
 ///   dart run bin/sweep_pitcher.dart fastball   # 伸び 1-9
+///   dart run bin/sweep_pitcher.dart stamina    # スタミナ 1-9（疲労開始球数）
 ///   dart run bin/sweep_pitcher.dart breaking   # 変化球（スライダーを代表）
 ///   dart run bin/sweep_pitcher.dart all
 ///
@@ -34,6 +35,7 @@ void main(List<String> args) {
     int? shoot,
     int? cutter,
     int? sinker,
+    int stamina = 5,
   }) {
     return Player(
       id: 'target',
@@ -49,6 +51,7 @@ void main(List<String> args) {
       shoot: shoot,
       cutter: cutter,
       sinker: sinker,
+      stamina: stamina,
       pitcherRole: PitcherRole.starter,
     );
   }
@@ -111,6 +114,7 @@ void main(List<String> args) {
     int? shoot,
     int? cutter,
     int? sinker,
+    int stamina = 5,
     required int seed,
   }) {
     final starter = makeStarter(
@@ -124,6 +128,7 @@ void main(List<String> args) {
       shoot: shoot,
       cutter: cutter,
       sinker: sinker,
+      stamina: stamina,
     );
     final pitching = makePitchingTeam(starter);
     final batting = makeBattingTeam();
@@ -193,6 +198,7 @@ void main(List<String> args) {
         curve: p.curve ?? 5,
         splitter: p.splitter ?? 5,
         changeup: p.changeup ?? 5,
+        stamina: p.stamina ?? 5,
         seed: 5000 + v,
       );
       final ip = r.outs / 3.0;
@@ -232,6 +238,11 @@ void main(List<String> args) {
   if (target == 'fastball' || target == 'all') {
     runSweep('伸び（ストレートの質）', abilityValues,
         (v) => makeStarter(fastball: v), '伸び');
+  }
+  if (target == 'stamina' || target == 'all') {
+    // スタミナは疲労開始球数（1=50球〜10=100球）。先発が深いイニングまで投げると
+    // 差が出る。低スタミナは中盤で崩れ ERA 悪化・IP 減になるはず。
+    runSweep('スタミナ', abilityValues, (v) => makeStarter(stamina: v), 'スタ');
   }
   if (target == 'slider' || target == 'all') {
     runSweep('スライダー', abilityValues, (v) => makeStarter(slider: v), 'SL');

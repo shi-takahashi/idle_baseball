@@ -109,6 +109,7 @@ class PlayerAging {
       shoot: adjust1to10('shoot', p.shoot),
       cutter: adjust1to10('cutter', p.cutter),
       sinker: adjust1to10('sinker', p.sinker),
+      stamina: adjust1to10('stamina', p.stamina),
       meet: adjust1to10('meet', p.meet),
       power: adjust1to10('power', p.power),
       speed: adjust1to10('speed', p.speed),

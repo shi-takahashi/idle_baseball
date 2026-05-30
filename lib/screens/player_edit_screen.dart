@@ -35,6 +35,7 @@ class _PlayerEditScreenState extends State<PlayerEditScreen> {
   // 投手能力（1〜10）
   late int _control;
   late int _fastball;
+  late int _stamina;
 
   // 球種（null = 投げない）
   late int? _slider;
@@ -92,6 +93,7 @@ class _PlayerEditScreenState extends State<PlayerEditScreen> {
 
     _control = p.control ?? 5;
     _fastball = p.fastball ?? 5;
+    _stamina = p.stamina ?? 5;
 
     _slider = p.slider;
     _curve = p.curve;
@@ -405,6 +407,7 @@ class _PlayerEditScreenState extends State<PlayerEditScreen> {
           const SizedBox(height: 8),
           _Slider1to10(label: '伸び', value: _fastball, onChanged: (v) => setState(() => _fastball = v)),
           _Slider1to10(label: '制球', value: _control, onChanged: (v) => setState(() => _control = v)),
+          _Slider1to10(label: 'スタミナ', value: _stamina, onChanged: (v) => setState(() => _stamina = v)),
         ],
       ),
       const SizedBox(height: 8),
@@ -573,6 +576,7 @@ class _PlayerEditScreenState extends State<PlayerEditScreen> {
       shoot: _isPitcher ? _shoot : null,
       cutter: _isPitcher ? _cutter : null,
       sinker: _isPitcher ? _sinker : null,
+      stamina: _isPitcher ? _stamina : null,
       // 打撃（投手も野手も持つ）
       meet: _meet,
       power: _power,

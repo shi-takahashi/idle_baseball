@@ -561,12 +561,26 @@ class AtBatSimulator {
 
   // === 疲労システム ===
 
-  // 疲労カーブ（全投手共通）。2026-05-17: スタミナを能力パラメータとして廃止し、
-  // 投手ごとの差をなくして一律カーブにした。80球から疲労が出始め、140球で完全疲労
-  // （ランプ60球）。100球時点の疲労度は (100-80)/60 ≒ 0.33。「プロは皆100球前後を
-  // 投げられ、引っ張りすぎると打たれる」をこの一律カーブで表現する。
-  static const int _baseFatigueStartPitches = 80;
-  static const int _baseFullFatiguePitches = 140;
+  // 疲労カーブ。2026-05-30: スタミナ能力を再導入し、疲労の「開始球数」を投手ごとに
+  // 変える（ランプ幅は 60 球で固定）。スタミナ1=50球開始 / 10=100球開始。スタミナ5≒78球で
+  // ほぼ従来（80球）＝リーグ平均を維持しつつ、エースは終盤も保ち低スタミナは中盤で崩れる。
+  // 「序盤は良いのに 5 回頃に打たれて降板する → スタミナ不足 → 抑え向き」という推測材料。
+  // 端は明確に離し隣接は曖昧にする非線形テーブル（feedback_parameter_influence）。
+  // スタミナ null（旧データ等）は 5 相当（78球）にフォールバック。
+  static const Map<int, int> _fatigueStartByStamina = {
+    1: 50,
+    2: 58,
+    3: 65,
+    4: 72,
+    5: 78,
+    6: 83,
+    7: 88,
+    8: 92,
+    9: 96,
+    10: 100,
+  };
+  static const int _fatigueRampPitches = 60; // 開始 → 完全疲労 までの球数（固定）
+  static const int _defaultFatigueStartPitches = 78; // スタミナ未設定時（≒ スタミナ5）
 
   // 球種ごとの疲労影響度（0.0〜1.0、高いほど疲労の影響を受けやすい）
   // スプリット: 最大、スライダー: 高、カーブ: 中、チェンジアップ: 低、ストレート: 低
@@ -624,11 +638,14 @@ class AtBatSimulator {
     _errorSimulator = ErrorSimulator(random: _random);
   }
 
-  /// 疲労度を計算（0.0〜1.0）。全投手共通カーブ（80球開始・140球完全疲労）。
-  /// pitchCount: 現在の投球数
-  double _calculateFatigue(int pitchCount) {
-    const fatigueStart = _baseFatigueStartPitches;
-    const fullFatigue = _baseFullFatiguePitches;
+  /// 疲労度を計算（0.0〜1.0）。スタミナで疲労開始球数が変わる（ランプ幅60球固定）。
+  /// pitchCount: 現在の投球数 / stamina: 投手のスタミナ（1〜10、null は 5 相当）
+  double _calculateFatigue(int pitchCount, int? stamina) {
+    final fatigueStart = stamina == null
+        ? _defaultFatigueStartPitches
+        : (_fatigueStartByStamina[stamina.clamp(1, 10)] ??
+            _defaultFatigueStartPitches);
+    final fullFatigue = fatigueStart + _fatigueRampPitches;
 
     if (pitchCount < fatigueStart) {
       return 0.0; // 疲労なし
@@ -1635,8 +1652,8 @@ class AtBatSimulator {
       // 1. 球種・球速を先に決める（盗塁の成否判定で参照するため）。
       // 走者は球種を事前に見えないので、試行確率には影響しないが、捕手が球を受けて
       // 二塁送球するタイミングに球速が効くので成功率には反映される。
-      // 疲労度を計算（投球数に基づく、全投手共通カーブ）
-      final fatigue = _calculateFatigue(currentPitchCount);
+      // 疲労度を計算（投球数 + 投手のスタミナに基づく）
+      final fatigue = _calculateFatigue(currentPitchCount, pitcher.stamina);
       // 直前まで同じ球種を投げた連続数を計算（同球種連続ペナルティ用）
       PitchType? prevPitchType;
       int prevSameStreak = 0;
