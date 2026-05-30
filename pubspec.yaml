@@ -47,6 +47,9 @@ dependencies:
   timezone: ^0.10.0
   flutter_timezone: ^4.0.0
 
+  # サブスク課金（RevenueCat 公式 SDK）: 時間スキップ / 広告削除 / 能力開示＆編集
+  purchases_flutter: ^10.2.0
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

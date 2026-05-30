@@ -41,7 +41,13 @@
       "Bash(flutter test *)",
       "Bash(flutter pub *)",
       "Bash(flutter devices *)",
-      "WebSearch"
+      "WebSearch",
+      "Read(//Users/takahashi-sh/Project/shift_kobo/**)",
+      "Bash(ls -la /Users/takahashi-sh/pdf_mate_key.jks)",
+      "Bash(cat android/.gitignore)",
+      "Bash(grep -nE 'key.properties|\\\\.jks|\\\\.keystore|keystore' .gitignore android/.gitignore)",
+      "Bash(curl -s \"https://pub.dev/api/packages/purchases_flutter\")",
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\('latest:', d['latest']['version']\\)\")"
     ]
   }
 }
