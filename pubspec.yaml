@@ -16,7 +16,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
 # In Windows, build-name is used as the major, minor, and patch parts
 # of the product and file versions while build-number is used as the build suffix.
-version: 1.0.0+1
+version: 1.0.0+2
 
 environment:
   sdk: ^3.11.4
@@ -49,6 +49,9 @@ dependencies:
 
   # サブスク課金（RevenueCat 公式 SDK）: 時間スキップ / 広告削除 / 能力開示＆編集
   purchases_flutter: ^10.2.0
+
+  # サブスク管理・解約画面（Play の定期購入画面）を外部ブラウザで開くのに使用
+  url_launcher: ^6.3.0
 
 dev_dependencies:
   flutter_test:

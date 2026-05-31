@@ -75,4 +75,18 @@ class BillingService {
     final info = await Purchases.restorePurchases();
     Entitlements.instance.applyCustomerInfo(info);
   }
+
+  /// サブスク管理・解約画面（Play の定期購入画面）への URL。
+  /// アクティブなサブスクが無い場合や未設定時は null。
+  /// アプリ内から直接解約はできない（ストア仕様）ため、この URL を外部で開いて誘導する。
+  static Future<String?> managementUrl() async {
+    if (!_configured) return null;
+    try {
+      final info = await Purchases.getCustomerInfo();
+      return info.managementURL;
+    } catch (e) {
+      debugPrint('BillingService.managementUrl failed: $e');
+      return null;
+    }
+  }
 }

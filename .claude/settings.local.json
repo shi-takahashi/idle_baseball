@@ -49,7 +49,8 @@
       "Bash(curl -s \"https://pub.dev/api/packages/purchases_flutter\")",
       "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\('latest:', d['latest']['version']\\)\")",
       "WebFetch(domain:www.revenuecat.com)",
-      "Bash(keytool -printcert -jarfile build/app/outputs/bundle/release/app-release.aab)"
+      "Bash(keytool -printcert -jarfile build/app/outputs/bundle/release/app-release.aab)",
+      "Bash(unzip -p build/app/outputs/bundle/release/app-release.aab base/manifest/AndroidManifest.xml)"
     ]
   }
 }

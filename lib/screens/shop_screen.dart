@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:purchases_flutter/purchases_flutter.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../billing/billing_service.dart';
 import '../billing/entitlements.dart';
@@ -66,10 +67,26 @@ class _ShopScreenState extends State<ShopScreen> {
   /// 現在購入処理中の package identifier（多重タップ防止 + スピナー表示用）。
   String? _purchasingId;
 
+  /// サブスク管理・解約画面の URL（アクティブなサブスクがある時のみ非 null）。
+  String? _manageUrl;
+
   @override
   void initState() {
     super.initState();
     _loadOffering();
+    _refreshManageUrl();
+    // 購入・復元・解約で権利が変われば管理 URL の有無も変わるので追従する。
+    Entitlements.instance.addListener(_onEntitlementsChanged);
+  }
+
+  @override
+  void dispose() {
+    Entitlements.instance.removeListener(_onEntitlementsChanged);
+    super.dispose();
+  }
+
+  void _onEntitlementsChanged() {
+    if (mounted) _refreshManageUrl();
   }
 
   Future<void> _loadOffering() async {
@@ -80,6 +97,12 @@ class _ShopScreenState extends State<ShopScreen> {
       _offering = offering;
       _loading = false;
     });
+  }
+
+  Future<void> _refreshManageUrl() async {
+    final url = await BillingService.managementUrl();
+    if (!mounted) return;
+    setState(() => _manageUrl = url);
   }
 
   Future<void> _purchase(Package package) async {
@@ -107,6 +130,19 @@ class _ShopScreenState extends State<ShopScreen> {
     } catch (e) {
       if (!mounted) return;
       _showSnack('復元できませんでした。時間をおいて再度お試しください。');
+    }
+  }
+
+  Future<void> _openManage() async {
+    final url = _manageUrl;
+    if (url == null) return;
+    // アプリ内から直接解約はできない（ストア仕様）ので、Play の定期購入画面を外部で開く。
+    final ok = await launchUrl(
+      Uri.parse(url),
+      mode: LaunchMode.externalApplication,
+    );
+    if (!ok && mounted) {
+      _showSnack('管理画面を開けませんでした。');
     }
   }
 
@@ -153,6 +189,13 @@ class _ShopScreenState extends State<ShopScreen> {
                   child: const Text('購入を復元'),
                 ),
               ),
+              if (_manageUrl != null)
+                Center(
+                  child: TextButton(
+                    onPressed: _openManage,
+                    child: const Text('サブスクを管理・解約'),
+                  ),
+                ),
             ],
           );
         },
