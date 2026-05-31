@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
+import '../billing/entitlements.dart';
 import '../dev/debug_flags.dart';
 import '../engine/engine.dart';
 import '../services/notification_scheduler.dart';
@@ -51,7 +52,7 @@ class SettingsScreen extends StatelessWidget {
                       // 解禁時刻が変わったら通知も新時刻で予約し直す。
                       NotificationScheduler.reevaluate(
                         controller,
-                        hasTimeSkipSub: DebugFlags.instance.hasTimeSkipSub,
+                        hasTimeSkipSub: Entitlements.instance.hasTimeSkipSub,
                       );
                     }
                   },
@@ -70,7 +71,7 @@ class SettingsScreen extends StatelessWidget {
                   }
                   await NotificationScheduler.reevaluate(
                     controller,
-                    hasTimeSkipSub: DebugFlags.instance.hasTimeSkipSub,
+                    hasTimeSkipSub: Entitlements.instance.hasTimeSkipSub,
                   );
                 },
               ),

@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-import '../dev/debug_flags.dart';
+import '../billing/entitlements.dart';
 import '../engine/engine.dart';
 
 /// 選手能力の編集画面
@@ -67,7 +67,7 @@ class _PlayerEditScreenState extends State<PlayerEditScreen> {
 
   /// 能力開示＆編集サブスク購入済みか。OFF だと能力系の編集が無効化され、
   /// 背番号と投手ロールだけが編集可能になる（SPEC §コンセプト / §5）。
-  bool get _disclosed => DebugFlags.instance.hasAbilityDisclosureSub;
+  bool get _disclosed => Entitlements.instance.hasAbilityDisclosureSub;
 
   // 球速の許容範囲。
   // 上限 165 = 試合中の調子+5km の揺らぎを乗せても 170km/h に収まり、
@@ -171,7 +171,7 @@ class _PlayerEditScreenState extends State<PlayerEditScreen> {
   @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
-      listenable: DebugFlags.instance,
+      listenable: Entitlements.instance,
       builder: (context, _) {
         final disclosed = _disclosed;
         return Scaffold(

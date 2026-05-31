@@ -233,26 +233,41 @@ RevenueCat はこの鍵で「あなたの代理（ロボット）」として Go
 
 ---
 
-### フェーズ 4: Flutter コード（購入処理 + フラグ差し替え）
+### フェーズ 4: Flutter コード（購入処理 + フラグ差し替え）✅ 2026-05-31 完了（実機テスト前）
 
 ここで初めて「実際に買えて、機能が解放される」状態になる。
+`flutter analyze` クリーン（自コードの issue 0）。実機での購入テストはフェーズ5。
 
-- [ ] 起動時に `Purchases.configure(PurchasesConfiguration(<Android公開APIキー>))`
-      （`lib/main.dart` 付近。API キーは公開鍵なのでコード同梱で可）
-- [ ] **権利状態の供給源を作る** — RevenueCat の `customerInfo.entitlements.active` を購読し、
-      3 フラグ（`time_skip` / `ad_removal` / `ability_disclosure`）を更新する薄い層。
-      - 既存の `DebugFlags` は**デバッグ上書き用に残す**。本番では「実購入 OR デバッグ ON」で
-        判定するか、本番ビルドでデバッグ層を無効化（`kDebugMode` ガード）
-      - 下流（`unlock_gate` / `_runNextGame` / `player_detail` 等）が読む値が
-        この供給源に切り替わるように配線
-- [ ] ショップ画面（`shop_screen.dart`）を `getOfferings()` ベースに置き換え
-      （静的カード → Offering のパッケージ。価格は RevenueCat から取得した表示価格を使う）
-- [ ] 「購入する」ボタンで `purchasePackage(...)` → 成功/キャンセル/失敗のハンドリング
-- [ ] **「購入を復元」**ボタン（`restorePurchases()`）を設置（再インストール・機種変更対応。
-      ストア審査でも実質必須）
-- [ ] `addCustomerInfoUpdateListener` で更新を受けて UI を再描画
-- [ ] 購入直後・復元直後に通知やゲートを再評価
-      （例: 時間スキップ購入で `NotificationScheduler.reevaluate(..., hasTimeSkipSub: true)`）
+- [x] 起動時に `Purchases.configure(...)`（`lib/main.dart`、`unawaited` で非同期初期化。
+      失敗してもアプリ起動は継続）。実装は `lib/billing/billing_service.dart` の
+      `BillingService.configure()`。Android 公開鍵をコード同梱
+- [x] **権利状態の供給源を作る** — `lib/billing/entitlements.dart` の `Entitlements`
+      （`ChangeNotifier` シングルトン）。`customerInfo.entitlements.active` を見て 3 フラグを更新。
+      - 各 getter は **実購入 OR `DebugFlags`** の OR で返す（本番は DebugFlags が常に false なので
+        実購入のみ効く。`DebugFlags` はデバッグ上書き用に存続、`Entitlements` が再ブロードキャスト）
+      - 下流の**実効読み取り**箇所（`main_season_screen` の広告/通知判定・`strategy_screen` の
+        解禁判定・`player_detail`/`player_edit` の能力開示・`settings` の通知再評価）を
+        すべて `Entitlements.instance` に repoint 済み。デバッグメニューのトグルは `DebugFlags` のまま
+- [x] ショップ画面（`shop_screen.dart`）を `getOfferings()` ベースに置き換え（StatefulWidget 化。
+      価格は `package.storeProduct.priceString` を表示。Offering 取得失敗時は固定文言にフォールバック）
+- [x] 「購入する」ボタンで購入処理 → 成功/キャンセル/失敗をハンドリング
+      （`Purchases.purchase(PurchaseParams.package(...))`。`purchasePackage` は deprecated のため非採用。
+      キャンセルは `PurchasesErrorCode.purchaseCancelledError` で無音、他エラーは SnackBar）
+- [x] **「購入を復元」**ボタン（`restorePurchases()`）を設置
+- [x] `addCustomerInfoUpdateListener` で更新を受けて `Entitlements` 経由で UI 再描画
+- [x] 購入直後・復元直後・起動時取得・解約で通知を再評価
+      （`main_season_screen` が `Entitlements` を購読し `NotificationScheduler.reevaluate` を呼ぶ。
+      reevaluate は冪等なので他権利の変化で呼ばれても無害）
+
+**フェーズ4の新規/変更ファイル:**
+- 新規: `lib/billing/entitlements.dart` / `lib/billing/billing_service.dart`
+- 変更: `lib/main.dart`（configure 呼び出し）/ `lib/screens/shop_screen.dart`（Offering ベースに全面書換）/
+  `main_season_screen` `strategy_screen` `settings_screen` `player_detail_screen` `player_edit_screen`
+  （`DebugFlags` 実効読み取り → `Entitlements` に repoint）
+
+**既知の小課題（フェーズ5 で確認）:**
+- 起動直後ブートの通知再評価は configure 完了前だと一瞬 false で走るが、configure 完了 →
+  `Entitlements` 通知 → 上記 listener で再評価され収束する（時間スキップ既購入者の初回起動のみ）
 
 **完了の目安**: デバッグメニューに頼らず、ショップから購入 → 機能が解放される。
 

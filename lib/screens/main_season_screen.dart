@@ -3,7 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
-import '../dev/debug_flags.dart';
+import '../billing/entitlements.dart';
 import '../engine/engine.dart';
 import '../persistence/auto_saver.dart';
 import '../persistence/save_service.dart';
@@ -96,13 +96,28 @@ class _MainSeasonScreenState extends State<MainSeasonScreen> {
       if (!mounted) return;
       await NotificationScheduler.reevaluate(
         widget.controller,
-        hasTimeSkipSub: DebugFlags.instance.hasTimeSkipSub,
+        hasTimeSkipSub: Entitlements.instance.hasTimeSkipSub,
       );
     });
+
+    // サブスク権利の変化（起動時の RevenueCat 取得・購入・復元・解約）で
+    // 通知を貼り直す。特に時間スキップ購入で解禁通知が不要になる/解約で必要に
+    // なるケースを拾う。reevaluate は現在状態を見て予約/取消する冪等処理なので、
+    // 他権利の変化で呼ばれても無害。
+    Entitlements.instance.addListener(_onEntitlementsChanged);
+  }
+
+  void _onEntitlementsChanged() {
+    if (!mounted) return;
+    unawaited(NotificationScheduler.reevaluate(
+      widget.controller,
+      hasTimeSkipSub: Entitlements.instance.hasTimeSkipSub,
+    ));
   }
 
   @override
   void dispose() {
+    Entitlements.instance.removeListener(_onEntitlementsChanged);
     // 画面を離れる前に未書き込みの編集を確実にディスクへ書き出す
     _autoSaver.flush();
     _autoSaver.dispose();
@@ -138,13 +153,13 @@ class _MainSeasonScreenState extends State<MainSeasonScreen> {
   ///
   /// 広告は以下の場合スキップ:
   ///  - onboarding 中（1シーズン目の最初の 10 試合）
-  ///  - 広告消しサブスク購入済み（現状は [DebugFlags] のフラグで代用）
+  ///  - 広告消しサブスク購入済み（[Entitlements] = 実購入 OR デバッグ上書き）
   void _runNextGame() async {
     if (widget.controller.isSeasonOver) return;
 
     // 広告判定: onboarding 中 or 広告消しサブスクなら広告なし
     final shouldShowAd = !widget.controller.isInOnboarding &&
-        !DebugFlags.instance.hasAdRemovalSub;
+        !Entitlements.instance.hasAdRemovalSub;
 
     if (_selectedIndex != 0) {
       setState(() => _selectedIndex = 0);
@@ -169,12 +184,12 @@ class _MainSeasonScreenState extends State<MainSeasonScreen> {
     // 12h + unlockHour ベースで計算される。
     widget.controller.markGameViewed(
       DateTime.now(),
-      hasTimeSkipSub: DebugFlags.instance.hasTimeSkipSub,
+      hasTimeSkipSub: Entitlements.instance.hasTimeSkipSub,
     );
     // 視聴で「直近の解禁を消費」したので、次回ぶんの通知を予約し直す。
     unawaited(NotificationScheduler.reevaluate(
       widget.controller,
-      hasTimeSkipSub: DebugFlags.instance.hasTimeSkipSub,
+      hasTimeSkipSub: Entitlements.instance.hasTimeSkipSub,
     ));
 
     // 広告 push 後だと navigator state は既に変わっている可能性があるので

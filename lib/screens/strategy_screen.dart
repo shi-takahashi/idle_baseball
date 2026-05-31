@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../dev/debug_flags.dart';
+import '../billing/entitlements.dart';
 import '../engine/engine.dart';
 
 /// 作戦画面（次の試合の自チームの編成を指定する）
@@ -1381,7 +1381,7 @@ class StrategyScreenState extends State<StrategyScreen>
   /// 解禁中なら [tryCommit] してから親に試合実行を依頼する。
   void _onTapStartGame() {
     final now = DateTime.now();
-    final hasTimeSkipSub = DebugFlags.instance.hasTimeSkipSub;
+    final hasTimeSkipSub = Entitlements.instance.hasTimeSkipSub;
     final gate = widget.controller.unlockGate(hasTimeSkipSub: hasTimeSkipSub);
     if (!gate.isViewable(now)) {
       _showLockedDialog(gate.nextUnlockAt(now));

@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../dev/debug_flags.dart';
+import '../billing/entitlements.dart';
 import '../engine/engine.dart';
 import 'player_edit_screen.dart';
 
@@ -23,7 +23,7 @@ class PlayerDetailScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
-      listenable: Listenable.merge([listenable, DebugFlags.instance]),
+      listenable: Listenable.merge([listenable, Entitlements.instance]),
       builder: (context, _) {
         final player = controller.findPlayerById(playerId);
         if (player == null) {
@@ -32,7 +32,7 @@ class PlayerDetailScreen extends StatelessWidget {
             body: const Center(child: Text('選手が見つかりません')),
           );
         }
-        final disclosed = DebugFlags.instance.hasAbilityDisclosureSub;
+        final disclosed = Entitlements.instance.hasAbilityDisclosureSub;
         return Scaffold(
           appBar: AppBar(
             title: Text(player.name),
