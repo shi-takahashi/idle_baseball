@@ -292,7 +292,41 @@ RevenueCat はこの鍵で「あなたの代理（ロボット）」として Go
   - [ ] 時間スキップ購入中は**解禁通知が予約されない**（2026-05-29(2) の修正と整合）
   - [ ] 広告削除購入中は試合前広告が出ない
 
+**ダッシュボードでテスト購入が見つからない時の罠（2026-05-31 ハマった）:**
+- RevenueCat は**アプリ起動ごとに匿名 Customer を1件作る**（購入なしでも）。Overview の Customer 数 ≒
+  テスト起動回数になる。
+- 左の **Customer Lists（Active subscription / Sandbox / Non-subscription / Expired）は
+  フィルタ付きの保存ビュー**で、既定で **Production 環境寄り**に絞られている。**ライセンステスターの
+  テスト購入は Sandbox 環境**扱いになり、これら定型リストから**こぼれて全部 0 件に見える**。
+- 一方 **Overview は全環境を数える**ので「Overview は数があるのにリストは全部空」の食い違いが出る。
+- 対処: リスト上部の **「Filter」を開いて環境/ステータスの絞り込みを外す**（or「+ New list」で
+  無フィルタのリストを作る）と Sandbox の Customer が出る。個別 Customer を開けば購入/解約/失効の
+  履歴タイムラインが見られる。
+- **本番は無関係**: 実ユーザーの購入は Production 環境なので既定リストに普通に出る。フィルタ操作は
+  テスト時だけの話。
+- 補足: Play の「Google developer notifications（Pub/Sub / RTDN）」は **2026-05-31 に接続済み**。
+  これで更新・解約・失効がダッシュボードにリアルタイム反映される（Status ベースの Expired リスト等が
+  実態に追従するようになった）。接続手順は下の「RTDN 接続メモ」参照。
+
 **完了の目安**: 課金導線が一通り破綻なく回る。
+
+**RTDN（リアルタイム デベロッパー通知）接続メモ（2026-05-31 実施）:**
+仕組み: Google Play が購入/更新/解約/失効イベントを **Pub/Sub トピック**に publish → RevenueCat が
+そのトピックを**購読**して受け取る。3 か所（Google Cloud / Play Console / RevenueCat）をまたぐ。
+- **前提**: Pub/Sub トピックは、フェーズ3でサービスアカウント(JSON鍵)を作ったのと**同じ GCP プロジェクト**に作る。
+- Step1: Google Cloud → Pub/Sub → トピック作成（例 `play-rtdn`）。完全名 `projects/<projectId>/topics/play-rtdn`。
+- Step2: その**トピック**の権限に `google-play-developer-notifications@system.gserviceaccount.com` を
+  **Pub/Sub パブリッシャー**で追加。
+  - ★ハマり: **Publisher ロールは「トピック」の権限画面でしか出ない**。サブスクリプション
+    （トピック作成時に自動でできる `play-rtdn-sub` 等）の権限画面では Publisher が出ず、Subscriber/
+    Viewer/Admin/Editor しか無い。トピック側で付けること。
+- Step3: Google Cloud → IAM → **「アクセスを許可」**で RevenueCat 用 SA（JSON鍵の `client_email`）に
+  **Pub/Sub 編集者**を付与。
+  - ★ハマり: その SA はロールを1つも持たないと IAM 一覧に**現れない**ので「行を編集」では辿れない。
+    「アクセスを許可」で新規プリンシパルとしてメールを貼って付与する。
+- Step4: Play Console → 収益化のセットアップ → リアルタイム デベロッパー通知 → トピック名に完全名を入力
+  → 保存 → テスト通知送信（成功＝Step2 の publish 権限 OK）。
+- Step5: RevenueCat → Apps → eye_baseball → Google developer notifications → トピックを選んで Connect to Google。
 
 ---
 
