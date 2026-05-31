@@ -191,7 +191,7 @@ RevenueCat はこの鍵で「あなたの代理（ロボット）」として Go
   - 初回ウィザードの「おすすめセットアップ」（Pro 1 Entitlement + Monthly/Yearly/Lifetime）は
     **我々の 3 独立サブスク設計と違う**ので採用せず、**Go to dashboard で抜けて手動構築**
 - [x] Project に **Google Play アプリ**を追加（Apps & providers、パッケージ `com.tak_labs.eye_baseball`）
-- [~] **Google Cloud サービスアカウント連携**（つまずきポイント①）
+- [x] **Google Cloud サービスアカウント連携**（つまずきポイント①）← 2026-05-31 完了
   - [x] ① Google Cloud Console でサービスアカウント作成 → **JSON 鍵**をダウンロード
         （鍵は機密。**git 管理下に置かない**）
   - [x] ③-a **Google Play Android Developer API を有効化**（購入・サブスクを読むため）
@@ -202,18 +202,25 @@ RevenueCat はこの鍵で「あなたの代理（ロボット）」として Go
         save 時に `Google Cloud Pub/Sub API must first be enabled` エラー → Google Cloud の
         「API とサービス → ライブラリ」で **Cloud Pub/Sub API** を有効化（リアルタイム購入通知用）
   - [x] ④ RevenueCat に JSON 鍵をアップロード → Save changes → `App updated successfully`
-  - [ ] **★反映待ち**: 認証情報ステータスの 3 チェックのうち `subscriptions API` のみ赤
-        （`inappproducts` / `monetization` は緑）。Play 権限の**反映ラグ**（最大 24〜36h、
-        subscriptions のチェックが最も遅れる）。「Credentials need attention」の **↻ で再チェック**
-        し、緑になるのを待つ。緑になるまで **Product 取り込み（下記）は不可**
-- [ ] **Entitlement** を 3 つ作成（`time_skip` / `ad_removal` / `ability_disclosure`）
-      ← API 連携なしで作れるので**反映待ちの間に先行作成可**。Entitlement ID は据え置き
-      （広告非表示でも `ad_removal`。変わったのは Play 商品 ID `sub_ad_hidden` だけ）
-- [ ] **Product** を 3 つ取り込み（`sub_time_skip` / `sub_ad_hidden` / `sub_ability_disclosure`）、
-      それぞれ対応する Entitlement に紐付け ← **subscriptions API が緑になってから**
-- [ ] **Offering**（例: `default`）を作り、3 つの Package を載せる
-      （3 サブスクは独立購入なので、期間違いでなく **3 つの custom package** を 1 Offering に並べる）
-- [ ] **Android 公開 API キー**を控える（Project settings → API keys。フェーズ4 で使用）
+  - [x] **★3 チェックが全て通った（2026-05-31）。原因は反映ラグではなく権限スコープだった。**
+        当初 `subscriptions API` のみ赤（`inappproducts` / `monetization` は青✓）の状態が 30h 続いた。
+        真因: Play の権限を**アプリ単位でしか付けていなかった**こと。`inappproducts`/`monetization` は
+        アプリ単位で閉じる（商品カタログ参照）ので app 権限で通るが、`subscriptions` は**注文・課金
+        （財務）データ**へのアクセスを見ており、Google では財務・注文系の権限は**アカウント単位**での
+        付与が前提。Play Console「ユーザーと権限」→ サービスアカウント →「**アカウントの権限**」タブで
+        「財務データ・注文の表示」「注文と定期購入の管理」を付け、↻ 再チェックで 3 つとも青✓に。
+        ※ 成功チェックはダーク UI で**青い丸✓**（緑ではない）。app 単位の権限は残してよい。
+        ※ 次回 iOS / 別アプリでも同じハマりが起きるので、最初からアカウント権限で付けること。
+- [x] **Entitlement** を 3 つ作成（`time_skip` / `ad_removal` / `ability_disclosure`）← 2026-05-31 完了。
+      Entitlement ID は据え置き（広告非表示でも `ad_removal`。変わったのは Play 商品 ID `sub_ad_hidden` だけ）
+- [x] **Product** を 3 つ取り込み（`sub_time_skip:monthly` / `sub_ad_hidden:monthly` /
+      `sub_ability_disclosure:monthly`）、それぞれ対応する Entitlement に紐付け ← 2026-05-31 完了。
+      3 つとも Published / 1 Entitlement。`:monthly` は Play の base plan ID（`商品ID:base plan` 形式）
+- [x] **Offering** `default` を作り、3 つの custom package を載せた ← 2026-05-31 完了。
+      package identifier は Entitlement と揃えた（`time_skip` / `ad_removal` / `ability_disclosure`）。
+      各 package の Play Store 商品に `:monthly` を紐付け（Test Store 行は空のまま）
+- [x] **Android 公開 API キー**を控えた（`goog_nLTktLlkztwXRpguZSSUMLDCsri`）← 2026-05-31。
+      公開 SDK キーなのでコード同梱・git 管理 OK。Secret key (`sk_`) はアプリに入れない
 
 **完了の目安**: RevenueCat 上で 3 商品が認識され、Offering にパッケージが並ぶ。
 
