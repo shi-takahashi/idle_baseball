@@ -28,11 +28,13 @@ class AdService {
       'ca-app-pub-3940256099942544/4411468910';
 
   // TODO(admob): リリース前に AdMob で発行した本番ユニット ID に差し替える。
-  // 空文字のまま本番ビルドすると `InterstitialAd.load` がエラーになり、
-  // 「広告ロード失敗 → スルー」のパスに落ちるので、本番リリースを忘れて
-  // も誤って課金が発生することはない。
-  static const String _productionInterstitialAdUnitIdAndroid = '';
-  static const String _productionInterstitialAdUnitIdIOS = '';
+  // 【検証用・暫定】release ビルドでも広告非表示サブスクの効果を確認できるよう、
+  // 本番 ID にも Google 公式のテスト ID を入れている（誤タップでも課金されない）。
+  // 本番公開（フェーズ6）の前に必ず実 AdMob ユニット ID へ差し替えること。
+  static const String _productionInterstitialAdUnitIdAndroid =
+      'ca-app-pub-3940256099942544/1033173712';
+  static const String _productionInterstitialAdUnitIdIOS =
+      'ca-app-pub-3940256099942544/4411468910';
 
   /// 現在のビルド・プラットフォームに応じたインタースティシャル広告 ID。
   /// kIsWeb と未サポートプラットフォームでは空文字を返す。

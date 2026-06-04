@@ -23,8 +23,10 @@ class SettingsScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
-      listenable: listenable,
+      // 時間スキップ購入/解約で通知トグルの表示を切り替えるため Entitlements も購読。
+      listenable: Listenable.merge([listenable, Entitlements.instance]),
       builder: (context, _) {
+        final hasTimeSkip = Entitlements.instance.hasTimeSkipSub;
         return Scaffold(
           appBar: AppBar(
             title: const Text('設定'),
@@ -60,20 +62,28 @@ class SettingsScreen extends StatelessWidget {
               ),
               SwitchListTile(
                 title: const Text('結果公開時に通知する'),
-                subtitle: const Text('結果が公開されたらお知らせします。'),
+                subtitle: Text(
+                  hasTimeSkip
+                      ? '時間スキップ中はいつでも結果を確認できるため、通知はありません。'
+                      : '結果が公開されたらお知らせします。',
+                ),
                 value: controller.notificationsEnabled,
-                onChanged: (v) async {
-                  controller.notificationsEnabled = v;
-                  if (v) {
-                    // Android 13+ は OFF → ON の瞬間に権限要求ダイアログを出す。
-                    // 拒否されても予約は試みる（次回起動時に再評価される）。
-                    await NotificationService.requestPermission();
-                  }
-                  await NotificationScheduler.reevaluate(
-                    controller,
-                    hasTimeSkipSub: Entitlements.instance.hasTimeSkipSub,
-                  );
-                },
+                // 時間スキップ中は解禁待ちが無く通知が無意味になるため操作を無効化。
+                // 設定値（notificationsEnabled）は保持し、解約すると元に戻る。
+                onChanged: hasTimeSkip
+                    ? null
+                    : (v) async {
+                        controller.notificationsEnabled = v;
+                        if (v) {
+                          // Android 13+ は OFF → ON の瞬間に権限要求ダイアログを出す。
+                          // 拒否されても予約は試みる（次回起動時に再評価される）。
+                          await NotificationService.requestPermission();
+                        }
+                        await NotificationScheduler.reevaluate(
+                          controller,
+                          hasTimeSkipSub: Entitlements.instance.hasTimeSkipSub,
+                        );
+                      },
               ),
               const Divider(),
               const _SectionHeader(title: 'シーズン進行'),
