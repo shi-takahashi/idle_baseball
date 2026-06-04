@@ -64,6 +64,18 @@ dev_dependencies:
   # rules and activating additional ones.
   flutter_lints: ^6.0.0
 
+  # アプリ起動アイコン生成（assets/icon/app_icon.png から全密度 + アダプティブを生成）。
+  # 元画像は assets/icon/build_icon.sh で作る。再生成: dart run flutter_launcher_icons
+  flutter_launcher_icons: ^0.14.4
+
+# アイコン生成設定（flutter_launcher_icons）。iOS は後フェーズ（SPEC: Android 優先）。
+flutter_launcher_icons:
+  android: true
+  ios: false
+  image_path: "assets/icon/app_icon.png"
+  adaptive_icon_background: "#0f254e"
+  adaptive_icon_foreground: "assets/icon/app_icon_foreground.png"
+
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
 
