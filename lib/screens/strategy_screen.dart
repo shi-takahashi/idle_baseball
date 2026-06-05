@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../billing/entitlements.dart';
 import '../engine/engine.dart';
+import 'help_screen.dart';
 
 /// 作戦画面（次の試合の自チームの編成を指定する）
 ///
@@ -202,7 +203,10 @@ class StrategyScreenState extends State<StrategyScreen> with SingleTickerProvide
             title: const Text('作戦'),
             backgroundColor: Theme.of(context).colorScheme.inversePrimary,
             automaticallyImplyLeading: false,
-            actions: [TextButton(onPressed: c.isSeasonOver ? null : _revertToInitial, child: const Text('元に戻す'))],
+            actions: [
+              TextButton(onPressed: c.isSeasonOver ? null : _revertToInitial, child: const Text('元に戻す')),
+              HelpScreen.appBarAction(context),
+            ],
           ),
           body: c.isSeasonOver
               ? const Center(child: Text('シーズンは終了しました'))

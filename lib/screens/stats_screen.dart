@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../engine/engine.dart';
+import 'help_screen.dart';
 import 'individual_stats_screen.dart';
 import 'standings_screen.dart';
 
@@ -51,6 +52,7 @@ class _StatsScreenState extends State<StatsScreen>
             title: const Text('成績'),
             backgroundColor: Theme.of(context).colorScheme.inversePrimary,
             automaticallyImplyLeading: false,
+            actions: [HelpScreen.appBarAction(context)],
             bottom: TabBar(
               controller: _tabController,
               tabs: const [

@@ -6,6 +6,7 @@ import '../dev/debug_flags.dart';
 import '../engine/engine.dart';
 import '../services/notification_scheduler.dart';
 import '../services/notification_service.dart';
+import 'help_screen.dart';
 
 /// 設定画面
 ///
@@ -32,6 +33,7 @@ class SettingsScreen extends StatelessWidget {
             title: const Text('設定'),
             backgroundColor: Theme.of(context).colorScheme.inversePrimary,
             automaticallyImplyLeading: false,
+            actions: [HelpScreen.appBarAction(context)],
           ),
           body: ListView(
             children: [

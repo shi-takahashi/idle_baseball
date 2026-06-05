@@ -4,6 +4,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../billing/billing_service.dart';
 import '../billing/entitlements.dart';
+import 'help_screen.dart';
 
 /// ショップ画面。3 種類のサブスクリプションを並べる。
 ///
@@ -26,30 +27,15 @@ class _ShopItem {
   /// 購入済みか（[Entitlements] のどのフラグを見るか）。
   final bool Function(Entitlements e) isPurchased;
 
-  const _ShopItem({
-    required this.packageId,
-    required this.title,
-    required this.description,
-    required this.isPurchased,
-  });
+  const _ShopItem({required this.packageId, required this.title, required this.description, required this.isPurchased});
 }
 
 const List<_ShopItem> _items = [
-  _ShopItem(
-    packageId: Entitlements.timeSkipId,
-    title: '時間スキップ',
-    description: '毎日の決まった時間を待たずに、何度でも続けて試合結果を確認できます。',
-    isPurchased: _isTimeSkip,
-  ),
-  _ShopItem(
-    packageId: Entitlements.adRemovalId,
-    title: '広告を消す',
-    description: '試合結果の前に流れる広告を非表示にします。',
-    isPurchased: _isAdRemoval,
-  ),
+  _ShopItem(packageId: Entitlements.timeSkipId, title: '時間スキップ', description: '毎日の決まった時間を待たずに、何度でも続けて試合結果を確認できます。', isPurchased: _isTimeSkip),
+  _ShopItem(packageId: Entitlements.adRemovalId, title: '広告非表示', description: '試合結果の前に流れる広告を非表示にします。', isPurchased: _isAdRemoval),
   _ShopItem(
     packageId: Entitlements.abilityDisclosureId,
-    title: '能力の表示と編集',
+    title: '能力開示＆編集',
     description: '全チーム全選手の能力を表示し、名前も含めた全ての項目を自由に編集できます。',
     isPurchased: _isAbilityDisclosure,
   ),
@@ -137,19 +123,14 @@ class _ShopScreenState extends State<ShopScreen> {
     final url = _manageUrl;
     if (url == null) return;
     // アプリ内から直接解約はできない（ストア仕様）ので、Play の定期購入画面を外部で開く。
-    final ok = await launchUrl(
-      Uri.parse(url),
-      mode: LaunchMode.externalApplication,
-    );
+    final ok = await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
     if (!ok && mounted) {
       _showSnack('管理画面を開けませんでした。');
     }
   }
 
   void _showSnack(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message), duration: const Duration(seconds: 2)),
-    );
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message), duration: const Duration(seconds: 2)));
   }
 
   @override
@@ -159,6 +140,7 @@ class _ShopScreenState extends State<ShopScreen> {
         title: const Text('ショップ'),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
         automaticallyImplyLeading: false,
+        actions: [HelpScreen.appBarAction(context)],
       ),
       body: ListenableBuilder(
         listenable: Entitlements.instance,
@@ -184,17 +166,11 @@ class _ShopScreenState extends State<ShopScreen> {
                 ),
               const SizedBox(height: 8),
               Center(
-                child: TextButton(
-                  onPressed: _purchasingId == null ? _restore : null,
-                  child: const Text('購入を復元'),
-                ),
+                child: TextButton(onPressed: _purchasingId == null ? _restore : null, child: const Text('購入を復元')),
               ),
               if (_manageUrl != null)
                 Center(
-                  child: TextButton(
-                    onPressed: _openManage,
-                    child: const Text('サブスクを管理・解約'),
-                  ),
+                  child: TextButton(onPressed: _openManage, child: const Text('サブスクを管理・解約')),
                 ),
             ],
           );

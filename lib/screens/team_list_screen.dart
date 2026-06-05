@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../engine/engine.dart';
+import 'help_screen.dart';
 import 'player_list_screen.dart';
 import 'team_head_to_head_screen.dart';
 import 'team_info_screen.dart';
@@ -34,6 +35,7 @@ class TeamListScreen extends StatelessWidget {
             title: const Text('チーム'),
             backgroundColor: Theme.of(context).colorScheme.inversePrimary,
             automaticallyImplyLeading: false,
+            actions: [HelpScreen.appBarAction(context)],
           ),
           body: ListView.builder(
             padding: const EdgeInsets.all(8),
