@@ -23,12 +23,7 @@ class StrategyScreen extends StatefulWidget {
   /// `advanceDay` + 結果画面 push を行うコールバック。
   final VoidCallback? onStartGame;
 
-  const StrategyScreen({
-    super.key,
-    required this.controller,
-    required this.listenable,
-    this.onStartGame,
-  });
+  const StrategyScreen({super.key, required this.controller, required this.listenable, this.onStartGame});
 
   @override
   State<StrategyScreen> createState() => StrategyScreenState();
@@ -36,8 +31,7 @@ class StrategyScreen extends StatefulWidget {
 
 /// 親 [MainSeasonScreen] が `GlobalKey<StrategyScreenState>` 経由で
 /// `tryCommit()` を呼べるよう、State クラスは public にしている。
-class StrategyScreenState extends State<StrategyScreen>
-    with SingleTickerProviderStateMixin {
+class StrategyScreenState extends State<StrategyScreen> with SingleTickerProviderStateMixin {
   /// 当日ベンチ入り 26 人の内訳（編成バリデーションで使う）。
   static const int _activeBenchTarget = 8; // ベンチ入り控え野手
   static const int _activeBullpenTarget = 9; // ベンチ入り救援
@@ -47,8 +41,7 @@ class StrategyScreenState extends State<StrategyScreen>
   String _newSlotId() => 'slot-${_slotIdCounter++}';
 
   /// 「スタメン」「ベンチ入り」の 2 タブ。
-  late final TabController _tabController =
-      TabController(length: 3, vsync: this);
+  late final TabController _tabController = TabController(length: 3, vsync: this);
 
   /// 1〜9 番のスロット。投手は通常 [8]（9 番）だがどこでも置ける。
   late List<_Slot> _slots = List.generate(9, (_) => _Slot(id: _newSlotId()));
@@ -61,8 +54,7 @@ class StrategyScreenState extends State<StrategyScreen>
 
   /// 「元に戻す」ボタン用に、画面表示時点（= 編集前）の状態を覚えておく。
   /// `_loadFromCurrent` で更新される。
-  late List<_Slot> _initialSlots =
-      List.generate(9, (_) => _Slot(id: _newSlotId()));
+  late List<_Slot> _initialSlots = List.generate(9, (_) => _Slot(id: _newSlotId()));
   Set<String> _initialActiveBenchIds = {};
   Set<String> _initialActiveBullpenIds = {};
 
@@ -70,8 +62,7 @@ class StrategyScreenState extends State<StrategyScreen>
   /// 試合進行で次の日になったら、自動でフォームを再ロードする判定に使う。
   int _loadedForDay = -1;
 
-  Team get _myTeam =>
-      widget.controller.teams.firstWhere((t) => t.id == widget.controller.myTeamId);
+  Team get _myTeam => widget.controller.teams.firstWhere((t) => t.id == widget.controller.myTeamId);
 
   @override
   void initState() {
@@ -128,9 +119,7 @@ class StrategyScreenState extends State<StrategyScreen>
   /// 起動し、ユーザーが補完する流れ。
   void _loadFromCurrent() {
     final c = widget.controller;
-    if (c.myStrategy == null &&
-        c.currentDay == 0 &&
-        c.previousLineupSnapshot != null) {
+    if (c.myStrategy == null && c.currentDay == 0 && c.previousLineupSnapshot != null) {
       _loadFromPreviousSnapshot();
     } else {
       _loadFromStrategyOrAuto();
@@ -144,22 +133,14 @@ class StrategyScreenState extends State<StrategyScreen>
 
   /// 通常パス: 保存済み作戦 → オート提案の順で読み込む。
   void _loadFromStrategyOrAuto() {
-    final src = widget.controller.myStrategy ??
-        widget.controller.suggestedStrategyForMyTeam();
+    final src = widget.controller.myStrategy ?? widget.controller.suggestedStrategyForMyTeam();
     if (src == null) {
       _slots = List.generate(9, (_) => _Slot(id: _newSlotId()));
       _activeBenchIds = {};
       _activeBullpenIds = {};
       return;
     }
-    _slots = [
-      for (int i = 0; i < 9; i++)
-        _Slot(
-          id: _newSlotId(),
-          player: src.lineup[i],
-          position: _findPositionForPlayer(src.lineup[i], src.alignment),
-        ),
-    ];
+    _slots = [for (int i = 0; i < 9; i++) _Slot(id: _newSlotId(), player: src.lineup[i], position: _findPositionForPlayer(src.lineup[i], src.alignment))];
     _activeBenchIds = src.activeBench.map((p) => p.id).toSet();
     _activeBullpenIds = src.activeBullpen.map((p) => p.id).toSet();
   }
@@ -178,9 +159,7 @@ class StrategyScreenState extends State<StrategyScreen>
           // 投手をそのまま埋めても不適切。null（未選択）にしてユーザーに選ばせる
           // のも 1 案だが、オート提案の SP を初期値として入れた方が操作量が
           // 少なくなるので、ここでは中立提案を流用する。
-          player: snapshot[i].position == FieldPosition.pitcher
-              ? _suggestedStarter()
-              : c.findPlayerById(snapshot[i].playerId),
+          player: snapshot[i].position == FieldPosition.pitcher ? _suggestedStarter() : c.findPlayerById(snapshot[i].playerId),
           position: snapshot[i].position,
         ),
     ];
@@ -204,8 +183,7 @@ class StrategyScreenState extends State<StrategyScreen>
     return src.alignment[FieldPosition.pitcher];
   }
 
-  FieldPosition? _findPositionForPlayer(
-      Player p, Map<FieldPosition, Player> alignment) {
+  FieldPosition? _findPositionForPlayer(Player p, Map<FieldPosition, Player> alignment) {
     for (final e in alignment.entries) {
       if (e.value.id == p.id) return e.key;
     }
@@ -224,46 +202,31 @@ class StrategyScreenState extends State<StrategyScreen>
             title: const Text('作戦'),
             backgroundColor: Theme.of(context).colorScheme.inversePrimary,
             automaticallyImplyLeading: false,
-            actions: [
-              TextButton(
-                onPressed: c.isSeasonOver ? null : _revertToInitial,
-                child: const Text('元に戻す'),
-              ),
-            ],
+            actions: [TextButton(onPressed: c.isSeasonOver ? null : _revertToInitial, child: const Text('元に戻す'))],
           ),
           body: c.isSeasonOver
               ? const Center(child: Text('シーズンは終了しました'))
               : next == null
-                  ? const Center(child: Text('次の試合がありません'))
-                  : Column(
-                      children: [
-                        Padding(
-                          padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
-                          child: _buildNextGameCard(next),
-                        ),
-                        TabBar(
-                          controller: _tabController,
-                          labelColor: Theme.of(context).colorScheme.primary,
-                          labelPadding: EdgeInsets.zero,
-                          tabs: const [
-                            Tab(text: 'スタメン'),
-                            Tab(text: 'ベンチ入り野手'),
-                            Tab(text: 'ベンチ入り投手'),
-                          ],
-                        ),
-                        Expanded(
-                          child: TabBarView(
-                            controller: _tabController,
-                            children: [
-                              _buildStarterTab(),
-                              _buildBenchFieldersTab(),
-                              _buildBenchPitchersTab(),
-                            ],
-                          ),
-                        ),
-                        if (widget.onStartGame != null) _buildStartGameButton(),
+              ? const Center(child: Text('次の試合がありません'))
+              : Column(
+                  children: [
+                    Padding(padding: const EdgeInsets.fromLTRB(12, 12, 12, 0), child: _buildNextGameCard(next)),
+                    TabBar(
+                      controller: _tabController,
+                      labelColor: Theme.of(context).colorScheme.primary,
+                      labelPadding: EdgeInsets.zero,
+                      tabs: const [
+                        Tab(text: 'スタメン'),
+                        Tab(text: 'ベンチ入り野手'),
+                        Tab(text: 'ベンチ入り投手'),
                       ],
                     ),
+                    Expanded(
+                      child: TabBarView(controller: _tabController, children: [_buildStarterTab(), _buildBenchFieldersTab(), _buildBenchPitchersTab()]),
+                    ),
+                    if (widget.onStartGame != null) _buildStartGameButton(),
+                  ],
+                ),
         );
       },
     );
@@ -288,8 +251,7 @@ class StrategyScreenState extends State<StrategyScreen>
         label: const Text('試合結果を確認する'),
         style: ElevatedButton.styleFrom(
           padding: const EdgeInsets.symmetric(vertical: 12),
-          textStyle:
-              const TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+          textStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
         ),
       ),
     );
@@ -313,14 +275,9 @@ class StrategyScreenState extends State<StrategyScreen>
           '${_formatUnlockTime(nextUnlock)}\n'
           'に公開されます。\n\n'
           '※ 無料プレイは 1日1試合の制約です。\n'
-          '時間スキップサブスクを購入すると、何度でも結果を確認できます。',
+          'ショップで時間スキップを購入すると、何度でも結果を確認できます。',
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('閉じる'),
-          ),
-        ],
+        actions: [TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('閉じる'))],
       ),
     );
   }
@@ -339,52 +296,32 @@ class StrategyScreenState extends State<StrategyScreen>
         padding: const EdgeInsets.all(12),
         child: Row(
           children: [
-            Text('Day ${next.day}',
-                style: const TextStyle(
-                    fontSize: 14, fontWeight: FontWeight.bold)),
+            Text('Day ${next.day}', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
             const SizedBox(width: 12),
             Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-              decoration: BoxDecoration(
-                color: isHome ? Colors.deepOrange : Colors.indigo,
-                borderRadius: BorderRadius.circular(10),
-              ),
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+              decoration: BoxDecoration(color: isHome ? Colors.deepOrange : Colors.indigo, borderRadius: BorderRadius.circular(10)),
               child: Text(
                 isHome ? 'HOME' : 'AWAY',
-                style: const TextStyle(
-                    fontSize: 11,
-                    color: Colors.white,
-                    fontWeight: FontWeight.bold),
+                style: const TextStyle(fontSize: 11, color: Colors.white, fontWeight: FontWeight.bold),
               ),
             ),
             const SizedBox(width: 12),
-            const Text('vs',
-                style: TextStyle(fontSize: 13, color: Colors.grey)),
+            const Text('vs', style: TextStyle(fontSize: 13, color: Colors.grey)),
             const SizedBox(width: 6),
             Container(
               width: 22,
               height: 22,
               alignment: Alignment.center,
-              decoration: BoxDecoration(
-                color: opColor,
-                borderRadius: BorderRadius.circular(4),
-              ),
+              decoration: BoxDecoration(color: opColor, borderRadius: BorderRadius.circular(4)),
               child: Text(
                 opponent.shortName,
-                style: const TextStyle(
-                    fontSize: 11,
-                    color: Colors.white,
-                    fontWeight: FontWeight.bold),
+                style: const TextStyle(fontSize: 11, color: Colors.white, fontWeight: FontWeight.bold),
               ),
             ),
             const SizedBox(width: 6),
             Expanded(
-              child: Text(
-                opponent.name,
-                style: const TextStyle(fontSize: 14),
-                overflow: TextOverflow.ellipsis,
-              ),
+              child: Text(opponent.name, style: const TextStyle(fontSize: 14), overflow: TextOverflow.ellipsis),
             ),
           ],
         ),
@@ -397,9 +334,7 @@ class StrategyScreenState extends State<StrategyScreen>
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
       child: Text(
-        widget.controller.myStrategy != null
-            ? '※ 編集内容は「試合開始」/「早送り」を押した時点で確定。次の試合のみ適用され、消化後はオートに戻ります。'
-            : '※ 編集内容は「試合開始」/「早送り」を押した時点で反映されます（現在はオート編成）。',
+        widget.controller.myStrategy != null ? '※ 編集内容は「試合開始」/「早送り」を押した時点で確定。次の試合のみ適用され、消化後はオートに戻ります。' : '※ 編集内容は「試合開始」/「早送り」を押した時点で反映されます（現在はオート編成）。',
         style: const TextStyle(fontSize: 12, color: Colors.blueGrey),
       ),
     );
@@ -411,14 +346,7 @@ class StrategyScreenState extends State<StrategyScreen>
   Widget _buildStarterTab() {
     return SingleChildScrollView(
       padding: const EdgeInsets.all(12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          _buildLineupCard(),
-          const SizedBox(height: 4),
-          _buildEditNote(),
-        ],
-      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [_buildLineupCard(), const SizedBox(height: 4), _buildEditNote()]),
     );
   }
 
@@ -428,14 +356,7 @@ class StrategyScreenState extends State<StrategyScreen>
   Widget _buildBenchFieldersTab() {
     return SingleChildScrollView(
       padding: const EdgeInsets.all(12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          _buildBenchFieldersCard(),
-          const SizedBox(height: 4),
-          _buildEditNote(),
-        ],
-      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [_buildBenchFieldersCard(), const SizedBox(height: 4), _buildEditNote()]),
     );
   }
 
@@ -445,14 +366,7 @@ class StrategyScreenState extends State<StrategyScreen>
   Widget _buildBenchPitchersTab() {
     return SingleChildScrollView(
       padding: const EdgeInsets.all(12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          _buildBullpenCard(),
-          const SizedBox(height: 4),
-          _buildEditNote(),
-        ],
-      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [_buildBullpenCard(), const SizedBox(height: 4), _buildEditNote()]),
     );
   }
 
@@ -524,7 +438,8 @@ class StrategyScreenState extends State<StrategyScreen>
     final count = pool.where((p) => _activeBullpenIds.contains(p.id)).length;
     return _buildRosterCard(
       title: 'ベンチ入り 救援投手',
-      hint: '当日先発を除く全投手から、リリーフ登板する9人を選ぶ。'
+      hint:
+          '当日先発を除く全投手から、リリーフ登板する9人を選ぶ。'
           '右の役割（先発/抑え等）はタップで指定（変更後は継続）。'
           '先発役割の投手はベンチ入りさせても最後の砦としてのみ登板。',
       count: count,
@@ -533,13 +448,7 @@ class StrategyScreenState extends State<StrategyScreen>
     );
   }
 
-  Widget _buildRosterCard({
-    required String title,
-    required String hint,
-    required int count,
-    required int target,
-    required List<Widget> rows,
-  }) {
+  Widget _buildRosterCard({required String title, required String hint, required int count, required int target, required List<Widget> rows}) {
     final ok = count == target;
     return Card(
       margin: EdgeInsets.zero,
@@ -551,22 +460,15 @@ class StrategyScreenState extends State<StrategyScreen>
             Row(
               children: [
                 Expanded(
-                  child: Text(title,
-                      style: const TextStyle(
-                          fontSize: 13, fontWeight: FontWeight.bold)),
+                  child: Text(title, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
                 ),
                 Text(
                   '$count / $target',
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.bold,
-                    color: ok ? Colors.green.shade700 : Colors.red.shade700,
-                  ),
+                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: ok ? Colors.green.shade700 : Colors.red.shade700),
                 ),
               ],
             ),
-            Text(hint,
-                style: const TextStyle(fontSize: 11, color: Colors.blueGrey)),
+            Text(hint, style: const TextStyle(fontSize: 11, color: Colors.blueGrey)),
             const Divider(height: 12),
             ...rows,
           ],
@@ -581,7 +483,8 @@ class StrategyScreenState extends State<StrategyScreen>
     return _buildToggleRow(
       active: active,
       name: p.name,
-      sub: '${_handednessLabel(p)}  ${_positionsLabel(p)}'
+      sub:
+          '${_handednessLabel(p)}  ${_positionsLabel(p)}'
           '${stats.isEmpty ? '' : '  $stats'}',
       onTap: () => _toggleActive(_activeBenchIds, p.id),
     );
@@ -602,36 +505,18 @@ class StrategyScreenState extends State<StrategyScreen>
               onTap: () => _toggleActive(_activeBullpenIds, p.id),
               child: Row(
                 children: [
-                  Icon(
-                    active
-                        ? Icons.check_box
-                        : Icons.check_box_outline_blank,
-                    size: 20,
-                    color: active ? primary : Colors.grey,
-                  ),
+                  Icon(active ? Icons.check_box : Icons.check_box_outline_blank, size: 20, color: active ? primary : Colors.grey),
                   const SizedBox(width: 10),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          p.name,
-                          style: TextStyle(
-                            fontSize: 14,
-                            color: active ? null : Colors.grey.shade600,
-                          ),
-                        ),
+                        Text(p.name, style: TextStyle(fontSize: 14, color: active ? null : Colors.grey.shade600)),
                         Text(
                           '${_handednessLabel(p)}  '
                           '${_pitcherStatsCompact(widget.controller, p)}'
                           '   体力 $fr%',
-                          style: TextStyle(
-                            fontSize: 11,
-                            color: Colors.grey.shade600,
-                            fontFeatures: const [
-                              FontFeature.tabularFigures()
-                            ],
-                          ),
+                          style: TextStyle(fontSize: 11, color: Colors.grey.shade600, fontFeatures: const [FontFeature.tabularFigures()]),
                         ),
                       ],
                     ),
@@ -685,13 +570,9 @@ class StrategyScreenState extends State<StrategyScreen>
                 ListTile(
                   dense: true,
                   leading: Icon(
-                    (p.pitcherRole ?? PitcherRole.middle) == role
-                        ? Icons.radio_button_checked
-                        : Icons.radio_button_unchecked,
+                    (p.pitcherRole ?? PitcherRole.middle) == role ? Icons.radio_button_checked : Icons.radio_button_unchecked,
                     size: 18,
-                    color: (p.pitcherRole ?? PitcherRole.middle) == role
-                        ? Theme.of(context).colorScheme.primary
-                        : Colors.grey,
+                    color: (p.pitcherRole ?? PitcherRole.middle) == role ? Theme.of(context).colorScheme.primary : Colors.grey,
                   ),
                   title: Text(role.displayName),
                   onTap: () => Navigator.of(ctx).pop(role),
@@ -706,13 +587,7 @@ class StrategyScreenState extends State<StrategyScreen>
     widget.controller.setPitcherRole(p.id, picked);
   }
 
-  Widget _buildToggleRow({
-    required bool active,
-    required String name,
-    required String sub,
-    required VoidCallback onTap,
-    Widget? trailing,
-  }) {
+  Widget _buildToggleRow({required bool active, required String name, required String sub, required VoidCallback onTap, Widget? trailing}) {
     final primary = Theme.of(context).colorScheme.primary;
     return InkWell(
       onTap: onTap,
@@ -720,30 +595,16 @@ class StrategyScreenState extends State<StrategyScreen>
         padding: const EdgeInsets.symmetric(vertical: 5),
         child: Row(
           children: [
-            Icon(
-              active ? Icons.check_box : Icons.check_box_outline_blank,
-              size: 20,
-              color: active ? primary : Colors.grey,
-            ),
+            Icon(active ? Icons.check_box : Icons.check_box_outline_blank, size: 20, color: active ? primary : Colors.grey),
             const SizedBox(width: 10),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    name,
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: active ? null : Colors.grey.shade600,
-                    ),
-                  ),
+                  Text(name, style: TextStyle(fontSize: 14, color: active ? null : Colors.grey.shade600)),
                   Text(
                     sub,
-                    style: TextStyle(
-                      fontSize: 11,
-                      color: Colors.grey.shade600,
-                      fontFeatures: const [FontFeature.tabularFigures()],
-                    ),
+                    style: TextStyle(fontSize: 11, color: Colors.grey.shade600, fontFeatures: const [FontFeature.tabularFigures()]),
                   ),
                 ],
               ),
@@ -792,9 +653,7 @@ class StrategyScreenState extends State<StrategyScreen>
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const Text('打順 + 守備配置（長押しドラッグで並び替え）',
-                style: TextStyle(
-                    fontSize: 13, fontWeight: FontWeight.bold)),
+            const Text('打順 + 守備配置（長押しドラッグで並び替え）', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
             const Divider(height: 12),
             ReorderableListView(
               shrinkWrap: true,
@@ -804,12 +663,7 @@ class StrategyScreenState extends State<StrategyScreen>
               buildDefaultDragHandles: false,
               onReorder: _onReorder,
               children: [
-                for (int i = 0; i < _slots.length; i++)
-                  ReorderableDelayedDragStartListener(
-                    key: ValueKey(_slots[i].id),
-                    index: i,
-                    child: _buildSlotRow(i),
-                  ),
+                for (int i = 0; i < _slots.length; i++) ReorderableDelayedDragStartListener(key: ValueKey(_slots[i].id), index: i, child: _buildSlotRow(i)),
               ],
             ),
           ],
@@ -832,19 +686,8 @@ class StrategyScreenState extends State<StrategyScreen>
 
   Widget _buildSlotRow(int index) {
     final slot = _slots[index];
-    final isDup = slot.player != null &&
-        _slots
-                .asMap()
-                .entries
-                .where(
-                    (e) => e.key != index && e.value.player?.id == slot.player!.id)
-                .isNotEmpty;
-    final isPosDup = slot.position != null &&
-        _slots
-                .asMap()
-                .entries
-                .where((e) => e.key != index && e.value.position == slot.position)
-                .isNotEmpty;
+    final isDup = slot.player != null && _slots.asMap().entries.where((e) => e.key != index && e.value.player?.id == slot.player!.id).isNotEmpty;
+    final isPosDup = slot.position != null && _slots.asMap().entries.where((e) => e.key != index && e.value.position == slot.position).isNotEmpty;
 
     // 投手位置と選手タイプの整合性チェック（保存時のバリデーションも担当するが
     // 視覚的にも分かるよう色付け）
@@ -866,11 +709,7 @@ class StrategyScreenState extends State<StrategyScreen>
     // 推測ゲーム成立のため、打撃指標だけでなく出場数・四球・三振・失策まで
     // 1 行に詰めて、スタメン編成の手がかりをひと目で読める形にする。
     final p = slot.player;
-    final statsLine = p == null
-        ? null
-        : (p.isPitcher
-            ? _pitcherStatsCompact(widget.controller, p)
-            : _fielderStatsCompact(widget.controller, p));
+    final statsLine = p == null ? null : (p.isPitcher ? _pitcherStatsCompact(widget.controller, p) : _fielderStatsCompact(widget.controller, p));
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
@@ -883,10 +722,7 @@ class StrategyScreenState extends State<StrategyScreen>
             child: Text(
               '${index + 1}',
               textAlign: TextAlign.center,
-              style: const TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.bold,
-              ),
+              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
             ),
           ),
           Expanded(
@@ -899,8 +735,7 @@ class StrategyScreenState extends State<StrategyScreen>
                     if (slot.player?.isPitcher == true)
                       const Padding(
                         padding: EdgeInsets.only(right: 4),
-                        child: Icon(Icons.sports_baseball,
-                            size: 14, color: Colors.deepPurple),
+                        child: Icon(Icons.sports_baseball, size: 14, color: Colors.deepPurple),
                       ),
                     Flexible(
                       child: Text(
@@ -910,25 +745,15 @@ class StrategyScreenState extends State<StrategyScreen>
                           color: slot.player == null
                               ? Colors.grey
                               : isDup
-                                  ? Colors.red
-                                  : null,
-                          decoration:
-                              isDup ? TextDecoration.underline : null,
+                              ? Colors.red
+                              : null,
+                          decoration: isDup ? TextDecoration.underline : null,
                         ),
                         overflow: TextOverflow.ellipsis,
                       ),
                     ),
                     // 利き手（野手は打席、投手は投げる手）
-                    if (p != null) ...[
-                      const SizedBox(width: 6),
-                      Text(
-                        _handednessLabel(p),
-                        style: TextStyle(
-                          fontSize: 11,
-                          color: Colors.blueGrey.shade400,
-                        ),
-                      ),
-                    ],
+                    if (p != null) ...[const SizedBox(width: 6), Text(_handednessLabel(p), style: TextStyle(fontSize: 11, color: Colors.blueGrey.shade400))],
                     if (statsLine != null && statsLine.isNotEmpty) ...[
                       const SizedBox(width: 8),
                       // 成績は Expanded で「残り幅をすべて」確保する。
@@ -939,11 +764,7 @@ class StrategyScreenState extends State<StrategyScreen>
                       Expanded(
                         child: Text(
                           statsLine,
-                          style: TextStyle(
-                            fontSize: 11,
-                            color: Colors.grey.shade700,
-                            fontFeatures: const [FontFeature.tabularFigures()],
-                          ),
+                          style: TextStyle(fontSize: 11, color: Colors.grey.shade700, fontFeatures: const [FontFeature.tabularFigures()]),
                           overflow: TextOverflow.ellipsis,
                         ),
                       ),
@@ -968,11 +789,7 @@ class StrategyScreenState extends State<StrategyScreen>
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    if (cantField) ...[
-                      Icon(Icons.warning_amber_rounded,
-                          size: 13, color: Colors.orange.shade800),
-                      const SizedBox(width: 2),
-                    ],
+                    if (cantField) ...[Icon(Icons.warning_amber_rounded, size: 13, color: Colors.orange.shade800), const SizedBox(width: 2)],
                     Text(
                       slot.position?.shortName ?? '-',
                       style: TextStyle(
@@ -981,13 +798,11 @@ class StrategyScreenState extends State<StrategyScreen>
                         color: slot.position == null
                             ? Colors.grey
                             : (isPosDup || typeMismatch)
-                                ? Colors.red
-                                : cantField
-                                    ? Colors.orange.shade800
-                                    : null,
-                        decoration: (isPosDup || typeMismatch)
-                            ? TextDecoration.underline
+                            ? Colors.red
+                            : cantField
+                            ? Colors.orange.shade800
                             : null,
+                        decoration: (isPosDup || typeMismatch) ? TextDecoration.underline : null,
                       ),
                     ),
                   ],
@@ -1023,12 +838,7 @@ class StrategyScreenState extends State<StrategyScreen>
     // 投手スロットには全18投手（先発ローテ + 救援）が候補に出る。
     // 先発/中継ぎの区分は固定でなく、ユーザーが全投手から先発を選べる。
     final team = _myTeam;
-    final all = <Player>[
-      ...team.players.take(8),
-      ...team.bench,
-      ...team.startingRotation,
-      ...team.bullpen,
-    ];
+    final all = <Player>[...team.players.take(8), ...team.bench, ...team.startingRotation, ...team.bullpen];
     // 投手スロットの並び（適性グループ内のみ）:
     //   ロール優先度 → 体力降順 → 背番号
     // それ以外のスロットは従来どおり背番号順。
@@ -1070,8 +880,7 @@ class StrategyScreenState extends State<StrategyScreen>
               // 投手スロットは「全候補が投手」なので凡例を出す意味が薄く、かつ
               // 登板不可（中4日不足／体力不足）でグレーアウトされる投手もあるため、
               // 「緑＝投手」は誤解を招く。投手スロットではヘッダーを出さない。
-              if (slotPos != null && !isPitcherSlot)
-                _SectionHeader('緑＝${slotPos.displayName}を守れる選手'),
+              if (slotPos != null && !isPitcherSlot) _SectionHeader('緑＝${slotPos.displayName}を守れる選手'),
               for (final p in all)
                 _PlayerTile(
                   player: p,
@@ -1082,9 +891,7 @@ class StrategyScreenState extends State<StrategyScreen>
                   // 投手スロットだけ「中4日不足／体力不足」で選択不可にする。
                   // 「現在」スロットに既に入っている投手は disable 化しても
                   // 元から選択する意味がないので統一して disable で構わない。
-                  disabledReason: isPitcherSlot && p.isPitcher
-                      ? widget.controller.starterDisabledReason(p.id)
-                      : null,
+                  disabledReason: isPitcherSlot && p.isPitcher ? widget.controller.starterDisabledReason(p.id) : null,
                   onTap: () => Navigator.of(ctx).pop(p),
                 ),
             ],
@@ -1113,11 +920,7 @@ class StrategyScreenState extends State<StrategyScreen>
         // （投手↔野手のタイプ不一致・位置未設定のときだけ _adjustPositionFor が補正）
         final oldPos = _slots[slotIndex].position;
         final newPos = _adjustPositionFor(picked, oldPos);
-        _slots[slotIndex] = _slots[slotIndex].copyWith(
-          player: picked,
-          position: newPos,
-          clearPosition: newPos == null,
-        );
+        _slots[slotIndex] = _slots[slotIndex].copyWith(player: picked, position: newPos, clearPosition: newPos == null);
         // 守備位置が別スロットと衝突したら、旧位置を相手に渡してスワップ
         _swapDisplacedPosition(slotIndex, newPos, oldPos);
       }
@@ -1137,14 +940,7 @@ class StrategyScreenState extends State<StrategyScreen>
         return SafeArea(
           child: ListView(
             shrinkWrap: true,
-            children: [
-              for (final pos in FieldPosition.values)
-                _PositionTile(
-                  position: pos,
-                  player: p,
-                  onTap: () => Navigator.of(ctx).pop(pos),
-                ),
-            ],
+            children: [for (final pos in FieldPosition.values) _PositionTile(position: pos, player: p, onTap: () => Navigator.of(ctx).pop(pos))],
           ),
         );
       },
@@ -1165,15 +961,12 @@ class StrategyScreenState extends State<StrategyScreen>
   /// 入れ替えた相手がそのポジションを守れるとは限らないが、それは
   /// [_buildSlotRow] が「適性なし」を色 + 警告アイコンで示すので、ユーザーは
   /// 気になる場合だけ追加で直せばよい。
-  void _swapDisplacedPosition(
-      int slotIndex, FieldPosition? newPos, FieldPosition? oldPos) {
+  void _swapDisplacedPosition(int slotIndex, FieldPosition? newPos, FieldPosition? oldPos) {
     if (newPos == null) return;
     for (int i = 0; i < _slots.length; i++) {
       if (i == slotIndex) continue;
       if (_slots[i].position == newPos) {
-        _slots[i] = oldPos == null
-            ? _slots[i].copyWith(clearPosition: true)
-            : _slots[i].copyWith(position: oldPos);
+        _slots[i] = oldPos == null ? _slots[i].copyWith(clearPosition: true) : _slots[i].copyWith(position: oldPos);
       }
     }
   }
@@ -1249,12 +1042,7 @@ class StrategyScreenState extends State<StrategyScreen>
       _activeBenchIds = Set.of(_initialActiveBenchIds);
       _activeBullpenIds = Set.of(_initialActiveBullpenIds);
     });
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        duration: Duration(seconds: 2),
-        content: Text('編集前の状態に戻しました'),
-      ),
-    );
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(duration: Duration(seconds: 2), content: Text('編集前の状態に戻しました')));
   }
 
   /// フォームから [NextGameStrategy] を組み立てる。
@@ -1272,25 +1060,15 @@ class StrategyScreenState extends State<StrategyScreen>
       }
       // _slots が保持する Player 参照は選手編集で古くなっている場合があるため、
       // commit 時に controller の最新 Player を id で引き直す。
-      final player =
-          widget.controller.findPlayerById(s.player!.id) ?? s.player!;
+      final player = widget.controller.findPlayerById(s.player!.id) ?? s.player!;
       if (assigned.contains(s.position)) {
-        return (
-          strategy: null,
-          error: '守備位置 ${s.position!.displayName} が重複しています',
-        );
+        return (strategy: null, error: '守備位置 ${s.position!.displayName} が重複しています');
       }
       if (s.position == FieldPosition.pitcher && !player.isPitcher) {
-        return (
-          strategy: null,
-          error: '${i + 1} 番に投手以外を投手位置で指定しています',
-        );
+        return (strategy: null, error: '${i + 1} 番に投手以外を投手位置で指定しています');
       }
       if (s.position != FieldPosition.pitcher && player.isPitcher) {
-        return (
-          strategy: null,
-          error: '${i + 1} 番に投手を野手位置で指定しています',
-        );
+        return (strategy: null, error: '${i + 1} 番に投手を野手位置で指定しています');
       }
       assigned.add(s.position!);
       lineup.add(player);
@@ -1299,33 +1077,27 @@ class StrategyScreenState extends State<StrategyScreen>
       return (strategy: null, error: '打順に重複した選手があります');
     }
     if (assigned.length != FieldPosition.values.length) {
-      final missing = FieldPosition.values
-          .where((p) => !assigned.contains(p))
-          .map((p) => p.displayName)
-          .join('・');
+      final missing = FieldPosition.values.where((p) => !assigned.contains(p)).map((p) => p.displayName).join('・');
       return (strategy: null, error: '未配置のポジション: $missing');
     }
 
     // lineup[i] は _slots[i] と同じ並びで、controller の最新 Player に解決済み。
-    final alignment = <FieldPosition, Player>{
-      for (int i = 0; i < 9; i++) _slots[i].position!: lineup[i],
-    };
+    final alignment = <FieldPosition, Player>{for (int i = 0; i < 9; i++) _slots[i].position!: lineup[i]};
     // 先発投手のゲート（中4日 + 体力100%）。手動指定でも連投・疲労登板は許さない。
     final startingPitcher = alignment[FieldPosition.pitcher]!;
-    final disabledReason =
-        widget.controller.starterDisabledReason(startingPitcher.id);
+    final disabledReason = widget.controller.starterDisabledReason(startingPitcher.id);
     if (disabledReason != null) {
       return (
         strategy: null,
-        error: '${startingPitcher.name} は先発できません（$disabledReason）。'
+        error:
+            '${startingPitcher.name} は先発できません（$disabledReason）。'
             '別の投手を先発に指定してください',
       );
     }
 
     // ---- 当日ベンチ入り（控え野手 / 救援）の確定 ----
     // 選手編集を反映するため id で controller の最新インスタンスに引き直す。
-    Player latest(Player p) =>
-        widget.controller.findPlayerById(p.id) ?? p;
+    Player latest(Player p) => widget.controller.findPlayerById(p.id) ?? p;
     final activeBench = [
       for (final p in _benchFielderPool())
         if (_activeBenchIds.contains(p.id)) latest(p),
@@ -1333,7 +1105,8 @@ class StrategyScreenState extends State<StrategyScreen>
     if (activeBench.length != _activeBenchTarget) {
       return (
         strategy: null,
-        error: 'ベンチ入りタブ: 控え野手は $_activeBenchTarget 人選んでください'
+        error:
+            'ベンチ入りタブ: 控え野手は $_activeBenchTarget 人選んでください'
             '（現在 ${activeBench.length} 人）',
       );
     }
@@ -1344,20 +1117,13 @@ class StrategyScreenState extends State<StrategyScreen>
     if (activeBullpen.length != _activeBullpenTarget) {
       return (
         strategy: null,
-        error: 'ベンチ入りタブ: 救援投手は $_activeBullpenTarget 人選んでください'
+        error:
+            'ベンチ入りタブ: 救援投手は $_activeBullpenTarget 人選んでください'
             '（現在 ${activeBullpen.length} 人）',
       );
     }
 
-    return (
-      strategy: NextGameStrategy(
-        lineup: lineup,
-        alignment: alignment,
-        activeBench: activeBench,
-        activeBullpen: activeBullpen,
-      ),
-      error: null,
-    );
+    return (strategy: NextGameStrategy(lineup: lineup, alignment: alignment, activeBench: activeBench, activeBullpen: activeBullpen), error: null);
   }
 
   /// 現在の編集内容を「確定」する。
@@ -1392,13 +1158,7 @@ class StrategyScreenState extends State<StrategyScreen>
   }
 
   void _showError(String msg) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        duration: const Duration(seconds: 2),
-        content: Text(msg),
-        backgroundColor: Colors.red.shade700,
-      ),
-    );
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(duration: const Duration(seconds: 2), content: Text(msg), backgroundColor: Colors.red.shade700));
   }
 }
 
@@ -1417,17 +1177,8 @@ class _Slot {
 
   _Slot({required this.id, this.player, this.position});
 
-  _Slot copyWith({
-    Player? player,
-    FieldPosition? position,
-    bool clearPlayer = false,
-    bool clearPosition = false,
-  }) {
-    return _Slot(
-      id: id,
-      player: clearPlayer ? null : (player ?? this.player),
-      position: clearPosition ? null : (position ?? this.position),
-    );
+  _Slot copyWith({Player? player, FieldPosition? position, bool clearPlayer = false, bool clearPosition = false}) {
+    return _Slot(id: id, player: clearPlayer ? null : (player ?? this.player), position: clearPosition ? null : (position ?? this.position));
   }
 }
 
@@ -1440,10 +1191,7 @@ class _SectionHeader extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
       color: Colors.grey.shade200,
-      child: Text(
-        label,
-        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
-      ),
+      child: Text(label, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
     );
   }
 }
@@ -1507,23 +1255,17 @@ class _PlayerTile extends StatelessWidget {
     }
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-      decoration: BoxDecoration(
-        color: color,
-        borderRadius: BorderRadius.circular(4),
-      ),
+      decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(4)),
       child: Text(
         label,
-        style: const TextStyle(
-            fontSize: 10, color: Colors.white, fontWeight: FontWeight.bold),
+        style: const TextStyle(fontSize: 10, color: Colors.white, fontWeight: FontWeight.bold),
       ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    final stats = player.isPitcher
-        ? _pitcherStatsLine(controller, player)
-        : _fielderStatsLine(controller, player);
+    final stats = player.isPitcher ? _pitcherStatsLine(controller, player) : _fielderStatsLine(controller, player);
     final subtitle = '${_handednessLabel(player)}  $stats';
     final disabled = disabledReason != null;
 
@@ -1540,20 +1282,12 @@ class _PlayerTile extends StatelessWidget {
           children: [
             Text(
               '体力 $fr%',
-              style: TextStyle(
-                fontSize: 11,
-                color: _freshnessColor(fr),
-                fontWeight: FontWeight.bold,
-              ),
+              style: TextStyle(fontSize: 11, color: _freshnessColor(fr), fontWeight: FontWeight.bold),
             ),
             if (disabled)
               Text(
                 disabledReason!,
-                style: TextStyle(
-                  fontSize: 10,
-                  color: Colors.red.shade700,
-                  fontWeight: FontWeight.bold,
-                ),
+                style: TextStyle(fontSize: 10, color: Colors.red.shade700, fontWeight: FontWeight.bold),
               ),
           ],
         );
@@ -1562,11 +1296,7 @@ class _PlayerTile extends StatelessWidget {
         if (dp != null) {
           trailing = Text(
             slotPosition!.displayName,
-            style: TextStyle(
-              fontSize: 11,
-              color: Colors.green.shade700,
-              fontWeight: FontWeight.bold,
-            ),
+            style: TextStyle(fontSize: 11, color: Colors.green.shade700, fontWeight: FontWeight.bold),
           );
         }
       }
@@ -1574,34 +1304,23 @@ class _PlayerTile extends StatelessWidget {
 
     return Container(
       // 適性あり: 緑の薄いハイライト。先発不可: グレーの薄いハイライトで上書き。
-      color: disabled
-          ? Colors.grey.shade200
-          : (compatible ? Colors.green.shade50 : null),
+      color: disabled ? Colors.grey.shade200 : (compatible ? Colors.green.shade50 : null),
       child: ListTile(
         dense: true,
         enabled: !disabled,
         // 打順絡みはタグで示すので、selected による文字色の微妙な変化は使わない。
         leading: compatible
-            ? Icon(Icons.check_circle,
-                size: 20,
-                color: disabled
-                    ? Colors.grey.shade400
-                    : Colors.green.shade600)
+            ? Icon(Icons.check_circle, size: 20, color: disabled ? Colors.grey.shade400 : Colors.green.shade600)
             : (player.isPitcher
-                ? const Icon(Icons.sports_baseball,
-                    size: 18, color: Colors.deepPurple)
-                : const Icon(Icons.person, size: 18, color: Colors.grey)),
+                  ? const Icon(Icons.sports_baseball, size: 18, color: Colors.deepPurple)
+                  : const Icon(Icons.person, size: 18, color: Colors.grey)),
         title: Row(
           children: [
             Flexible(
               child: Text(
                 player.name,
                 overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontWeight:
-                      compatible ? FontWeight.bold : FontWeight.normal,
-                  color: disabled ? Colors.grey.shade600 : null,
-                ),
+                style: TextStyle(fontWeight: compatible ? FontWeight.bold : FontWeight.normal, color: disabled ? Colors.grey.shade600 : null),
               ),
             ),
             // 外国人マークはカタカナ表記で識別できるため表示しない
@@ -1609,13 +1328,7 @@ class _PlayerTile extends StatelessWidget {
             _buildStatusChip(),
           ],
         ),
-        subtitle: Text(
-          subtitle,
-          style: TextStyle(
-            fontSize: 11,
-            color: disabled ? Colors.grey.shade600 : null,
-          ),
-        ),
+        subtitle: Text(subtitle, style: TextStyle(fontSize: 11, color: disabled ? Colors.grey.shade600 : null)),
         trailing: trailing,
         onTap: disabled ? null : onTap,
       ),
@@ -1651,8 +1364,7 @@ String _fielderStatsLine(SeasonController c, Player p) {
 /// 末尾にロール表示 `[先発]` 等を付ける。ロール表示はピッカーで先発候補を選ぶ
 /// 時の手がかり（試合結果から推測したロールが正しいか即見える）。
 String _pitcherStatsLine(SeasonController c, Player p) {
-  final role =
-      p.pitcherRole != null ? p.pitcherRole!.displayName : '先発';
+  final role = p.pitcherRole != null ? p.pitcherRole!.displayName : '先発';
   final compact = _pitcherStatsCompact(c, p);
   return compact.isEmpty ? '記録なし [$role]' : '$compact [$role]';
 }
@@ -1682,9 +1394,7 @@ String _fielderStatsCompact(SeasonController c, Player p) {
 }
 
 String _formatBatterCompact(BatterSeasonStats s) {
-  final ba = s.atBats == 0
-      ? '-.---'
-      : '.${(s.battingAverage * 1000).round().toString().padLeft(3, '0')}';
+  final ba = s.atBats == 0 ? '-.---' : '.${(s.battingAverage * 1000).round().toString().padLeft(3, '0')}';
   // 「打率」ラベルは省略。"." で始まる小数は文脈で打率と分かる + ReorderableListView
   // 由来の右側余白で表示幅が限られるため、文字数を切り詰めて切れを回避。
   return '$ba 本${s.homeRuns} 点${s.rbi} '
@@ -1729,11 +1439,7 @@ class _PositionTile extends StatelessWidget {
   final Player player;
   final VoidCallback onTap;
 
-  const _PositionTile({
-    required this.position,
-    required this.player,
-    required this.onTap,
-  });
+  const _PositionTile({required this.position, required this.player, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -1741,8 +1447,7 @@ class _PositionTile extends StatelessWidget {
     final isPlayerPitcher = player.isPitcher;
     final compatible = isPitcherPos == isPlayerPitcher;
     // 野手位置で、その守備位置を守れるか（守備適性があるか）。
-    final canField =
-        compatible && !isPitcherPos && player.canPlay(position.defensePosition!);
+    final canField = compatible && !isPitcherPos && player.canPlay(position.defensePosition!);
 
     // 守備力・球速の数値は能力バレなので出さない（SPEC §2.0）。
     // 守備適性の有無のみを質的に示す。
@@ -1782,10 +1487,7 @@ class _PositionTile extends StatelessWidget {
       enabled: compatible,
       leading: Icon(iconData, size: 18, color: iconColor),
       title: Text(position.displayName),
-      trailing: Text(
-        trailingText,
-        style: const TextStyle(fontSize: 11, color: Colors.grey),
-      ),
+      trailing: Text(trailingText, style: const TextStyle(fontSize: 11, color: Colors.grey)),
       onTap: compatible ? onTap : null,
     );
   }

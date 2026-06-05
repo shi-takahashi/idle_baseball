@@ -50,7 +50,23 @@
       "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\('latest:', d['latest']['version']\\)\")",
       "WebFetch(domain:www.revenuecat.com)",
       "Bash(keytool -printcert -jarfile build/app/outputs/bundle/release/app-release.aab)",
-      "Bash(unzip -p build/app/outputs/bundle/release/app-release.aab base/manifest/AndroidManifest.xml)"
+      "Bash(unzip -p build/app/outputs/bundle/release/app-release.aab base/manifest/AndroidManifest.xml)",
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(magick -background none app_icon.svg -resize 1024x1024 app_icon.png)",
+      "Bash(magick app_icon.png -resize 96x96 app_icon_preview.png)",
+      "Bash(magick identify *)",
+      "Bash(pip3 install *)",
+      "Bash(python3 -c \"import cairosvg; print\\('cairosvg OK'\\)\")",
+      "Bash(bash *)",
+      "Bash(magick app_icon_foreground.png -resize 68% -background none -gravity center -extent 1024x1024 _fg_inset.png)",
+      "Bash(magick -size 1024x1024 \"xc:#0f254e\" _fg_inset.png -composite _flat.png)",
+      "Bash(magick -size 1024x1024 xc:none -fill white -draw \"circle 512,512 512,32\" _mask.png)",
+      "Bash(magick _flat.png _mask.png -alpha off -compose CopyOpacity -composite adaptive_preview.png)",
+      "Bash(rm -f _fg_inset.png _flat.png _mask.png)",
+      "Bash(magick app_icon_foreground.png -resize 68% -background none -gravity center -extent 1024x1024 _fg.png)",
+      "Bash(magick -size 1024x1024 \"xc:#0f254e\" _fg.png -composite _flat.png)",
+      "Bash(rm -f _fg.png _flat.png _mask.png)"
     ]
   }
 }
