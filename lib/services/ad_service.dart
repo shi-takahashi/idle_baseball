@@ -27,12 +27,12 @@ class AdService {
   static const String _testInterstitialAdUnitIdIOS =
       'ca-app-pub-3940256099942544/4411468910';
 
-  // TODO(admob): リリース前に AdMob で発行した本番ユニット ID に差し替える。
-  // 【検証用・暫定】release ビルドでも広告非表示サブスクの効果を確認できるよう、
-  // 本番 ID にも Google 公式のテスト ID を入れている（誤タップでも課金されない）。
-  // 本番公開（フェーズ6）の前に必ず実 AdMob ユニット ID へ差し替えること。
+  // 本番のインタースティシャル広告ユニット ID。release ビルドでのみ使用する
+  // （kDebugMode 時は上のテスト ID を使うため、開発中に実広告は表示されない）。
+  // Android は本番 ID へ差し替え済み（2026-06-06）。
+  // iOS は本計画の対象外のため、暫定で Google 公式テスト ID のまま据え置き。
   static const String _productionInterstitialAdUnitIdAndroid =
-      'ca-app-pub-3940256099942544/1033173712';
+      'ca-app-pub-4630894580841955/8688279466';
   static const String _productionInterstitialAdUnitIdIOS =
       'ca-app-pub-3940256099942544/4411468910';
 

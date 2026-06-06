@@ -34,14 +34,14 @@
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
-        <!-- AdMob App ID。現状は Google 公式のテスト用 App ID。
-             TODO(admob): リリース前に AdMob で発行した本番 App ID に差し替える。
-             広告ユニット ID と異なり、App ID は AndroidManifest にハードコードする
-             しかない（kDebugMode で分岐できない）。本番 App ID を AdMob 登録後に
-             この値を置き換える。-->
+        <!-- AdMob App ID（本番）。広告ユニット ID と異なり、App ID は
+             AndroidManifest にハードコードするしかない（kDebugMode で分岐できない）。
+             デバッグビルドでもこの本番 App ID で初期化されるが、実際に表示される
+             広告は ad_service.dart 側が kDebugMode 時にテスト用ユニット ID を使うため
+             誤課金は起きない。-->
         <meta-data
             android:name="com.google.android.gms.ads.APPLICATION_ID"
-            android:value="ca-app-pub-3940256099942544~3347511713"/>
+            android:value="ca-app-pub-4630894580841955~5496129597"/>
         <!-- flutter_local_notifications: 端末再起動後にも予約通知が出るようにする -->
         <receiver
             android:exported="false"
