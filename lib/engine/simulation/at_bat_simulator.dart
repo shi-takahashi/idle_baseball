@@ -328,7 +328,24 @@ class AtBatSimulator {
   // 2026-05-25(3): 球速ボーナス上位帯を再削減しても TOP の K は減らず(変化球の質
   // が支配的)。ベース更に減で全体を抑える。0.045 → 0.038。インプレー機会増に
   // よる打高化は HR テーブルでセット相殺。
-  static const double _baseProbStrikeSwinging = 0.038;
+  // 2026-06-14: 高域の頭打ち（_saturateSwingMiss）導入で平均奪三振がやや下がるため、
+  // ベースを 0.038 → 0.046 に戻し気味にしてリーグ平均 K/9 を ~7 に保つ。閾値以下の
+  // 大多数の球に効くので平均が上がり、閾値超のエリート球は飽和で効きにくい。
+  static const double _baseProbStrikeSwinging = 0.046;
+
+  // 1球あたり空振り率の「頭打ち（逓減）」パラメータ。
+  // 閾値 [_swingMissKnee] を超えたぶんは効きを [_swingMissExcessFactor] 倍に圧縮する。
+  // 一流投手がスタッフを積み上げて空振り率を非現実的に高くする（K/9 13-14）のを抑える。
+  // 閾値以下（リーグ平均的な球）は素通しなので平均奪三振には影響しない。
+  static const double _swingMissKnee = 0.150;
+  static const double _swingMissExcessFactor = 0.42;
+
+  /// 空振り率の高域を逓減させる（飽和）。閾値以下はそのまま、超過分のみ圧縮。
+  static double _saturateSwingMiss(double raw) {
+    if (raw <= _swingMissKnee) return raw;
+    return _swingMissKnee + (raw - _swingMissKnee) * _swingMissExcessFactor;
+  }
+
   static const double _baseProbFoul = 0.195;
   // インプレー確率は残り（= 1 - 上記4つ = 0.24。旧 0.20 から引き上げ）
 
@@ -377,6 +394,10 @@ class AtBatSimulator {
   // 2026-05-23(12): 1シーズン (30登板) でパラメータ通りに収束させるため、上下を
   // 約 30% 拡大。質1〜3の弱い変化球は更に打たれやすく、質8〜10の決め球は
   // 更に打たれにくく。
+  // 変化球の質→空振り寄与。質による差別化はこのテーブルで付け、一流スタッフの
+  // 積み上げ（剛速球＋一流変化球＋多彩な持ち球）の頭打ちは [_saturateSwingMiss] が
+  // 担う（2026-06-14）。テーブル単体を削ると中位投手まで K が落ちるので、差別化は
+  // テーブルで維持し、エリートの上限は飽和で抑える二段構え。
   static const Map<int, double> _breakingQualityTable = {
     1: -0.21,
     2: -0.165,
@@ -891,7 +912,10 @@ class AtBatSimulator {
 
     // 確率を調整
     // ボール率: 球種固有 + 制球力 + パラメータ補正 + 疲労 + 選球眼 + 長打力警戒 + プラトーン
-    final probBall = (_baseProbBall + pitchBallModifier - controlBallModifier - paramScaling * 0.5 + fatigueBallIncrease + eyeBallBonus + powerWalkBonus + platoonBall).clamp(0.20, 0.55);
+    // 球の質（paramScaling）による四球抑制。係数 0.5 は強すぎて、一流変化球を持つ
+    // 投手が制球平均(5)でも BB/9 1.6 等とほぼ四球を出さなくなっていた。四球は基本
+    // 「制球」で決まるべきなので 0.5→0.25 に弱め、スタッフの寄与を半分にする。
+    final probBall = (_baseProbBall + pitchBallModifier - controlBallModifier - paramScaling * 0.25 + fatigueBallIncrease + eyeBallBonus + powerWalkBonus + platoonBall).clamp(0.20, 0.55);
     // 見逃しストライク率: 選球眼が高いほどストライクをちゃんと振るので下がる
     final probStrikeLooking = (_baseProbStrikeLooking - eyeDiff * _eyeStrikeLookingModifier).clamp(0.05, 0.25);
     // 空振り率: 球種固有 + 球速（線形）+ 非線形球速ボーナス + パラメータ補正
@@ -900,7 +924,14 @@ class AtBatSimulator {
     //  - 長打力: フルスイングで空振りが増える（パワーヒッターの三振多）
     // 持ち球数ボーナス（球種が多いほど打者が待ち球を絞れず空振り増）
     final arsenalSwing = (arsenalSize - _baseArsenalSize) * _arsenalSwingBonus;
-    final probStrikeSwinging = (_baseProbStrikeSwinging + pitchSwingModifier + speedModifier + velocityWhiffBonus + paramScaling - swingModifier - eyeDiff * _eyeSwingMissModifier + powerDiff * _powerSwingMissModifier - fatigueSwingDecrease + platoonSwing + arsenalSwing).clamp(0.03, 0.40);
+    final rawSwinging = _baseProbStrikeSwinging + pitchSwingModifier + speedModifier + velocityWhiffBonus + paramScaling - swingModifier - eyeDiff * _eyeSwingMissModifier + powerDiff * _powerSwingMissModifier - fatigueSwingDecrease + platoonSwing + arsenalSwing;
+    // 高空振り側の頭打ち（逓減）。一流のスタッフ（剛速球＋一流変化球＋多彩な持ち球）が
+    // 加算で積み上がると 1球の空振り率が非現実的に高くなり、エース投手が K/9 13-14 に
+    // 達していた。「どれだけ凄くても空振りには上限がある」を表す素直な飽和で、閾値を
+    // 超えたぶんだけ効きを半減させる。平均的な球（閾値以下）はそのまま通すので、
+    // リーグ平均の奪三振には影響しない。
+    final probStrikeSwinging =
+        _saturateSwingMiss(rawSwinging).clamp(0.03, 0.34);
     final probFoul = _baseProbFoul;
     // インプレー確率は残り（他の結果にならなかった場合）
 
