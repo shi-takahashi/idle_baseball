@@ -1380,7 +1380,12 @@ class SeasonController {
   Team _selectActiveRoster(Team team, {bool neutral = false}) {
     // players が 9 人に正規化されていない異常系（テスト等）はそのまま返す
     if (team.players.length < 9) return team;
-    final bench = _selectActiveBench(team.bench, neutral: neutral);
+    // DH 採用時は打順の野手が 9 人（8 守備 + DH）になり、DH に控え野手が 1 人
+    // 取られる。控え（ベンチ入り野手）が目標の人数だけ残るよう、活性ベンチを
+    // 1 人多く選ぶ。
+    final benchCount = _activeBenchSize + (_enableDH ? 1 : 0);
+    final bench =
+        _selectActiveBench(team.bench, neutral: neutral, count: benchCount);
     final bullpen = _selectActiveBullpen(team.bullpen, neutral: neutral);
     if (identical(bench, team.bench) && identical(bullpen, team.bullpen)) {
       return team; // 絞り込み不要だった
@@ -1396,8 +1401,9 @@ class SeasonController {
   /// ではない）。スタメンが各ポジ 1 人ずつなので、控えは:
   ///   捕手 ≥ 1 / 一塁 ≥ 1 / 二塁 ≥ 1 / 三塁 ≥ 1 / 遊撃 ≥ 1 / 外野 ≥ 2
   /// を確保。兼任選手 1 名で複数ポジションをカバーするケースも含む。
-  List<Player> _selectActiveBench(List<Player> bench, {bool neutral = false}) {
-    if (bench.length <= _activeBenchSize) return bench;
+  List<Player> _selectActiveBench(List<Player> bench,
+      {bool neutral = false, int count = _activeBenchSize}) {
+    if (bench.length <= count) return bench;
 
     const benchMinByPosition = <DefensePosition, int>{
       DefensePosition.catcher: 1,
@@ -1422,8 +1428,8 @@ class SeasonController {
       selected.addAll(candidates.take(needed - alreadyCovers));
     }
 
-    final remainingCount = _activeBenchSize - selected.length;
-    if (remainingCount <= 0) return selected.take(_activeBenchSize).toList();
+    final remainingCount = count - selected.length;
+    if (remainingCount <= 0) return selected.take(count).toList();
     final pool = bench.where((p) => !selected.contains(p)).toList();
     return [
       ...selected,
