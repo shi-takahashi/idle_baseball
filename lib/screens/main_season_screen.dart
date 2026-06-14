@@ -355,17 +355,21 @@ class _MainSeasonScreenState extends State<MainSeasonScreen> {
   }
 
   /// オフシーズン進行 OFF 時の「次シーズンへ」ダイアログ。
-  /// 試合数の確認・変更だけ行い、確定で `commitOffseason(gamesPerTeam: ...)`。
+  /// 試合数・DH 制の確認/変更を行い、確定で `commitOffseason(...)`。
   Future<void> _runSkipOffseasonDialog(SeasonController c) async {
-    final result = await showDialog<int>(
+    final result = await showDialog<({int gamesPerTeam, bool enableDH})>(
       context: context,
       builder: (ctx) => _SkipOffseasonDialog(
         currentYear: c.seasonYear,
         initialGamesPerTeam: c.gamesPerTeam,
+        initialEnableDH: c.enableDH,
       ),
     );
     if (result == null) return;
-    c.commitOffseason(gamesPerTeam: result);
+    c.commitOffseason(
+      gamesPerTeam: result.gamesPerTeam,
+      enableDH: result.enableDH,
+    );
   }
 
   Widget _buildAdvanceBar() {
@@ -473,10 +477,12 @@ class _GameTabRouteObserver extends NavigatorObserver {
 class _SkipOffseasonDialog extends StatefulWidget {
   final int currentYear;
   final int initialGamesPerTeam;
+  final bool initialEnableDH;
 
   const _SkipOffseasonDialog({
     required this.currentYear,
     required this.initialGamesPerTeam,
+    required this.initialEnableDH,
   });
 
   @override
@@ -485,11 +491,13 @@ class _SkipOffseasonDialog extends StatefulWidget {
 
 class _SkipOffseasonDialogState extends State<_SkipOffseasonDialog> {
   late int _selected;
+  late bool _enableDH;
 
   @override
   void initState() {
     super.initState();
     _selected = widget.initialGamesPerTeam;
+    _enableDH = widget.initialEnableDH;
   }
 
   @override
@@ -517,6 +525,20 @@ class _SkipOffseasonDialogState extends State<_SkipOffseasonDialog> {
             value: _selected,
             onChanged: (v) => setState(() => _selected = v),
           ),
+          const SizedBox(height: 12),
+          const Text('指名打者（DH）制:'),
+          const SizedBox(height: 8),
+          SegmentedButton<bool>(
+            segments: const [
+              ButtonSegment<bool>(value: true, label: Text('あり')),
+              ButtonSegment<bool>(value: false, label: Text('なし')),
+            ],
+            selected: {_enableDH},
+            onSelectionChanged: (s) {
+              if (s.isNotEmpty) setState(() => _enableDH = s.first);
+            },
+            showSelectedIcon: false,
+          ),
         ],
       ),
       actions: [
@@ -525,7 +547,8 @@ class _SkipOffseasonDialogState extends State<_SkipOffseasonDialog> {
           child: const Text('キャンセル'),
         ),
         TextButton(
-          onPressed: () => Navigator.of(context).pop(_selected),
+          onPressed: () => Navigator.of(context)
+              .pop((gamesPerTeam: _selected, enableDH: _enableDH)),
           child: const Text('開始'),
         ),
       ],

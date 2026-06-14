@@ -111,14 +111,14 @@ class AtBatSimulator {
   // 基準球速（この球速で基本確率になる）
   static const int _baseSpeed = 145;
 
-  // 球速1kmあたりの線形補正率。球速と伸びは同程度の影響力にしてある
-  // （速球の質は球速と伸びの両方で決まる）。
-  // 2026-05-23(10): 球速 153km の投手 (NPB トップ級) が ERA 3.31 と普通レベルに
-  // なっていた問題を解消するため 0.005 → 0.007 に微増。
-  // 2026-05-23(12): 1シーズン (30登板) でパラメータ通りの成績に収束しない
-  // （A vs C で逆転発生）問題を解消するため、0.007 → 0.013 に強化。
-  // 球速 5km の差が ERA に明確に出るように。
-  static const double _speedModifierPerKm = 0.013;
+  // 球速1kmあたりの線形補正率。ストレートのみに効く。
+  // 2026-06-14: 0.013 を空振り用・被打率用に分離し、両方とも縮小。
+  // 旧 0.013（空振り・被打率の両方に同係数）は球速が効きすぎで、160km 投手が
+  // ERA 2.5 / K/9 9.7 と、本来主因であるべき制球（制球9 で ERA 3.1）を上回って
+  // いた。球速は「ストレートの空振り・弱い当たり」に寄与する補助要素に戻し、
+  // 制球（被打率 0.030/段・四球）を主因に据える。
+  static const double _speedWhiffPerKm = 0.005; // 空振り寄与（K）
+  static const double _speedOutPerKm = 0.008;   // 被打率寄与（アウト率）
 
   // ストレートの非線形「球速空振りボーナス」。
   // 実効球速 = 実球速 + (伸び - 5) × _fastballRidePerPoint。実効球速が閾値を
@@ -153,7 +153,22 @@ class AtBatSimulator {
   static const int _baseControl = 5;
 
   // 制球力1あたりの補正率
-  static const double _controlBallModifier = 0.012; // ボール確率補正（0.015→0.012）
+  // 制球力 → ボール率の減少量（非線形テーブル）。正の値ほど probBall を下げる
+  // （四球が減る）。旧実装は線形 0.012/段で、高制球でも BB/9 1.6 前後どまりだった。
+  // 高制球側を急峻にして、エース級（制球8-10）が現実どおり BB/9 ~1.0 まで落ちるように。
+  // 制球5を基準(0)、低制球はボール増（四球増）。
+  static const Map<int, double> _controlBallTable = {
+    1: -0.048,
+    2: -0.036,
+    3: -0.024,
+    4: -0.012,
+    5: 0.0,
+    6: 0.028,
+    7: 0.052,
+    8: 0.074,
+    9: 0.094,
+    10: 0.112,
+  };
   // 被打率補正（アウト率への影響＝甘い球）。2026-05-17: 制球を投手の最重要
   // ファクターにするため 0.01 → 0.025 に強化。
   // 2026-05-23: 「弱点軸ペナルティ」（[pitcherWeaknessPenalty]）を別途導入したため、
@@ -313,7 +328,9 @@ class AtBatSimulator {
   // 2026-05-17 リーグ水準補正: K率が NPB 比で高すぎた（~26% → 目標 ~20%）。
   // 見逃し/空振りストライクを下げてインプレー率を上げ、三振を減らす。
   // ボールも下げて四球が増えすぎないように合わせる。
-  static const double _baseProbBall = 0.34;
+  // 2026-06-14: 制球の四球テーブル非線形化で平均がやや下振れたため、0.34→0.35 に
+  // 微増してリーグ BB/9 を ~2.5・制球5 を ~2.6 に戻す（高制球の効きはテーブルで維持）。
+  static const double _baseProbBall = 0.35;
   static const double _baseProbStrikeLooking = 0.14;
   // 2026-05-18: 変化球の配球比率を上げた（ストレート 50%→45%）ぶん、変化球の
   // 空振り寄与でリーグ K 率が上振れたため、空振りベースを 0.085→0.073 に再センタ。
@@ -331,7 +348,7 @@ class AtBatSimulator {
   // 2026-06-14: 高域の頭打ち（_saturateSwingMiss）導入で平均奪三振がやや下がるため、
   // ベースを 0.038 → 0.046 に戻し気味にしてリーグ平均 K/9 を ~7 に保つ。閾値以下の
   // 大多数の球に効くので平均が上がり、閾値超のエリート球は飽和で効きにくい。
-  static const double _baseProbStrikeSwinging = 0.046;
+  static const double _baseProbStrikeSwinging = 0.053;
 
   // 1球あたり空振り率の「頭打ち（逓減）」パラメータ。
   // 閾値 [_swingMissKnee] を超えたぶんは効きを [_swingMissExcessFactor] 倍に圧縮する。
@@ -361,7 +378,9 @@ class AtBatSimulator {
   // (8) 実戦データで強打者の打率が .236 (NPB スラッガーは .270 程度) と低く、
   // 全体的に底上げが必要。0.760 → 0.752 に微減。
   // (12) 投手能力差拡大に伴いリーグ打率が .232 へ落ちたため再底上げ 0.752 → 0.725。
-  static const double _baseProbOut = 0.725;
+  // 2026-06-14: 球速の被打率寄与を縮小したぶんリーグ被打率が上振れたため、基準
+  // アウト率を 0.725→0.735 に微増して野手リーグ打率を ~.255 に戻す（球速中立の補正）。
+  static const double _baseProbOut = 0.735;
   static const double _baseProbSingle = 0.20;
   // 二塁打を引き上げ・三塁打を引き下げ（2026-05-16 微調整）。
   // 旧 0.05 / 0.01 では 143試合換算 二塁打189・三塁打48 で、三塁打が NPB の
@@ -861,12 +880,12 @@ class AtBatSimulator {
     double speedModifier = 0.0;
     if (pitchType == PitchType.fastball) {
       final speedDiff = speed - _baseSpeed;
-      speedModifier = speedDiff * _speedModifierPerKm;
+      speedModifier = speedDiff * _speedWhiffPerKm;
     }
 
-    // 制球力による補正（高いほどボール減）
-    final controlDiff = control - _baseControl;
-    final controlBallModifier = controlDiff * _controlBallModifier;
+    // 制球力による補正（高いほどボール減＝四球減）。非線形テーブルで、高制球側を
+    // 急峻にし、エース級の精密制球が現実どおり BB/9 1.0 前後まで落ちるようにする。
+    final controlBallModifier = _controlBallTable[control.clamp(1, 10)]!;
 
     // ミート力による補正（高いほど空振り減）
     final meetDiff = meet - _baseMeet;
@@ -1229,7 +1248,7 @@ class AtBatSimulator {
     double speedModifier = 0.0;
     if (pitchType == PitchType.fastball) {
       final speedDiff = speed - _baseSpeed;
-      speedModifier = speedDiff * _speedModifierPerKm;
+      speedModifier = speedDiff * _speedOutPerKm;
     }
 
     // 制球力による補正（高いほど甘い球が減り、アウトが増える）
