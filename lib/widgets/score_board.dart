@@ -293,6 +293,15 @@ class _PitcherChangeBanner extends StatelessWidget {
                     text: event.newPitcher.name,
                     style: const TextStyle(fontWeight: FontWeight.bold),
                   ),
+                  // 大谷ルール: 降板した投手が DH として打線に残ったとき。
+                  if (event.keptOldAsDH)
+                    TextSpan(
+                      text: '（${event.oldPitcher.name}はDHで出場継続）',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: Colors.teal.shade700,
+                      ),
+                    ),
                 ],
               ),
             ),

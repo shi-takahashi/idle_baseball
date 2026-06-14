@@ -180,8 +180,25 @@ class PlayerDetailScreen extends StatelessWidget {
           const SizedBox(height: 8),
         ],
         _PitcherYearByYearCard(controller: controller, playerId: player.id),
+        // 投手が打席に立った（大谷型・DH 起用など）シーズンがあれば、打撃の
+        // 年度別成績も表示する。打撃出場が一度も無い投手では出さない。
+        if (_hasBattingHistory(player.id)) ...[
+          const SizedBox(height: 8),
+          _FielderYearByYearCard(controller: controller, playerId: player.id, title: '年度別打撃成績'),
+        ],
       ],
     );
+  }
+
+  /// この選手に打席（過去シーズン or 今シーズン）が 1 つでもあるか。
+  /// games ではなく打席数で判定する（守備固め・登板だけで打席ゼロの選手に
+  /// 空の打撃年度別カードを出さないため）。
+  bool _hasBattingHistory(String playerId) {
+    for (final h in controller.batterHistoryOf(playerId)) {
+      if (h.stats.plateAppearances > 0) return true;
+    }
+    final cur = controller.batterStats[playerId];
+    return cur != null && cur.plateAppearances > 0;
   }
 
   // ---------------------------------------------------
@@ -532,21 +549,27 @@ class _FielderYearByYearCard extends StatelessWidget {
   final SeasonController controller;
   final String playerId;
 
-  const _FielderYearByYearCard({required this.controller, required this.playerId});
+  /// カード見出し。投手の打撃年度別で流用するときに差し替える。
+  final String title;
+
+  const _FielderYearByYearCard({required this.controller, required this.playerId, this.title = '年度別成績'});
 
   @override
   Widget build(BuildContext context) {
-    // 履歴 + 現シーズン（出場あり）を年度順で結合
+    // 履歴 + 現シーズンを年度順で結合。打席のないシーズンは行に出さない
+    // （守備固め・登板だけで 0 打席の年を打撃テーブルに並べないため）。
     final rows = <({int year, BatterSeasonStats stats})>[];
-    rows.addAll(controller.batterHistoryOf(playerId));
+    rows.addAll(
+      controller.batterHistoryOf(playerId).where((r) => r.stats.plateAppearances > 0),
+    );
     final current = controller.batterStats[playerId];
-    if (current != null && current.games > 0) {
+    if (current != null && current.plateAppearances > 0) {
       rows.add((year: controller.seasonYear, stats: current));
     }
     if (rows.isEmpty) {
-      return const _SectionCard(
-        title: '年度別成績',
-        children: [
+      return _SectionCard(
+        title: title,
+        children: const [
           Padding(
             padding: EdgeInsets.symmetric(vertical: 4),
             child: Text('出場なし', style: TextStyle(fontSize: 12, color: Colors.grey)),
@@ -555,7 +578,7 @@ class _FielderYearByYearCard extends StatelessWidget {
       );
     }
     return _SectionCard(
-      title: '年度別成績',
+      title: title,
       children: [
         // 横スクロール 1 本（左固定なし）。新聞風の並びで、主要指標
         // （試/打数/安/本/点/盗/打率）がファーストビューに収まる順。

@@ -298,10 +298,16 @@ class SeasonAggregator {
     pitcherAppeared.add(game.awayTeam.pitcher.id);
 
     for (final half in game.halfInnings) {
-      // 投手交代で登板した投手を追加（打席にも立ちうるので両方に追加）
+      // 投手交代で登板した投手を追加（登板=投手出場）。
+      // 打者出場は「実際に打席に立ったか」で数えるので、ここでは batterAppeared に
+      // 入れない（DH 試合の救援や、大谷ルールで降板後に打席に立たない新投手が、
+      // 0 打席なのに打者出場としてカウントされるのを防ぐ）。
       for (final change in half.pitcherChanges) {
         pitcherAppeared.add(change.newPitcher.id);
-        batterAppeared.add(change.newPitcher.id);
+      }
+      // 実際に打席に立った選手を打者出場に数える（救援が非DHで打席に立った等を拾う）。
+      for (final ab in half.atBats) {
+        batterAppeared.add(ab.batter.id);
       }
       // 野手交代で出場した選手を追加
       for (final fc in half.fielderChanges) {
