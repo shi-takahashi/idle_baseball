@@ -64,18 +64,20 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _newSeason() async {
-    // 試合数セレクタ + 既存セーブ上書き警告を1つのダイアログにまとめる
-    final gamesPerTeam = await showDialog<int>(
+    // 試合数セレクタ + DH 制選択 + 既存セーブ上書き警告を1つのダイアログにまとめる
+    final settings = await showDialog<({int gamesPerTeam, bool enableDH})>(
       context: context,
       builder: (ctx) => _NewSeasonDialog(
         showOverwriteWarning: _hasSave,
         initialGamesPerTeam: ScheduleGenerator.defaultGamesPerTeam,
       ),
     );
-    if (gamesPerTeam == null || !mounted) return;
+    if (settings == null || !mounted) return;
 
-    final controller =
-        SeasonController.newSeason(gamesPerTeam: gamesPerTeam);
+    final controller = SeasonController.newSeason(
+      gamesPerTeam: settings.gamesPerTeam,
+      enableDH: settings.enableDH,
+    );
     // 新規シーズン開始時に即座に保存して、古いセーブを上書きする
     await _saveService.save(controller);
     if (!mounted) return;
@@ -178,9 +180,10 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 }
 
-/// 新規シーズン開始時のダイアログ（試合数選択 + 既存セーブ上書き警告）。
+/// 新規シーズン開始時のダイアログ（試合数選択 + DH 制選択 + 既存セーブ上書き警告）。
 ///
-/// 戻り値: 選択された 1 チームあたり試合数 (30/90/150)、キャンセル時は null。
+/// 戻り値: 選択された 1 チームあたり試合数 (30/90/150) と DH 制の有無。
+/// キャンセル時は null。
 class _NewSeasonDialog extends StatefulWidget {
   final bool showOverwriteWarning;
   final int initialGamesPerTeam;
@@ -196,6 +199,9 @@ class _NewSeasonDialog extends StatefulWidget {
 
 class _NewSeasonDialogState extends State<_NewSeasonDialog> {
   late int _selected;
+  // デフォルトは DH あり（現実の主要リーグはほぼ DH 制）。スタメン画面で
+  // チームごとに「投手をそのまま打たせる（DH を使わない）」も選べる。
+  bool _enableDH = true;
 
   @override
   void initState() {
@@ -246,6 +252,27 @@ class _NewSeasonDialogState extends State<_NewSeasonDialog> {
             value: _selected,
             onChanged: (v) => setState(() => _selected = v),
           ),
+          const SizedBox(height: 16),
+          const Text('指名打者（DH）制:'),
+          const SizedBox(height: 8),
+          SegmentedButton<bool>(
+            segments: const [
+              ButtonSegment<bool>(value: true, label: Text('あり')),
+              ButtonSegment<bool>(value: false, label: Text('なし')),
+            ],
+            selected: {_enableDH},
+            onSelectionChanged: (s) {
+              if (s.isNotEmpty) setState(() => _enableDH = s.first);
+            },
+            showSelectedIcon: false,
+          ),
+          const SizedBox(height: 6),
+          Text(
+            _enableDH
+                ? '投手の代わりに野手が打席に入ります。スタメン画面で投手を打たせる選択も可能です。'
+                : '投手も打席に入ります。',
+            style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+          ),
         ],
       ),
       actions: [
@@ -254,7 +281,8 @@ class _NewSeasonDialogState extends State<_NewSeasonDialog> {
           child: const Text('キャンセル'),
         ),
         TextButton(
-          onPressed: () => Navigator.of(context).pop(_selected),
+          onPressed: () => Navigator.of(context)
+              .pop((gamesPerTeam: _selected, enableDH: _enableDH)),
           style: isOverwrite
               ? TextButton.styleFrom(foregroundColor: Colors.red.shade700)
               : null,

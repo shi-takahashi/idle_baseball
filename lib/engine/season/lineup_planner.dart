@@ -58,8 +58,15 @@ class LineupPlanner {
     this.neutralOrder = false,
   });
 
-  /// 当日の打順 + 守備配置を返す
-  ({List<Player> lineup, Map<FieldPosition, Player> alignment}) buildLineup() {
+  /// 当日の打順 + 守備配置を返す。
+  ///
+  /// [useDH] が true のとき（リーグ DH 採用）は投手を打順に入れず、代わりに
+  /// 控え野手から DH を選んで 9 人の打順（8 野手 + DH）を組む。投手は
+  /// `alignment[pitcher]` にのみ入り、打席には立たない。
+  /// DH 候補が居ない異常系では非DH（投手が打つ）にフォールバックする。
+  ({List<Player> lineup, Map<FieldPosition, Player> alignment}) buildLineup({
+    bool useDH = false,
+  }) {
     final fielders = _selectFielders();
 
     final alignment = <FieldPosition, Player>{};
@@ -68,11 +75,38 @@ class LineupPlanner {
     }
     alignment[FieldPosition.pitcher] = todaysPitcher;
 
+    if (useDH && fielders.length == 8) {
+      final dh = _selectDH(fielders);
+      if (dh != null) {
+        final order = _assignBattingOrder([...fielders, dh]);
+        return (lineup: order, alignment: alignment);
+      }
+    }
+
     final order = _assignBattingOrder(fielders);
     return (
       lineup: [...order, todaysPitcher],
       alignment: alignment,
     );
+  }
+
+  /// DH を選ぶ。スタメン8野手にも投手にもなっていない野手から、
+  /// 能力モードでは最も打てる選手、中立モードでは背番号の若い選手を選ぶ。
+  /// 候補がいなければ null（非DHにフォールバック）。
+  Player? _selectDH(List<Player> fielders) {
+    final usedIds = fielders.map((p) => p.id).toSet();
+    final pool = <Player>[
+      for (final p in [...team.players.take(8), ...team.bench])
+        if (!p.isPitcher && !usedIds.contains(p.id)) p,
+    ];
+    if (pool.isEmpty) return null;
+    if (neutralOrder) {
+      pool.sort((a, b) => a.number.compareTo(b.number));
+      return pool.first;
+    }
+    pool.sort((a, b) =>
+        _formAdjustedAbility(b).compareTo(_formAdjustedAbility(a)));
+    return pool.first;
   }
 
   // ---------------------------------------------------
@@ -235,21 +269,23 @@ class LineupPlanner {
   // 打順割り当て（伝統的日本式）
   // ---------------------------------------------------
 
-  /// 8人の野手を打順 1〜8番（index 0..7）に割り当てる
+  /// 打者を打順に割り当てる。[hitters] は 8 人（非DH。投手は buildLineup 側で
+  /// 9番に付け足す）または 9 人（DH採用。8野手 + DH をすべて打順に並べる）。
   ///
   /// 確定順:
   ///   1. 4番（チームの主砲、最強長打）
   ///   2. 3番・5番（クリーンナップ）
   ///   3. 1番・2番（リードオフと繋ぎ）
-  ///   4. 6〜8番（残りを打力順）
-  List<Player> _assignBattingOrder(List<Player> fielders) {
-    // 中立モード: 能力で並べず背番号順（8野手）。投手は buildLineup 側で9番固定。
+  ///   4. 6番以降（残りを打力順）
+  List<Player> _assignBattingOrder(List<Player> hitters) {
+    // 中立モード: 能力で並べず背番号順。投手(非DH)は buildLineup 側で9番固定。
     if (neutralOrder) {
-      return [...fielders]..sort((a, b) => a.number.compareTo(b.number));
+      return [...hitters]..sort((a, b) => a.number.compareTo(b.number));
     }
 
-    final available = List.of(fielders);
-    final result = List<Player?>.filled(8, null);
+    final n = hitters.length;
+    final available = List.of(hitters);
+    final result = List<Player?>.filled(n, null);
 
     void assign(int slot) {
       final pick = _pickBest(available, slot: slot);
@@ -263,10 +299,10 @@ class LineupPlanner {
     assign(0); // 1番
     assign(1); // 2番
 
-    // 残り3人を打力順に 6→7→8番
+    // 残りを打力順に 6番以降へ
     available.sort(
         (a, b) => _scoreForSlot(b, 5).compareTo(_scoreForSlot(a, 5)));
-    for (int i = 0; i < 3; i++) {
+    for (int i = 0; i + 5 < n; i++) {
       result[5 + i] = available[i];
     }
 

@@ -159,10 +159,13 @@ class BattingStats extends StatelessWidget {
   /// 右テーブルの1行分（位置〜イニング別）
   DataRow _buildStatsRow(_BatterRow row, int inningCount) {
     final stat = row.stats;
-    // 位置表示: 履歴を「、」で連結。「(一)」「(一、遊)」など
-    final posText = row.positions.isEmpty
-        ? ''
-        : '(${row.positions.map((p) => p.shortName).join('、')})';
+    // 位置表示: 履歴を「、」で連結。「(一)」「(一、遊)」など。
+    // DH（守備に就かない打者）は守備位置の代わりに「(DH)」を表示する。
+    final posText = row.isDH
+        ? '(DH)'
+        : row.positions.isEmpty
+            ? ''
+            : '(${row.positions.map((p) => p.shortName).join('、')})';
 
     final nameStyle = TextStyle(
       fontSize: 11,
@@ -217,6 +220,18 @@ class BattingStats extends StatelessWidget {
     for (final pos in FieldPosition.values) {
       final p = team.getFielder(pos);
       if (p != null) playerPos[p.id] = pos;
+    }
+
+    // DH 制の試合（投手が打順に居ない）では、打順に居て守備配置に居ない選手が DH。
+    // その打順スロットは守備位置を持たないので、表示は「(DH)」にする。
+    int dhSlot = -1;
+    if (team.pitcherBattingIndex < 0) {
+      for (int i = 0; i < team.players.length && i < 9; i++) {
+        if (!playerPos.containsKey(team.players[i].id)) {
+          dhSlot = i;
+          break;
+        }
+      }
     }
 
     // 各選手の守備位置履歴（同じポジションは重複させない）
@@ -304,6 +319,7 @@ class BattingStats extends StatelessWidget {
         positions: positionHistory[starter.id] ?? const [],
         isStarter: true,
         subType: null,
+        isDH: slot == dhSlot,
         stats: _BatterGameStats(inningCount),
       ));
 
@@ -315,6 +331,8 @@ class BattingStats extends StatelessWidget {
           positions: positionHistory[sub.incoming.id] ?? const [],
           isStarter: false,
           subType: sub.fielderType,
+          // DH スロットを引き継いだ代打・代走も守備に就かないので DH 扱い。
+          isDH: slot == dhSlot,
           stats: _BatterGameStats(inningCount),
         ));
       }
@@ -392,6 +410,7 @@ class _BatterRow {
   final List<FieldPosition> positions;
   final bool isStarter;
   final FielderChangeType? subType; // starterや投手交代の場合はnull
+  final bool isDH; // DH（守備に就かず打席だけ立つ）
   final _BatterGameStats stats;
 
   _BatterRow({
@@ -400,6 +419,7 @@ class _BatterRow {
     required this.positions,
     required this.isStarter,
     required this.subType,
+    this.isDH = false,
     required this.stats,
   });
 }

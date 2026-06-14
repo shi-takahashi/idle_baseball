@@ -1,12 +1,31 @@
 # DH制（指名打者制）対応 実装計画
 
-> 2026-05-30 策定。**セカンドリリース以降に着手**（ファーストリリースには含めない）。
-> 現フェーズ（RevenueCat 連携 + リリース準備）を優先し、本機能は割り込ませない。
-> ロードマップ上は SPEC.md の新規項目。`project_phase_focus`（磨き込み優先）に従い後回し。
+> 2026-05-30 策定 → **2026-06-14 更新**。v1.0.0 初回リリース・審査通過済み。
+> 本計画は **次期バージョン v1.1 の目玉機能** として着手する（保留解除）。
+> ロードマップ上は SPEC.md の新規項目。
 
-## なぜ「後回しでよい」と判断したか（最重要・着手前に再確認する）
+## v1.1 で確定した仕様（2026-06-14 ユーザー指示）
 
-DH対応を**今すぐやる技術的圧力は無い**。理由を残しておく（後で迷わないため）:
+下記が今回の実装で満たすべき要件。詳細は後続セクションに落とし込む。
+
+1. **DHあり/なしの選択は「シーズン開始時・試合数を選ぶのと同じタイミング」**で行う。
+   → 設定画面（SettingsScreen）ではなく、**新シーズン開始ダイアログ**（`_NewSeasonDialog`、
+   試合数の `SegmentedButton` の隣）に置く。シーズン単位で開始時に確定。
+2. **DHなし** → **現在の実装そのまま**（投手が打席に立つ）。新規コードを通さない。
+3. **DHあり** → 投手の代わりに野手が打席に入る。
+4. **DHは「権利」**。普通は控え野手の方が投手より打てるのでDHを使うが、**大谷型**
+   （控え野手の最良より投手の打力が高い選手）は、DHを使わず投手のまま打席に立てる。
+5. → **スタメン画面でユーザーがどちらか選べる**。守備位置の選択時に「投手」も「DH」も選べる。
+   - **DHを選んだ場合** → 打席に立つのは野手（DH）。**投手は別途選ぶ**必要がある。
+   - **投手を選んだ場合** → 大谷型。その投手がそのまま打席に立つ（DHスロットなし）。
+
+## なぜ初回リリースから外したか（経緯メモ・履歴として残す）
+
+> 以下は v1.0.0 に含めなかった判断の記録。**着手判断は済んでいる**ので、いま再検討は不要。
+> 「後でマイグレーション地獄になる」シナリオが無い＝今やっても後でやっても作業量は同じ、
+> という見立ては v1.1 着手後も有効（下記が後方互換の根拠になる）。
+
+DH対応を初回リリースに**割り込ませる技術的圧力は無かった**。理由:
 
 1. **データ整合性は完全に安全**。DHで永続化するフィールド（リーグの `enableDH`、
    チームごとの「DHを使うか」）は**すべて「追加フィールド + デフォルト値」**。古いセーブに
@@ -30,6 +49,8 @@ DH対応を**今すぐやる技術的圧力は無い**。理由を残してお�
 ## 設計モデル（2段階の権利モデル）
 
 現実の DH制をそのまま再現する。**DHはチームに強制されるルールではなく「権利」**。
+「リーグ」レベルは**シーズン開始時（試合数選択と同じダイアログ）に確定**し、そのシーズン中は固定。
+「チーム/試合」レベルは**スタメン画面**で試合ごとに選ぶ。
 
 | レベル | 設定 | 効果 |
 |---|---|---|
@@ -66,14 +87,23 @@ DH対応を**今すぐやる技術的圧力は無い**。理由を残してお�
 
 ## 実装フェーズ（2段階。各段階でゲームが動く状態を保つ）
 
-### フェーズ1: リーグトグル + 試合単位 bool（土台）
+### フェーズ1: リーグトグル + 試合単位 bool（土台） — ✅ 実装・検証済み（2026-06-14）
 
 これだけで遊びとして成立する。自チームはデフォルトDH使用（投手の打順枠に最良打者を自動充当）、
 CPUは常時DH使用。
 
+> **実装メモ（2026-06-14）**: エンジン側は「打順に投手が居ない＝DH試合」を合図にする
+> 設計で確定。`Team.pitcherBattingIndex` が投手不在時に -1 を返し、`Team.pitcher` は
+> `defenseAlignment[pitcher]` を優先。`TeamFieldingState.dhBattingSlot` で DH を守備配置
+> から除外。投手の代打先読み（`game_simulator.dart:225`）は「投手が打席に立たない」ため
+> 自然にスキップされ、`game_simulator` 本体は無改修で済んだ（統一ロジック原則どおり特例ゼロ）。
+> `bin/test_dh.dart` で DHあり=投手0打席・DHなし=投手~1400打席・得点はDHで上昇・永続化往復・
+> 旧セーブ互換(false) を確認。新シーズンダイアログ + オフシーズン画面に「DH あり/なし」追加。
+
 - [ ] **`SeasonController._enableDH: bool`** を追加（デフォルト `true`）。
-      `_gamesPerTeam` / `_offseasonProgressionEnabled` と同じパターン
-      （getter / `toJson`・`fromJson` / `commitOffseason` で次シーズンへ継承）。
+      `_gamesPerTeam` と同じパターン（getter / `toJson`・`fromJson` / `commitOffseason`
+      で次シーズンへ継承）。**`SeasonController.newSeason()` の引数に `enableDH` を追加**し、
+      `gamesPerTeam` と並べて受け取る（`season_controller.dart:78` 付近）。
 - [ ] **試合単位の `useDH`** を導出。フェーズ1では「リーグ=あり なら全チーム useDH=true」。
       自チームの試合ごと選択UIはフェーズ2。
 - [ ] **`LineupPlanner.buildLineup()`**（`lineup_planner.dart:62-76`）を DH 対応に。
@@ -94,26 +124,57 @@ CPUは常時DH使用。
 - [ ] **`SeasonAggregator`**（`season_aggregator.dart:33-39, 287, 299`）— `useDH=true` の試合は
       投手の `batterStats` を作らない/集計しない。`pitcherStats` のみ。年度別履歴
       （`SeasonSnapshot`）は DHあり年/なし年が混在しても per-season なので問題なし。
-- [ ] **`SettingsScreen`**（`settings_screen.dart`）に「DH制 あり/なし」トグルを追加
-      （`offseasonProgressionEnabled` トグルの近く）。`toJson` に永続化。
+- [ ] **新シーズン開始ダイアログにDH選択UIを追加**（`home_screen.dart` の `_NewSeasonDialog`
+      181-266行、`SeasonLengthSelector` 270-297行の隣）。試合数の `SegmentedButton` と同様の
+      見せ方で「DH制 あり/なし」を選ばせ、`showDialog` の戻り値（現在は `int gamesPerTeam`）を
+      `{gamesPerTeam, enableDH}` 相当に拡張 → `SeasonController.newSeason(...)` に渡す
+      （`home_screen.dart:66-83`）。**SettingsScreen には置かない**（シーズン途中で切り替わると
+      集計・整合性が崩れるため、開始時固定にする）。文言は `feedback_store_copy_policy` に従い
+      実装用語を避けエンドユーザー向けに（例: 「指名打者（DH）制」）。
 - [ ] **`SaveService`**（`save_service.dart`）— 追加フィールドの往復確認。デフォルト値で
       旧セーブ後方互換。
 - [ ] 検証 — `test_season` 等でDHあり/なし両方でシーズン完走、`test_persist` でJSON往復。
       リーグ打撃指標を両モードで計測（DHありは得点・打率が上がるのが**正しい挙動**。
       NPBど真ん中からのズレは問題視しない）。
 
-### フェーズ2: 自チームのDHスロット編成UI（大谷再現 + 試合ごと選択）
+### フェーズ2: 自チームのスタメン編成UI（守備位置ピッカーにDHを追加・大谷再現） — ✅ 実装・検証済み（2026-06-14）
 
-フェーズ1の上に乗せる後付け。
+フェーズ1の上に乗せる後付け。**スタメン画面（`strategy_screen.dart`）の守備位置選択**で、
+ユーザーが「DH」か「投手」かを選べるようにするのが核心。リーグ=DHありのときだけ有効。
 
-- [ ] 自チームが**試合ごとに DH を使う/使わないを選べる**UI（編成/作戦画面）。
-      デフォルトは前日同様（＝DH使用）。保存先は `next_game_strategy` の拡張が候補
-      （ベンチ入り・打順と同じ場所）。
-- [ ] **DHスロットに誰を入れるか**をユーザーが選択。野手 → 通常DH。
-      **投手を選択 → 大谷（投げて打つ）**。DHを外す → 投手が打席（大谷の「1番ピッチャー」/
-      DH不使用）。前述の通りシミュレーション上は「投手をDHに入れる」=「DHを外す」=
-      `useDH=false` で同一なので、UI表現の差として実装する。
-- [ ] CPUは引き続き自動（常時DH使用）。
+> **実装メモ（2026-06-14）**: `_Slot` に `isDH` を追加（DH スロットは守備位置を持たない）。
+> 守備位置ピッカーに `_DHPositionTile`（リーグDH時のみ）を追加。DH を選ぶと打席専用、
+> 投手を選べば大谷型（`useDH=false`）。DH 使用時は打順とは別に「先発投手」カード
+> （`_buildDhPitcherCard` / `_pickDhPitcher`、中4日・体力ゲート付き）を表示。
+> `_buildStrategyFromForm` を DH/非DH で分岐（DH=打順8野手+DH・守備8野手+別投手、
+> 非DH/大谷=従来）。`suggestedStrategyForMyTeam` と前年スタメン snapshot
+> （`_LineupSlotSnapshot.isDH` + `_lastSeasonUseDH`/`_lastSeasonStarterPitcherId`）も DH 対応。
+> `NextGameStrategy` を複製する全箇所（`_withSPReplacedInStrategy`/`_replacePlayerInStrategy`）で
+> `useDH` を引き継ぐよう修正。UI が組む DH 編成で自チーム試合を回し、DH が打席に立ち
+> 指定 SP が先発・全投手の打席=0 を確認。
+
+- [ ] **守備位置ピッカー（`_pickPosition`, `strategy_screen.dart:938-960`）に「DH」を追加**。
+      現在は `FieldPosition.values`（投手＋8野手の9種）をそのまま並べている。DHありリーグでは
+      選択肢に **DH** を足す（DHなしリーグでは従来通りDHを出さない）。
+      実装方針: `FieldPosition` に DH を足すと**守備alignment（守備9人）に混入する**ので注意。
+      DHは守備位置ではなく「打席だけ立つスロット」。スタメンスロット（`_Slot`）の position が
+      DH を取りうるようにし、**alignment 構築（`_buildStrategyFromForm`, `strategy_screen.dart:1088`
+      の `for i in 9: alignment[slot.position]=lineup[i]`）から DH スロットを除外**する。
+- [ ] **打順9枠の構成ルール（DHあり・DH使用時）** = 8守備位置 + DH の9枠。投手は打順に入らない。
+      この場合 **投手を別途選ぶUIが要る**（ユーザー指示の「DHを選んだ場合は別に投手を選ぶ」）。
+      保存先は `alignment[FieldPosition.pitcher]`（守備投手は従来から打順と分離済み）。
+      投手選択UIは既存の投手スロット用ピッカー（`_pickPlayer` の `isPitcherSlot` 経路、
+      `strategy_screen.dart:842-862`／中4日・体力ゲートの `starterDisabledReason` 表示）を流用する。
+- [ ] **大谷型** = ある打順枠の守備位置に **投手** を選ぶ（DHを使わない）。その投手が打席に立ち、
+      打順は 9守備位置（投手含む）で回る。シミュレーション上は `useDH=false`（＝DHなし／現行と同一）。
+      → 前述の通り「DHを使わない」と「投手が打つ」は同値なので**特例コード不要**
+      （`feedback_unified_logic_principle`）。UIの差（DHタイル vs 投手タイル）として表現するだけ。
+- [ ] **試合単位の `useDH` 導出**: スタメンに DH スロットがあれば `useDH=true`、
+      投手が打順に入っていれば（大谷／DHなし）`useDH=false`。保存先は `NextGameStrategy` の拡張。
+- [ ] **バリデーション**（`_buildStrategyFromForm` 1071-1076 付近の拡張）:
+      DHあり・DH使用なら「打順=8守備位置+DH」かつ「守備投手が別途1人」、
+      大谷／DHなしなら「打順=9守備位置（投手1人含む）」を満たすか確認。
+- [ ] CPUは引き続き自動（常時DH使用＝控え野手をDHに充当）。大谷型CPUは生成しない（フェーズ1の方針）。
 
 ---
 

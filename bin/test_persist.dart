@@ -9,8 +9,9 @@ import 'package:idle_baseball/engine/engine.dart';
 
 void main() {
   const seed = 42;
-  final controllerA =
-      SeasonController.newSeason(random: Random(seed), unlockHour: 19);
+  // strategy を手動で複製するため、非DH（投手が打順に入る従来形）で開始する。
+  final controllerA = SeasonController.newSeason(
+      random: Random(seed), unlockHour: 19, enableDH: false);
 
   // ある程度進めて履歴・統計を蓄積させる
   for (int i = 0; i < 10; i++) {

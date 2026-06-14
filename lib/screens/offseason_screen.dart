@@ -49,11 +49,15 @@ class _OffseasonScreenState extends State<OffseasonScreen>
   /// 次シーズンの試合数（30 / 90 / 150）。デフォルトは前シーズンの試合数。
   late int _nextGamesPerTeam;
 
+  /// 次シーズンの DH 制。デフォルトは前シーズンの設定を継承。
+  late bool _nextEnableDH;
+
   @override
   void initState() {
     super.initState();
     _plan = widget.controller.prepareOffseason();
     _nextGamesPerTeam = widget.controller.gamesPerTeam;
+    _nextEnableDH = widget.controller.enableDH;
     _tabController = TabController(length: 2, vsync: this);
     // 自動推奨はパラメータ非表示方針（SPEC §コンセプト）に反する（エンジンが
     // 能力で「引退すべき」を提示すると能力バレになる）ため適用しない。
@@ -271,12 +275,16 @@ class _OffseasonScreenState extends State<OffseasonScreen>
         selection.foreignAcquireIds.isNotEmpty ||
         _plan.foreignDepartures.isNotEmpty;
     if (!hasAnyChange) {
-      c.commitOffseason(gamesPerTeam: _nextGamesPerTeam);
+      c.commitOffseason(
+        gamesPerTeam: _nextGamesPerTeam,
+        enableDH: _nextEnableDH,
+      );
     } else {
       c.commitOffseason(
         plan: _plan,
         selection: selection,
         gamesPerTeam: _nextGamesPerTeam,
+        enableDH: _nextEnableDH,
       );
     }
 
@@ -737,6 +745,23 @@ class _OffseasonScreenState extends State<OffseasonScreen>
             SeasonLengthSelector(
               value: _nextGamesPerTeam,
               onChanged: (v) => setState(() => _nextGamesPerTeam = v),
+            ),
+            const SizedBox(height: 12),
+            const Text(
+              '指名打者（DH）制',
+              style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 6),
+            SegmentedButton<bool>(
+              segments: const [
+                ButtonSegment<bool>(value: true, label: Text('あり')),
+                ButtonSegment<bool>(value: false, label: Text('なし')),
+              ],
+              selected: {_nextEnableDH},
+              onSelectionChanged: (s) {
+                if (s.isNotEmpty) setState(() => _nextEnableDH = s.first);
+              },
+              showSelectedIcon: false,
             ),
           ],
         ),

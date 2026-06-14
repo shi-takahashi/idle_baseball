@@ -124,24 +124,32 @@ class Team {
     return players[battingOrder % 9];
   }
 
-  /// 先発投手（`players` 内で `isPitcher == true` の選手）
+  /// 先発投手。
   ///
-  /// 投手は通常 9 番（players[8]）だが、大谷型の選手のように他の打順にも置ける。
-  /// そのため index 固定で取らず、`players` を走査して isPitcher で特定する。
-  /// players に投手が含まれていない異常系では index 8 にフォールバックする。
+  /// 通常（DH非採用）は投手も打順に入るので `players` を走査して
+  /// `isPitcher == true` の選手を特定する（大谷型で 9 番以外でも拾える）。
+  /// DH採用時は投手が打順（`players`）に含まれないため、まず守備配置
+  /// `defenseAlignment[FieldPosition.pitcher]` を見る。試合用 Team は
+  /// 必ず守備配置が埋まっているのでここで正しい投手が引ける。
+  /// どちらでも引けない異常系では index 8 にフォールバックする。
   Player get pitcher {
+    final aligned = defenseAlignment?[FieldPosition.pitcher];
+    if (aligned != null) return aligned;
     for (final p in players) {
       if (p.isPitcher) return p;
     }
     return players[8];
   }
 
-  /// 先発投手の打順 index（0-indexed）。投手がいない場合は 8。
+  /// 先発投手の打順 index（0-indexed）。
+  ///
+  /// DH採用時は投手が打順に居ないため -1 を返す（＝「投手は打席に立たない」の合図）。
+  /// 非DHでは投手の打順スロットを返す（通常 8 = 9 番）。
   int get pitcherBattingIndex {
     for (int i = 0; i < players.length; i++) {
       if (players[i].isPitcher) return i;
     }
-    return 8;
+    return -1;
   }
 
   /// 指定ポジションの守備を担当する選手を取得

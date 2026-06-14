@@ -8,7 +8,8 @@ import 'dart:math';
 import 'package:idle_baseball/engine/engine.dart';
 
 void main() {
-  final c = SeasonController.newSeason(random: Random(42));
+  // このテストは「投手が打順に入る」非DHの編成・大谷型を検証するので DH なしで開始。
+  final c = SeasonController.newSeason(random: Random(42), enableDH: false);
   final team = c.myTeam;
 
   // オート提案を取得

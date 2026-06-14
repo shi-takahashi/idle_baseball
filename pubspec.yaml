@@ -53,6 +53,8 @@ dependencies:
   # サブスク管理・解約画面（Play の定期購入画面）を外部ブラウザで開くのに使用
   url_launcher: ^6.3.0
 
+  in_app_purchase: ">=3.2.3"
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

@@ -20,7 +20,14 @@ class TeamFieldingState {
   /// 通常は 9 番（slot 8）だが、大谷型なら他の打順にも置ける。
   /// 投手代打が発生した直後は、PH 選手がこのスロットに居る状態になり、
   /// 続く投手交代でこのスロットの選手を新投手に差し替える。
+  /// DH採用時は投手が打順に居ないため -1（投手交代でラインナップを触らない）。
   int pitcherBattingSlot;
+
+  /// DH（指名打者）が打順のどのスロットに居るか（0-indexed）。-1 = DH不採用。
+  /// このスロットの選手は打席だけ立ち、守備には就かない
+  /// （reconcileAlignmentBeforeDefense で守備配置の対象外にする）。
+  /// 代打で選手が替わってもスロット自体は不変（PH がそのまま新しい DH になる）。
+  final int dhBattingSlot;
 
   TeamFieldingState._({
     required this.originalTeam,
@@ -29,6 +36,7 @@ class TeamFieldingState {
     required this.bench,
     required this.usedPlayers,
     required this.pitcherBattingSlot,
+    required this.dhBattingSlot,
   });
 
   factory TeamFieldingState.fromTeam(Team team) {
@@ -37,13 +45,26 @@ class TeamFieldingState {
       final fielder = team.getFielder(pos);
       if (fielder != null) alignment[pos] = fielder;
     }
+    final lineup = List.of(team.players);
+    final pitcherSlot = team.pitcherBattingIndex;
+    // DH採用の合図は「打順に投手が居ない（pitcherSlot == -1）」。
+    // その場合の DH は「打順に居るが守備配置（投手以外）に居ない選手」。
+    int dhSlot = -1;
+    if (pitcherSlot < 0) {
+      final fielderIds = <String>{
+        for (final e in alignment.entries)
+          if (e.key != FieldPosition.pitcher) e.value.id,
+      };
+      dhSlot = lineup.indexWhere((p) => !fielderIds.contains(p.id));
+    }
     return TeamFieldingState._(
       originalTeam: team,
-      currentLineup: List.of(team.players),
+      currentLineup: lineup,
       currentAlignment: alignment,
       bench: List.of(team.bench),
       usedPlayers: List.of(team.players),
-      pitcherBattingSlot: team.pitcherBattingIndex,
+      pitcherBattingSlot: pitcherSlot,
+      dhBattingSlot: dhSlot,
     );
   }
 
@@ -170,9 +191,12 @@ class TeamFieldingState {
     }
 
     // incoming: ラインナップにいるがアライメントにいない（= 守備につく必要あり）
+    // ただし DH スロットの選手は打席専用なので守備配置の対象外。
     final alignmentIds = currentAlignment.values.map((p) => p.id).toSet();
     final unplacedPlayers = <Player>[];
-    for (final p in currentLineup) {
+    for (int i = 0; i < currentLineup.length; i++) {
+      if (i == dhBattingSlot) continue; // DH は守備につかない
+      final p = currentLineup[i];
       if (alignmentIds.contains(p.id)) continue;
       unplacedPlayers.add(p);
     }

@@ -58,6 +58,17 @@ class SeasonController {
   ///        （手動編集による変更は従来通り反映される）
   bool _offseasonProgressionEnabled;
 
+  /// リーグで DH（指名打者）制を採用するか。
+  ///
+  /// シーズン開幕時に試合数と一緒に選び、そのシーズン中は固定（途中変更不可）。
+  /// `commitOffseason` で次シーズンへ明示的に引き渡す（未指定なら前シーズンを継承）。
+  ///
+  /// true: 投手は打席に立たず、各チームは野手を DH として打たせる（権利なので
+  ///       大谷型は投手を打順に入れることも可能 = チーム単位の選択）。
+  /// false: 全チーム投手が打席に立つ（＝v1.0 までの挙動）。旧セーブの復元時は
+  ///        互換のため false 扱い。
+  bool _enableDH;
+
   /// 試合結果の解禁時刻（0-23 時、デフォルト 21）。1日1試合制約で使う。
   /// 詳細は docs/DAILY_GATE_PLAN.md / [UnlockGate] 参照。
   int _unlockHour;
@@ -226,6 +237,13 @@ class SeasonController {
   /// 投手スロットは中4日ゲートのため毎日選び直す必要があるので含めない（位置のみ記録）。
   List<_LineupSlotSnapshot>? _lastSeasonFinalLineup;
 
+  /// 前シーズン最終スタメンが DH 制だったか。Day 1 復元の分岐に使う。
+  bool _lastSeasonUseDH = false;
+
+  /// 前シーズン最終スタメンが DH 制のときの先発投手 id（投手は打順に居ないため別保持）。
+  /// 復元時は中4日ゲートで選び直すので参考値。非DHでは null。
+  String? _lastSeasonStarterPitcherId;
+
   /// 前シーズン最終時点で当日ベンチ入りしていた控え野手の id リスト。
   /// ユーザーが手動でベンチ入りを選んでいた場合に翌年継承する。
   /// 引退者の枠は復元時に背番号順で穴埋め。
@@ -246,6 +264,7 @@ class SeasonController {
     required this.myTeamId,
     int gamesPerTeam = ScheduleGenerator.defaultGamesPerTeam,
     bool offseasonProgressionEnabled = true,
+    bool enableDH = false,
     int unlockHour = 21,
     DateTime? lastUnlockAt,
     bool notificationsEnabled = true,
@@ -254,6 +273,7 @@ class SeasonController {
   })  : _schedule = schedule,
         _gamesPerTeam = gamesPerTeam,
         _offseasonProgressionEnabled = offseasonProgressionEnabled,
+        _enableDH = enableDH,
         _unlockHour = unlockHour,
         _lastUnlockAt = lastUnlockAt,
         _notificationsEnabled = notificationsEnabled,
@@ -304,6 +324,7 @@ class SeasonController {
     String myTeamId = 'team_phoenix',
     int gamesPerTeam = ScheduleGenerator.defaultGamesPerTeam,
     bool offseasonProgressionEnabled = true,
+    bool enableDH = true,
     int unlockHour = 21,
     bool notificationsEnabled = true,
   }) {
@@ -321,6 +342,7 @@ class SeasonController {
       myTeamId: myTeamId,
       gamesPerTeam: gamesPerTeam,
       offseasonProgressionEnabled: offseasonProgressionEnabled,
+      enableDH: enableDH,
       unlockHour: unlockHour,
       notificationsEnabled: notificationsEnabled,
       random: random,
@@ -398,6 +420,10 @@ class SeasonController {
   /// 1チームあたりの今シーズン試合数（30 / 90 / 150）。
   /// 翌シーズンの選択肢のデフォルト値や、UI 表示に使う。
   int get gamesPerTeam => _gamesPerTeam;
+
+  /// 今シーズンが DH（指名打者）制を採用しているか。
+  /// 開幕時に確定し、シーズン中は不変。UI 表示・編成判断に使う。
+  bool get enableDH => _enableDH;
 
   /// オフシーズン進行（加齢・引退・新人加入）の ON/OFF。
   /// false の間に [commitOffseason] を呼ぶと、選手はそのままで翌シーズンへ進む。
@@ -490,16 +516,24 @@ class SeasonController {
   NextGameStrategy? get myStrategy => _myStrategy;
 
   /// 前年最終スタメンの snapshot を作戦画面に公開する（Day 1 で構成継承するため）。
-  /// 各要素は (playerId, position) のペア。引退者は呼び出し側で playerId 解決時に
-  /// null となり、空白スロットとして扱われる。
-  List<({String playerId, FieldPosition position})>? get previousLineupSnapshot {
+  /// 各要素は (playerId, position, isDH) のレコード。DH スロットは position=null,
+  /// isDH=true。引退者は呼び出し側で playerId 解決時に null となり、空白スロット
+  /// として扱われる。
+  List<({String playerId, FieldPosition? position, bool isDH})>?
+      get previousLineupSnapshot {
     final snap = _lastSeasonFinalLineup;
     if (snap == null) return null;
     return [
       for (final s in snap)
-        (playerId: s.playerId, position: s.position),
+        (playerId: s.playerId, position: s.position, isDH: s.isDH),
     ];
   }
+
+  /// 前年最終スタメンが DH 制だったか（Day 1 復元の分岐用）。
+  bool get previousUseDH => _lastSeasonUseDH;
+
+  /// 前年最終スタメンが DH 制のときの先発投手 id（参考値。中4日ゲートで選び直す）。
+  String? get previousStarterPitcherId => _lastSeasonStarterPitcherId;
 
   /// 前年最終時点で当日ベンチ入りしていた控え野手の id リスト。
   /// 引退者はそのまま残るので、呼び出し側で findPlayerById で解決して除外する。
@@ -580,11 +614,16 @@ class SeasonController {
     // [previousActiveBullpenIds] を参照して構築する（引退者を「空白」として
     // 残したいため、Player? の許容が必要）。
     final active = _selectActiveRoster(team, neutral: true);
-    final game = _withGameLineup(active, sp, neutralOrder: true);
+    // リーグ DH 採用時はデフォルトで DH を使う提案にする（投手は打席に立たず、
+    // 控え野手から中立に DH を選ぶ）。ユーザーは作戦画面で大谷型（投手を打順に
+    // 入れる）に変更できる。
+    final game =
+        _withGameLineup(active, sp, neutralOrder: true, useDH: _enableDH);
 
     return NextGameStrategy(
       lineup: game.players,
       alignment: game.defenseAlignment!,
+      useDH: _enableDH,
       activeBench: game.bench,
       activeBullpen: activeBullpen,
     );
@@ -682,6 +721,7 @@ class SeasonController {
       alignment: {
         for (final e in strategy.alignment.entries) e.key: swap(e.value),
       },
+      useDH: strategy.useDH,
       activeBench: [for (final p in strategy.activeBench) swap(p)],
       activeBullpen: [for (final p in strategy.activeBullpen) swap(p)],
     );
@@ -952,6 +992,8 @@ class SeasonController {
   NextGameStrategy _withSPReplacedInStrategy(
       NextGameStrategy old, Player newSP) {
     if (old.startingPitcher.id == newSP.id) return old;
+    // 非DHでは投手は打順に居るので打順内の投手を差し替える。
+    // DH採用時は投手が打順に居ないので打順は不変、守備配置の投手だけ差し替える。
     final newLineup =
         old.lineup.map((p) => p.isPitcher ? newSP : p).toList();
     final newAlignment = <FieldPosition, Player>{
@@ -961,6 +1003,7 @@ class SeasonController {
     return NextGameStrategy(
       lineup: newLineup,
       alignment: newAlignment,
+      useDH: old.useDH,
       activeBench: old.activeBench,
       activeBullpen: [
         for (final p in old.activeBullpen)
@@ -1031,6 +1074,7 @@ class SeasonController {
     OffseasonPlan? plan,
     OffseasonSelection? selection,
     int? gamesPerTeam,
+    bool? enableDH,
   }) {
     if (!isSeasonOver) {
       throw StateError('シーズン進行中は commitOffseason を呼べません');
@@ -1118,6 +1162,10 @@ class SeasonController {
     if (gamesPerTeam != null) {
       _gamesPerTeam = gamesPerTeam;
     }
+    // DH 採用可否も次シーズン開幕時に選び直せる（未指定なら前シーズンを継承）。
+    if (enableDH != null) {
+      _enableDH = enableDH;
+    }
     // 前シーズン最終スタメン・ベンチ入りのスナップショットを取る
     // （次シーズン Day 1 で作戦画面が復元するため）。
     // _myStrategy は試合後の SP 自動差し替えで最終試合のあと「次の試合用」に
@@ -1126,15 +1174,25 @@ class SeasonController {
     // 終了時点のユーザー編集を反映できる。
     final lastStrategy = _myStrategy;
     if (lastStrategy != null) {
+      // DH採用時、DH の打順スロットは守備配置に居ないので isDH=true で記録し、
+      // 投手は打順に居ないので別フィールドに保存する。
+      final dhId =
+          lastStrategy.useDH ? lastStrategy.designatedHitter?.id : null;
       _lastSeasonFinalLineup = [
         for (final p in lastStrategy.lineup)
-          _LineupSlotSnapshot(
-            p.id,
-            lastStrategy.alignment.entries
-                .firstWhere((e) => e.value.id == p.id)
-                .key,
-          ),
+          if (p.id == dhId)
+            _LineupSlotSnapshot(p.id, null, isDH: true)
+          else
+            _LineupSlotSnapshot(
+              p.id,
+              lastStrategy.alignment.entries
+                  .firstWhere((e) => e.value.id == p.id)
+                  .key,
+            ),
       ];
+      _lastSeasonUseDH = lastStrategy.useDH;
+      _lastSeasonStarterPitcherId =
+          lastStrategy.useDH ? lastStrategy.startingPitcher.id : null;
       _lastSeasonActiveBenchIds = [
         for (final p in lastStrategy.activeBench) p.id,
       ];
@@ -1145,6 +1203,8 @@ class SeasonController {
       // オート編成のままシーズンを終えた場合は前年継続の意味が薄いのでクリア。
       // 次シーズンも中立提案にフォールバックする。
       _lastSeasonFinalLineup = null;
+      _lastSeasonUseDH = false;
+      _lastSeasonStarterPitcherId = null;
       _lastSeasonActiveBenchIds = null;
       _lastSeasonActiveBullpenIds = null;
     }
@@ -1508,6 +1568,9 @@ class SeasonController {
       active,
       _selectStarter(active),
       neutralOrder: isMyTeam,
+      // リーグ DH 採用時、オート編成（CPU 全チーム + 作戦未設定の自チーム）は
+      // 常に DH を使う（自動生成の投手は打力が低く、現実通り DH を使うのが妥当）。
+      useDH: _enableDH,
     );
   }
 
@@ -1521,7 +1584,13 @@ class SeasonController {
   /// pitcherRole で検索するため、疲労した投手はここで bullpen から外れることで
   /// 自動的に「当日不在」扱いになる（連投回避）。
   /// [neutralOrder] true で打順を能力順でなく背番号順にする（自チーム用）。
-  Team _withGameLineup(Team team, Player sp, {bool neutralOrder = false}) {
+  /// [useDH] true で投手を打順に入れず DH を立てる（リーグ DH 採用時）。
+  Team _withGameLineup(
+    Team team,
+    Player sp, {
+    bool neutralOrder = false,
+    bool useDH = false,
+  }) {
     // 正規化チームの players[0..7] が崩れている場合（テストなど）は最低限の投手差し替えだけ行う
     if (team.players.length < 9) {
       final newPlayers = team.players.length >= 9 && team.players[8].id == sp.id
@@ -1539,7 +1608,7 @@ class SeasonController {
       todaysPitcher: sp,
       neutralOrder: neutralOrder,
     );
-    final result = planner.buildLineup();
+    final result = planner.buildLineup(useDH: useDH);
 
     // 当日の bench を再構成: 元のベンチから「スタメン入りした選手」を除き、
     // 「スタメンから外された選手」を加える
@@ -1707,6 +1776,7 @@ class SeasonController {
       'seasonYear': _seasonYear,
       'gamesPerTeam': _gamesPerTeam,
       'offseasonProgressionEnabled': _offseasonProgressionEnabled,
+      'enableDH': _enableDH,
       'unlockHour': _unlockHour,
       if (_lastUnlockAt != null)
         'lastUnlockAt': _lastUnlockAt!.toIso8601String(),
@@ -1745,6 +1815,9 @@ class SeasonController {
         'lastSeasonFinalLineup': [
           for (final s in _lastSeasonFinalLineup!) s.toJson(),
         ],
+      'lastSeasonUseDH': _lastSeasonUseDH,
+      if (_lastSeasonStarterPitcherId != null)
+        'lastSeasonStarterPitcherId': _lastSeasonStarterPitcherId,
       if (_lastSeasonActiveBenchIds != null)
         'lastSeasonActiveBenchIds': _lastSeasonActiveBenchIds,
       if (_lastSeasonActiveBullpenIds != null)
@@ -1795,6 +1868,9 @@ class SeasonController {
     // オフシーズン進行フラグ。旧セーブには存在しないので true（現状の挙動）扱い。
     final offseasonProgressionEnabled =
         json['offseasonProgressionEnabled'] as bool? ?? true;
+    // DH 採用可否。旧セーブ（v1.0、DH 概念なし＝投手が打つ）には存在しないので
+    // 互換のため false 扱い。
+    final enableDH = json['enableDH'] as bool? ?? false;
     // 1日1試合制約。旧セーブには存在しないので unlockHour=21 / lastUnlockAt=null 扱い。
     final unlockHour = json['unlockHour'] as int? ?? 21;
     final lastUnlockAtStr = json['lastUnlockAt'] as String?;
@@ -1809,6 +1885,7 @@ class SeasonController {
       myTeamId: json['myTeamId'] as String,
       gamesPerTeam: gamesPerTeam,
       offseasonProgressionEnabled: offseasonProgressionEnabled,
+      enableDH: enableDH,
       unlockHour: unlockHour,
       lastUnlockAt: lastUnlockAt,
       notificationsEnabled: notificationsEnabled,
@@ -1893,6 +1970,9 @@ class SeasonController {
             for (final s in lastLineup)
               _LineupSlotSnapshot.fromJson(s as Map<String, dynamic>),
           ];
+    controller._lastSeasonUseDH = json['lastSeasonUseDH'] as bool? ?? false;
+    controller._lastSeasonStarterPitcherId =
+        json['lastSeasonStarterPitcherId'] as String?;
     final lastBench = json['lastSeasonActiveBenchIds'] as List?;
     controller._lastSeasonActiveBenchIds = lastBench == null
         ? null
@@ -1924,20 +2004,29 @@ class SeasonController {
   }
 }
 
-/// 前シーズン最終スタメンの 1 スロットを id + 守備位置で保持する軽量レコード。
+/// 前シーズン最終スタメンの 1 打順スロットを保持する軽量レコード。
+///
+/// 守備位置 [position] を持つ通常スロットと、守備に就かない DH スロット
+/// （[isDH] = true, [position] = null）の 2 種類。DH採用時、投手は打順に居ない
+/// ので別途 [SeasonController._lastSeasonStarterPitcherId] に保存する。
 class _LineupSlotSnapshot {
   final String playerId;
-  final FieldPosition position;
-  const _LineupSlotSnapshot(this.playerId, this.position);
+  final FieldPosition? position;
+  final bool isDH;
+  const _LineupSlotSnapshot(this.playerId, this.position, {this.isDH = false});
 
   Map<String, dynamic> toJson() => {
         'playerId': playerId,
-        'position': position.index,
+        if (position != null) 'position': position!.index,
+        if (isDH) 'isDH': true,
       };
 
   factory _LineupSlotSnapshot.fromJson(Map<String, dynamic> json) =>
       _LineupSlotSnapshot(
         json['playerId'] as String,
-        FieldPosition.values[json['position'] as int],
+        json['position'] == null
+            ? null
+            : FieldPosition.values[json['position'] as int],
+        isDH: json['isDH'] as bool? ?? false,
       );
 }

@@ -30,7 +30,9 @@ class SeasonAggregator {
       ]) {
         all[p.id] = p;
       }
-      // DH非採用なので投手も打席に立つ。投手は両方の Stats を作成する。
+      // 投手は pitcherStats を作成。打撃 Stats は全選手ぶん用意しておく
+      // （非DHでは投手も打席に立つ。DH採用シーズンでは投手は打席に立たないので
+      // その投手の batterStats は 0 打席のまま＝表示・集計上は無害）。
       for (final p in all.values) {
         if (p.isPitcher) {
           pitcherStats[p.id] = PitcherSeasonStats(player: p, team: team);
