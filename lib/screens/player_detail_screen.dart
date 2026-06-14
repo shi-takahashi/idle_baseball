@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../billing/entitlements.dart';
 import '../engine/engine.dart';
+import '../utils/stat_format.dart';
 import 'player_edit_screen.dart';
 
 /// 選手1人の能力パラメータ詳細画面
@@ -720,7 +721,7 @@ class _PitcherYearByYearCard extends StatelessWidget {
 
 DataCell _numCell(int v) => DataCell(Text('$v', style: const TextStyle(fontSize: 12)));
 
-DataCell _rateCell(double v) => DataCell(Text(v.toStringAsFixed(3), style: const TextStyle(fontSize: 12)));
+DataCell _rateCell(double v) => DataCell(Text(formatRate3(v), style: const TextStyle(fontSize: 12)));
 
 class _Hd extends StatelessWidget {
   final String label;

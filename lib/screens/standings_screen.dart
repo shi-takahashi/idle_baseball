@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../engine/engine.dart';
+import '../utils/stat_format.dart';
 
 /// 順位表のコンテンツ部分（Scaffold/AppBar なし）。
 ///
@@ -135,7 +136,7 @@ class StandingsView extends StatelessWidget {
     final pitching = controller.teamPitchingTotals(r.team.id);
     final battingAvg = batting.atBats == 0
         ? '.000'
-        : (batting.hits / batting.atBats).toStringAsFixed(3).substring(1);
+        : formatRate3(batting.hits / batting.atBats);
     final era = pitching.outsRecorded == 0
         ? '-.--'
         : (pitching.runsAllowed * 27 / pitching.outsRecorded)
@@ -148,7 +149,7 @@ class StandingsView extends StatelessWidget {
       wins: r.wins,
       losses: r.losses,
       ties: r.ties,
-      winningPct: r.winningPct.toStringAsFixed(3),
+      winningPct: formatRate3(r.winningPct),
       gb: gb,
       runsScored: r.runsScored,
       runsAllowed: r.runsAllowed,

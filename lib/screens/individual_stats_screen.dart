@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../engine/engine.dart';
+import '../utils/stat_format.dart';
 
 /// 打撃ランキング（Scaffold/AppBar なし）。
 ///
@@ -33,7 +34,7 @@ class BatterRankingView extends StatelessWidget {
           batters: qualified,
           myTeamId: c.myTeamId,
           getValue: (b) => b.battingAverage,
-          format: (v) => v.toStringAsFixed(3),
+          format: (v) => formatRate3(v),
         ),
         _BatterRankingCard(
           title: '本塁打王',
@@ -64,7 +65,7 @@ class BatterRankingView extends StatelessWidget {
           batters: qualified,
           myTeamId: c.myTeamId,
           getValue: (b) => b.ops,
-          format: (v) => v.toStringAsFixed(3),
+          format: (v) => formatRate3(v),
         ),
       ],
     );
@@ -291,13 +292,13 @@ class _BatterRow extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                 ),
                 Text(
-                  '打${b.battingAverage.toStringAsFixed(3)}  '
+                  '打${formatRate3(b.battingAverage)}  '
                   '本${b.homeRuns}  '
                   '点${b.rbi}  '
                   '盗${b.stolenBases}  '
                   '三${b.strikeouts}  '
                   '四${b.walks}  '
-                  'OPS${b.ops.toStringAsFixed(3)}',
+                  'OPS${formatRate3(b.ops)}',
                   style: subStyle,
                 ),
               ],

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../engine/engine.dart';
+import '../utils/stat_format.dart';
 
 /// 単一チームの全選手シーズン成績画面
 ///
@@ -339,7 +340,7 @@ class _Cell {
         Text('$v', style: const TextStyle(fontSize: 12)),
       );
   static DataCell rate(double v) => DataCell(
-        Text(v.toStringAsFixed(3), style: const TextStyle(fontSize: 12)),
+        Text(formatRate3(v), style: const TextStyle(fontSize: 12)),
       );
   static DataCell text(String v) => DataCell(
         Text(v, style: const TextStyle(fontSize: 12)),

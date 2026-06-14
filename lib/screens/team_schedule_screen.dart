@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../engine/engine.dart';
+import '../utils/stat_format.dart';
 import 'game_result_screen.dart';
 
 /// 指定チーム視点のシーズン日程・結果画面
@@ -140,7 +141,7 @@ class _SummaryBar extends StatelessWidget {
     final played = wins + losses + draws;
     final pct = (wins + losses) == 0
         ? null
-        : (wins / (wins + losses)).toStringAsFixed(3);
+        : formatRate3(wins / (wins + losses));
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       color: Colors.grey.shade100,

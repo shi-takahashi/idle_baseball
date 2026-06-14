@@ -10,6 +10,7 @@ import '../persistence/save_service.dart';
 import '../services/ad_service.dart';
 import '../services/notification_scheduler.dart';
 import '../services/notification_service.dart';
+import '../utils/stat_format.dart';
 import 'daily_screen.dart';
 import 'home_screen.dart' show SeasonLengthSelector;
 import 'offseason_screen.dart';
@@ -404,7 +405,7 @@ class _MainSeasonScreenState extends State<MainSeasonScreen> {
                 ),
                 Text(
                   '${rec.wins}勝 ${rec.losses}敗 ${rec.ties}分 '
-                  '(${rec.winningPct.toStringAsFixed(3)})',
+                  '(${formatRate3(rec.winningPct)})',
                   style:
                       TextStyle(fontSize: 11, color: Colors.grey.shade700),
                 ),
