@@ -548,6 +548,31 @@ class SeasonController {
           ? null
           : List.unmodifiable(_lastSeasonActiveBullpenIds!);
 
+  /// 自チームのデフォルト先発投手。**作戦画面の投手ピッカーと同じ並び**
+  /// （ロール優先度: 先発 → ロング → … → 体力降順 → 背番号）で、登板条件
+  /// （中4日 + 体力100%）を満たす最初の投手を返す。
+  /// つまり「先発ロールで条件を満たす人がいればその先頭、いなければロング…」と
+  /// 順に探した最初の該当者。作戦画面が表示中の SP を検証・差し替えるのに使う。
+  /// [excludeIds]: 候補から外す投手 id（DH に起用中の投手など、打順に入っていて
+  /// 先発にできない選手）。作戦画面から渡す。
+  Player? defaultStarterForMyTeam({Set<String> excludeIds = const {}}) {
+    final team = teams.firstWhere((t) => t.id == myTeamId);
+    final pitchers = <Player>[
+      ...team.startingRotation,
+      ...team.bullpen,
+    ]..sort((a, b) {
+        final ra = pitcherRoleStarterPriority(a.pitcherRole);
+        final rb = pitcherRoleStarterPriority(b.pitcherRole);
+        if (ra != rb) return ra.compareTo(rb);
+        final fa = pitcherFreshness(a.id);
+        final fb = pitcherFreshness(b.id);
+        if (fa != fb) return fb.compareTo(fa);
+        return a.number.compareTo(b.number);
+      });
+    if (pitchers.isEmpty) return null;
+    return _pickDefaultStarter(pitchers, exclude: excludeIds);
+  }
+
   /// 次の試合用の作戦をセットする。
   /// 自動編成と異なるラインナップ・先発を使いたいときに UI から呼ぶ。
   /// 構築時に NextGameStrategy 自身がバリデーションする。
@@ -598,10 +623,9 @@ class SeasonController {
         if (fa != fb) return fb.compareTo(fa);
         return a.number.compareTo(b.number);
       });
-    final sp = allPitchers.firstWhere(
-      (p) => canStartNextGame(p.id),
-      orElse: () => allPitchers.first,
-    );
+    // 体力のある（休養済み）投手の中からロール優先で選ぶ。前日登板など休養不足の
+    // 投手は、他に休養できている投手がいる限りデフォルトにしない。
+    final sp = _pickDefaultStarter(allPitchers);
     // ベンチ入り救援: 先発ロールの投手は初期提案から外す（ローテ予定の投手が
     // 救援要員に埋まるのを避ける）。中継ぎ等のロールから背番号順で8人。
     final activeBullpen = [
@@ -944,7 +968,7 @@ class SeasonController {
     // ユーザーが明日の作戦画面で別 SP を選ぶことも自由にできる。
     if (_myStrategy != null && !isSeasonOver) {
       final myTeam = teams.firstWhere((t) => t.id == myTeamId);
-      final tomorrowsSP = _pickNextStarter(myTeam, _myStrategy!);
+      final tomorrowsSP = _pickNextStarter(myTeam);
       _myStrategy =
           _withSPReplacedInStrategy(_myStrategy!, tomorrowsSP);
     }
@@ -956,12 +980,9 @@ class SeasonController {
   /// 次の試合用の先発を中立に選ぶ（試合後の SP 自動差し替え用）。
   /// 並び順は作戦画面の投手ピッカーと同じ:
   ///   ロール優先度（先発 → ロング → 中継ぎ → …）→ 体力降順 → 背番号。
-  /// その上で「ベンチ入り救援に入れておらず、登板間隔（中4日）+ 体力100%」な
-  /// 先頭の投手を選ぶ。能力で選ばないので推測ゲームのヒントにならない。
-  /// 該当者がいなければベンチ縛りを外して同並び順で再試行、それも無ければ先頭に
-  /// フォールバック。
-  Player _pickNextStarter(Team team, NextGameStrategy current) {
-    final benchedIds = current.activeBullpen.map((p) => p.id).toSet();
+  /// その並びで「登板間隔（中4日）+ 体力100%」を満たす最初の投手を選ぶ
+  /// （[_pickDefaultStarter]）。能力で選ばないので推測ゲームのヒントにならない。
+  Player _pickNextStarter(Team team) {
     final pitchers = <Player>[
       ...team.startingRotation,
       ...team.bullpen,
@@ -975,14 +996,47 @@ class SeasonController {
         return a.number.compareTo(b.number);
       });
     if (pitchers.isEmpty) return team.pitcher;
+    // DH に投手登板選手を起用している場合、その選手（打順に居る）は先発候補から除外。
+    final exclude = _myStrategy == null
+        ? const <String>{}
+        : {for (final p in _myStrategy!.lineup) p.id};
+    return _pickDefaultStarter(pitchers, exclude: exclude);
+  }
+
+  /// 次の試合の登板で中4日（[_minDaysBetweenStarts]）の登板間隔を満たさないか
+  /// （= 直近に登板していて休養不足か）。前日登板の投手はここで true。
+  bool _startsTooSoon(String pitcherId) {
+    final last = _pitcherLastAppearanceDay[pitcherId];
+    return last != null &&
+        ((_currentDay + 1) - last) < _minDaysBetweenStarts;
+  }
+
+  /// デフォルト先発を選ぶ。**作戦画面の投手ピッカーと同じ並び順で、先発できる
+  /// 条件（中4日 + 体力100%）を満たす最初の投手**を返す。これにより「ピッカーで
+  /// デフォルト選択される投手」と一致する（前日登板など条件を満たさない投手は飛ばす）。
+  ///
+  /// [pitchers] はピッカーと同じ並び（ロール優先度→体力降順→背番号）で整列済みのこと。
+  /// [exclude] は候補から外す投手 id（DH に起用中の投手登板選手など。同じ選手が
+  /// DH で打席に立ちつつ先発もすることはありえないため除外する）。
+  /// 万一どの投手も条件を満たさない場合のみ、休養を満たす最初の投手 →
+  /// 最も体力のある投手、の順でフォールバックする（体力のない投手を選ばないため）。
+  Player _pickDefaultStarter(List<Player> pitchers,
+      {Set<String> exclude = const {}}) {
+    // 本命: 並び順で「中4日 + 体力100%」を満たす最初の投手。
     for (final p in pitchers) {
-      if (benchedIds.contains(p.id)) continue;
+      if (exclude.contains(p.id)) continue;
       if (canStartNextGame(p.id)) return p;
     }
+    // フォールバック1: 中4日（休養間隔）だけは満たす最初の投手。
     for (final p in pitchers) {
-      if (canStartNextGame(p.id)) return p;
+      if (exclude.contains(p.id)) continue;
+      if (!_startsTooSoon(p.id)) return p;
     }
-    return pitchers.first;
+    // フォールバック2: 全員が直近登板。せめて最も体力のある投手。
+    final pool = [for (final p in pitchers) if (!exclude.contains(p.id)) p]
+      ..sort((a, b) => pitcherFreshness(b.id).compareTo(pitcherFreshness(a.id)));
+    if (pool.isNotEmpty) return pool.first;
+    return pitchers.first; // 全員除外の異常系
   }
 
   /// strategy 内の SP を `newSP` に置き換えた新しい [NextGameStrategy] を返す。
@@ -1749,9 +1803,7 @@ class SeasonController {
     final nextGameFreshness =
         (saved + _freshnessRecoveryPerDay).clamp(0, 100);
     final tired = nextGameFreshness < _starterReadyThreshold;
-    final last = _pitcherLastAppearanceDay[pitcherId];
-    final tooSoon = last != null &&
-        ((_currentDay + 1) - last) < _minDaysBetweenStarts;
+    final tooSoon = _startsTooSoon(pitcherId);
     if (tired && tooSoon) return '登板間隔・体力 不足';
     if (tired) return '体力 不足';
     if (tooSoon) return '登板間隔 不足';

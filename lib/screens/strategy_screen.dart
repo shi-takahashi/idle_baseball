@@ -144,6 +144,10 @@ class StrategyScreenState extends State<StrategyScreen> with SingleTickerProvide
     } else {
       _loadFromStrategyOrAuto();
     }
+    // 表示中の先発投手が登板不可（前日登板など）なら、ピッカー順で条件を満たす
+    // 先頭の投手に差し替える。保存済み作戦の SP が古い（前回の先発のまま）でも、
+    // デフォルトが必ず登板可能な投手になることを保証する。
+    _ensureStartableStarter();
     // 「元に戻す」用のスナップショット。_Slot は immutable なのでシャローコピーで足りる。
     _initialSlots = List.of(_slots);
     _initialActiveBenchIds = Set.of(_activeBenchIds);
@@ -211,6 +215,44 @@ class StrategyScreenState extends State<StrategyScreen> with SingleTickerProvide
       for (final id in bullpenIds)
         if (c.findPlayerById(id) != null) id,
     };
+  }
+
+  /// 表示中の先発投手が登板不可なら、登板可能なデフォルト先発に差し替える。
+  /// - DH 制: 別カードの [_dhPitcher]。
+  /// - 非DH/大谷: 守備位置が「投手」のスロットの選手。
+  void _ensureStartableStarter() {
+    final c = widget.controller;
+    // 打順に入っている選手は先発候補から除外（DH に起用中の投手＝大谷を含む。
+    // 同じ選手が DH で打席に立ちつつ先発もすることはありえない）。
+    final lineupIds = <String>{
+      for (final s in _slots)
+        if (s.player != null) s.player!.id,
+    };
+    if (_dhPitcher != null) {
+      if (!c.canStartNextGame(_dhPitcher!.id)) {
+        final def = c.defaultStarterForMyTeam(excludeIds: lineupIds);
+        if (def != null) {
+          _dhPitcher = def;
+          _activeBullpenIds.remove(def.id); // 先発と救援の二重登録を防ぐ
+        }
+      }
+      return;
+    }
+    for (int i = 0; i < _slots.length; i++) {
+      final s = _slots[i];
+      if (s.isDH || s.position != FieldPosition.pitcher) continue;
+      final sp = s.player;
+      if (sp == null || !c.canStartNextGame(sp.id)) {
+        // 非DH/大谷: この投手スロットの選手は差し替え対象なので除外集合から外す。
+        final exclude = lineupIds.where((id) => id != sp?.id).toSet();
+        final def = c.defaultStarterForMyTeam(excludeIds: exclude);
+        if (def != null) {
+          _slots[i] = s.copyWith(player: def);
+          _activeBullpenIds.remove(def.id);
+        }
+      }
+      return;
+    }
   }
 
   /// 中立提案の SP（投手スロットの初期値）。
