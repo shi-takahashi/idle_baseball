@@ -190,7 +190,23 @@ class AtBatSimulator {
   // 2026-05-23(7): シュワーバー型再現（HRテーブル復活）+ NPB 投高打低化（リーグ
   // 平均 .250）のため、ミート効果を 0.018 → 0.017 に調整。ミート低 (1-3) で
   // 打率が大きく落ち、ミート高 (8-9) でやっと3割級になる差別化を実現。
-  static const double _meetOutModifier = 0.017;
+  // ミート力 → インプレー時アウト率補正の非線形テーブル（基本パラメータの効き）。
+  // 旧実装は線形 0.017/段で、低ミートでもアウト率が上がりきらず、ミート2前後で
+  // 打率 .200 前後と打ちすぎだった。低ミート側を急峻にして「弱い当たり＝アウト」を
+  // 強め、ミート1で1割前後・ミート2で1割台前半に落とす。中〜高ミート（5-10）は
+  // 従来どおり（リーグ平均 ~.250、巧打者 ~.30）。
+  static const Map<int, double> _meetOutAdjustmentTable = {
+    1: 0.200,
+    2: 0.160,
+    3: 0.110,
+    4: 0.055,
+    5: 0.0,
+    6: -0.017,
+    7: -0.034,
+    8: -0.051,
+    9: -0.068,
+    10: -0.085,
+  };
 
   // 基準選球眼（この選球眼で基本確率になる）
   static const int _baseEye = 5;
@@ -916,7 +932,7 @@ class AtBatSimulator {
     }
 
     // インプレー
-    final battedBallType = _randomBattedBallType(pitchType, power);
+    final battedBallType = _randomBattedBallType(pitchType, power, meet);
     final fieldPosition = _randomFieldPosition(battedBallType, batterSide);
     return PitchResult(type: PitchResultType.inPlay, pitchType: pitchType, battedBallType: battedBallType, fieldPosition: fieldPosition, speed: speed);
   }
@@ -950,7 +966,17 @@ class AtBatSimulator {
   /// power 1 で +0.10 (ゴロ多)、power 9 で -0.10 (フライ多)。
   static const double _groundShiftPerPower = 0.025;
 
-  BattedBallType _randomBattedBallType(PitchType pitchType, int power) {
+  // 非ゴロ打球に占めるライナー割合の基準（ミート5）と、ミート1段あたりの増減。
+  // ライナーは ~7割安打、フライは ~3割なので、ライナー割合が打率を強く左右する。
+  // ミート＝コンタクトの質、として「高ミート＝芯を食ってライナー増、低ミート＝
+  // 当て損じてフライ/凡打増」を表現する。これがミートで打率を動かす主経路。
+  // ミート1で 0.08（ほぼライナーが出ない＝弱い打球ばかり）、ミート5で 0.24、
+  // ミート10で 0.40 程度。
+  static const double _baseLinerShare = 0.24;
+  static const double _meetLinerShiftLow = 0.040; // ミート5未満の1段あたり減少
+  static const double _meetLinerShiftHigh = 0.032; // ミート5超の1段あたり増加
+
+  BattedBallType _randomBattedBallType(PitchType pitchType, int power, int meet) {
     if (disableBattedBallTypeRandomness) {
       // 期待値固定: ゴロ率最大のシンカー(0.675)等によらず、リーグ平均ゴロ(0.50)で
       // 「ゴロ」を返す。これで打球タイプ抽選の乱数寄与をゼロにできる。
@@ -962,8 +988,12 @@ class AtBatSimulator {
     final ground = (baseGround + powerShift).clamp(0.20, 0.80);
     final roll = _random.nextDouble();
     if (roll < ground) return BattedBallType.groundBall;
-    // 非ゴロぶんをフライ 76% / ライナー 24% に配分
-    final flyCut = ground + (1.0 - ground) * 0.76;
+    // 非ゴロぶんをフライ / ライナーに配分。ライナー割合はミート依存。
+    final meetDiff = meet - _baseMeet;
+    final linerShare = (_baseLinerShare +
+            meetDiff * (meetDiff < 0 ? _meetLinerShiftLow : _meetLinerShiftHigh))
+        .clamp(0.06, 0.42);
+    final flyCut = ground + (1.0 - ground) * (1.0 - linerShare);
     if (roll < flyCut) return BattedBallType.flyBall;
     return BattedBallType.lineDrive;
   }
@@ -1209,11 +1239,10 @@ class AtBatSimulator {
     final xbhPowerFactor =
         sqrt(powerHomeRunBase / _powerHomeRunBase[_basePower]!);
 
-    // ミート力によるアウト率補正
-    // 高ミート → アウト率↓（ヒットが増える）、低ミート → アウト率↑（弱い当たり=アウト）
-    // 投手のような低ミート打者は、当てても弱い当たりになりアウトになりやすい
-    final meetDiff = meet - _baseMeet;
-    final meetOutAdjustment = -meetDiff * _meetOutModifier;
+    // ミート力によるアウト率補正（非線形テーブル）。
+    // 高ミート → アウト率↓（ヒットが増える）、低ミート → アウト率↑（弱い当たり=アウト）。
+    // 低ミート側を急峻にして、ミート2前後で打率が1割台に落ちるようにする。
+    final meetOutAdjustment = _meetOutAdjustmentTable[meet.clamp(1, 10)]!;
 
     // 選球眼によるアウト率補正（2026-05-23 追加）
     // 選球眼が良いと「ボール球を振らない → スイングは良いコース／質のものに集中
@@ -1244,7 +1273,10 @@ class AtBatSimulator {
         platoonOut +
         arsenalOut -
         weaknessPenalty;
-    var probOut = (_baseProbOut + outModifier).clamp(0.45, 0.85);
+    // 上限 0.90: 低ミート（弱い当たり）打者の BABIP 下限。ミート1で BABIP .10 級まで
+    // 落とすために必要。ここに達するのは低ミートかつ不利な対戦の打席だけで、中位
+    // 以上のミートの打者は届かないので通常打率には影響しない。
+    var probOut = (_baseProbOut + outModifier).clamp(0.45, 0.90);
 
     // 打球タイプ × 方向によるアウト率の上書き補正
     // - 外野ライナー: 約7割が安打（NPB 実測 アウト率 27〜30%）→ 大幅に下げる
