@@ -159,13 +159,15 @@ class BattingStats extends StatelessWidget {
   /// 右テーブルの1行分（位置〜イニング別）
   DataRow _buildStatsRow(_BatterRow row, int inningCount) {
     final stat = row.stats;
-    // 位置表示: 履歴を「、」で連結。「(一)」「(一、遊)」など。
-    // DH（守備に就かない打者）は守備位置の代わりに「(DH)」を表示する。
-    final posText = row.isDH
-        ? '(DH)'
-        : row.positions.isEmpty
-            ? ''
-            : '(${row.positions.map((p) => p.shortName).join('、')})';
+    // 位置表示: 守備履歴を「、」で連結し、DH なら末尾に「DH」を足す。
+    //  - 純粋な DH（守備なし）         → 「(DH)」
+    //  - 大谷ルールで投手→DH に移った選手 → 「(投、DH)」
+    //  - 通常の野手                    → 「(一)」「(一、遊)」など
+    final posParts = <String>[
+      for (final p in row.positions) p.shortName,
+      if (row.isDH) 'DH',
+    ];
+    final posText = posParts.isEmpty ? '' : '(${posParts.join('、')})';
 
     final nameStyle = TextStyle(
       fontSize: 11,
@@ -222,10 +224,11 @@ class BattingStats extends StatelessWidget {
       if (p != null) playerPos[p.id] = pos;
     }
 
-    // DH 制の試合（投手が打順に居ない）では、打順に居て守備配置に居ない選手が DH。
+    // DH 制の試合では、打順に居て守備配置に居ない選手が DH。
     // その打順スロットは守備位置を持たないので、表示は「(DH)」にする。
+    // （投手登録の選手を DH 起用するケースもあるので usesDH フラグで判定する。）
     int dhSlot = -1;
-    if (team.pitcherBattingIndex < 0) {
+    if (team.usesDH) {
       for (int i = 0; i < team.players.length && i < 9; i++) {
         if (!playerPos.containsKey(team.players[i].id)) {
           dhSlot = i;
@@ -233,6 +236,10 @@ class BattingStats extends StatelessWidget {
         }
       }
     }
+
+    // 大谷ルールで投手→DH に移った選手の id。降板後も打席に立ち続けるので、
+    // 守備履歴（投）に加えて DH を併記する（例: 「(投、DH)」）。
+    final convertedDhIds = <String>{};
 
     // 各選手の守備位置履歴（同じポジションは重複させない）
     final positionHistory = <String, List<FieldPosition>>{};
@@ -286,6 +293,11 @@ class BattingStats extends StatelessWidget {
           playerPos[pc.newPitcher.id] = FieldPosition.pitcher;
           snapshot();
           knownIds.add(pc.newPitcher.id);
+          if (pc.keptOldAsDH) {
+            // 大谷ルール: 旧投手は DH として打線に残る。新投手は打席に立たない
+            // （battingOrder=-1 なので打者行には現れない）。
+            convertedDhIds.add(pc.oldPitcher.id);
+          }
           subs.add(_SlotSub(
             battingOrder: pc.battingOrder,
             outgoing: pc.oldPitcher,
@@ -319,7 +331,8 @@ class BattingStats extends StatelessWidget {
         positions: positionHistory[starter.id] ?? const [],
         isStarter: true,
         subType: null,
-        isDH: slot == dhSlot,
+        // 通常 DH スロット、または大谷ルールで投手→DH に移った選手。
+        isDH: slot == dhSlot || convertedDhIds.contains(starter.id),
         stats: _BatterGameStats(inningCount),
       ));
 

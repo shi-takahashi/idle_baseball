@@ -39,6 +39,19 @@ class Team {
   // engine 層を Flutter 非依存に保つため int で保持。
   int primaryColorValue;
 
+  /// この（試合用）チームが DH 制で編成されているか。
+  ///
+  /// 試合用 Team でのみ意味を持つ（シーズン保持 Team は常に false）。
+  /// true のとき投手は打順 [players] に含まれず、守備の投手は
+  /// [defenseAlignment] の投手ポジションにのみ入る。打席に立つ DH は
+  /// 「打順に居て守備配置に居ない選手」。
+  ///
+  /// 大谷型の二刀流選手を「登板しない日に DH で起用」するケースでは、
+  /// DH スロットに投手登録の選手が入ることもある。そのため「打順に投手が
+  /// 居ない」では DH 判定できず、このフラグで明示する。永続化はしない
+  /// （試合用 Team は保存せず、NextGameStrategy.useDH から毎回再構築する）。
+  final bool usesDH;
+
   Team({
     required this.id,
     required this.name,
@@ -49,6 +62,7 @@ class Team {
     this.bench = const [],
     this.defenseAlignment,
     this.primaryColorValue = 0xFF9E9E9E, // デフォルト: グレー
+    this.usesDH = false,
   });
 
   /// 主に「その日の先発を差し替える」用途で使う複製ヘルパ
@@ -59,6 +73,7 @@ class Team {
     List<Player>? bench,
     Map<FieldPosition, Player>? defenseAlignment,
     int? primaryColorValue,
+    bool? usesDH,
   }) {
     return Team(
       id: id,
@@ -70,6 +85,7 @@ class Team {
       bench: bench ?? this.bench,
       defenseAlignment: defenseAlignment ?? this.defenseAlignment,
       primaryColorValue: primaryColorValue ?? this.primaryColorValue,
+      usesDH: usesDH ?? this.usesDH,
     );
   }
 

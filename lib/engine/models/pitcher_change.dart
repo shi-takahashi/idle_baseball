@@ -10,11 +10,15 @@ class PitcherChangeEvent {
   final bool isTop; // 交代が発生したハーフイニングの表/裏
   final int atBatIndex; // このイニング内で、何打席目の前に交代したか（0 = 先頭打者の前）
 
-  /// 投手の打順スロット（0-8）
-  /// 新投手はこのスロットで打席に立つ
+  /// 投手の打順スロット（0-8）。新投手はこのスロットで打席に立つ。
+  /// 大谷ルール（[keptOldAsDH] = true）や DH 試合では新投手は打席に立たないので -1。
   final int battingOrder;
 
   final String reason; // 交代理由（表示・デバッグ用）
+
+  /// 大谷ルールで旧投手を DH として打線に残したか。
+  /// true のとき、旧投手は降板後も DH として打席に立ち続ける（box score 表記用）。
+  final bool keptOldAsDH;
 
   const PitcherChangeEvent({
     required this.oldPitcher,
@@ -24,6 +28,7 @@ class PitcherChangeEvent {
     required this.atBatIndex,
     required this.battingOrder,
     required this.reason,
+    this.keptOldAsDH = false,
   });
 
   Map<String, dynamic> toJson() => {
@@ -34,6 +39,7 @@ class PitcherChangeEvent {
         'atBatIndex': atBatIndex,
         'battingOrder': battingOrder,
         'reason': reason,
+        if (keptOldAsDH) 'keptOldAsDH': true,
       };
 
   factory PitcherChangeEvent.fromJson(
@@ -48,6 +54,7 @@ class PitcherChangeEvent {
         atBatIndex: json['atBatIndex'] as int,
         battingOrder: json['battingOrder'] as int,
         reason: json['reason'] as String,
+        keptOldAsDH: json['keptOldAsDH'] as bool? ?? false,
       );
 
   @override

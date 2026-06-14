@@ -438,8 +438,16 @@ class StrategyScreenState extends State<StrategyScreen> with SingleTickerProvide
   /// （ロール優先度→体力→背番号）で出し、中4日・体力ゲートで選べない投手は無効化。
   Future<void> _pickDhPitcher() async {
     final team = _myTeam;
-    final pitchers = <Player>[...team.startingRotation, ...team.bullpen]
-      ..sort((a, b) {
+    // 打順に入っている選手は先発投手にできない（DH 起用中の投手＝大谷を含む。
+    // 同じ選手が DH で打席に立ちつつ別人として投げることはありえないため除外）。
+    final lineupIds = <String>{
+      for (final s in _slots)
+        if (s.player != null) s.player!.id,
+    };
+    final pitchers = <Player>[
+      for (final p in [...team.startingRotation, ...team.bullpen])
+        if (!lineupIds.contains(p.id)) p,
+    ]..sort((a, b) {
         final ra = pitcherRoleStarterPriority(a.pitcherRole);
         final rb = pitcherRoleStarterPriority(b.pitcherRole);
         if (ra != rb) return ra.compareTo(rb);
@@ -823,15 +831,11 @@ class StrategyScreenState extends State<StrategyScreen> with SingleTickerProvide
         : (slot.position != null && _slots.asMap().entries.where((e) => e.key != index && !e.value.isDH && e.value.position == slot.position).isNotEmpty);
 
     // 投手位置と選手タイプの整合性チェック（保存時のバリデーションも担当するが
-    // 視覚的にも分かるよう色付け）。DH スロットは投手不可。
+    // 視覚的にも分かるよう色付け）。DH は誰でも可なので不整合にしない。
     bool typeMismatch = false;
-    if (slot.player != null) {
-      if (slot.isDH) {
-        typeMismatch = slot.player!.isPitcher;
-      } else if (slot.position != null) {
-        final isPitcherPos = slot.position == FieldPosition.pitcher;
-        typeMismatch = isPitcherPos != slot.player!.isPitcher;
-      }
+    if (slot.player != null && !slot.isDH && slot.position != null) {
+      final isPitcherPos = slot.position == FieldPosition.pitcher;
+      typeMismatch = isPitcherPos != slot.player!.isPitcher;
     }
 
     // 野手が「守れない（適性のない）守備位置」に就いているか。
@@ -847,7 +851,10 @@ class StrategyScreenState extends State<StrategyScreen> with SingleTickerProvide
     // 推測ゲーム成立のため、打撃指標だけでなく出場数・四球・三振・失策まで
     // 1 行に詰めて、スタメン編成の手がかりをひと目で読める形にする。
     final p = slot.player;
-    final statsLine = p == null ? null : (p.isPitcher ? _pitcherStatsCompact(widget.controller, p) : _fielderStatsCompact(widget.controller, p));
+    // DH は打席に立つので、投手登録の選手でも打撃成績を表示する。
+    final statsLine = p == null
+        ? null
+        : (p.isPitcher && !slot.isDH ? _pitcherStatsCompact(widget.controller, p) : _fielderStatsCompact(widget.controller, p));
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
@@ -890,8 +897,8 @@ class StrategyScreenState extends State<StrategyScreen> with SingleTickerProvide
                         overflow: TextOverflow.ellipsis,
                       ),
                     ),
-                    // 利き手（野手は打席、投手は投げる手）
-                    if (p != null) ...[const SizedBox(width: 6), Text(_handednessLabel(p), style: TextStyle(fontSize: 11, color: Colors.blueGrey.shade400))],
+                    // 利き手（野手・DH は打席の左右、投手は投げる手）
+                    if (p != null) ...[const SizedBox(width: 6), Text(_handednessLabel(p, asBatter: slot.isDH), style: TextStyle(fontSize: 11, color: Colors.blueGrey.shade400))],
                     if (statsLine != null && statsLine.isNotEmpty) ...[
                       const SizedBox(width: 8),
                       // 成績は Expanded で「残り幅をすべて」確保する。
@@ -1030,6 +1037,8 @@ class StrategyScreenState extends State<StrategyScreen> with SingleTickerProvide
                   compatible: isCompatible(p),
                   slotPosition: slotPos,
                   controller: widget.controller,
+                  // DH スロットでは投手登録の選手でも打撃成績で表示する。
+                  asBatter: isDHSlot,
                   // 投手スロットだけ「中4日不足／体力不足」で選択不可にする。
                   // 「現在」スロットに既に入っている投手は disable 化しても
                   // 元から選択する意味がないので統一して disable で構わない。
@@ -1081,15 +1090,20 @@ class StrategyScreenState extends State<StrategyScreen> with SingleTickerProvide
     if (p == null) return;
     final picked = await showModalBottomSheet<_PosResult>(
       context: context,
+      // デフォルトだと高さが画面の約半分に制限され、項目（投手+DH+8守備位置=10）が
+      // 収まらずスクロールが要る。内容の高さに合わせて全項目を 1 画面に出す。
+      isScrollControlled: true,
       builder: (ctx) {
         return SafeArea(
           child: ListView(
             shrinkWrap: true,
             children: [
-              for (final pos in FieldPosition.values)
+              for (final pos in FieldPosition.values) ...[
                 _PositionTile(position: pos, player: p, onTap: () => Navigator.of(ctx).pop(_PosResult.field(pos))),
-              // リーグ DH 採用時のみ DH を選択肢に出す。野手のみ DH 可。
-              if (_leagueDH) _DHPositionTile(player: p, onTap: () => Navigator.of(ctx).pop(const _PosResult.dh())),
+                // DH は「投手（大谷）」と並ぶ打席役割なので、投手の直後（上の方）に
+                // 出してスクロールせずに見えるようにする。リーグ DH 採用時のみ。
+                if (_leagueDH && pos == FieldPosition.pitcher) _DHPositionTile(player: p, onTap: () => Navigator.of(ctx).pop(const _PosResult.dh())),
+              ],
             ],
           ),
         );
@@ -1098,24 +1112,16 @@ class StrategyScreenState extends State<StrategyScreen> with SingleTickerProvide
     if (picked == null) return;
     setState(() {
       if (picked.isDH) {
-        // DH スロットにする。DH は 1 人だけなので、既存の DH スロットは解除し、
-        // そこに今のスロットの旧守備位置（投手以外）を引き継がせる。
+        // DH スロットにする（選手はそのまま。投手登録の選手でも DH 可）。
+        // DH は 1 人だけなので、既存の DH スロットは解除し、そこに今のスロットの
+        // 旧守備位置（投手以外）を引き継がせる。
         final cur = _slots[slotIndex];
         final oldPos = cur.position;
         for (int i = 0; i < _slots.length; i++) {
           if (i == slotIndex || !_slots[i].isDH) continue;
           _slots[i] = (oldPos != null && oldPos != FieldPosition.pitcher) ? _slots[i].copyWith(isDH: false, position: oldPos) : _slots[i].copyWith(isDH: false, clearPosition: true);
         }
-        if (cur.player?.isPitcher == true) {
-          // 大谷型（投手が打席に立つ）→ DH へ戻す。
-          // その投手は「打席に立たない先発投手」に回し、DH 枠は空にして野手を選ばせる。
-          _dhPitcher = cur.player;
-          _activeBullpenIds.remove(cur.player!.id);
-          _slots[slotIndex] = cur.copyWith(isDH: true, clearPosition: true, clearPlayer: true);
-          _healActiveBench();
-        } else {
-          _slots[slotIndex] = cur.copyWith(isDH: true, clearPosition: true);
-        }
+        _slots[slotIndex] = cur.copyWith(isDH: true, clearPosition: true);
       } else {
         final pos = picked.field!;
         final wasDH = _slots[slotIndex].isDH;
@@ -1264,7 +1270,7 @@ class StrategyScreenState extends State<StrategyScreen> with SingleTickerProvide
         final s = _slots[i];
         final player = lineup[i];
         if (s.isDH) {
-          if (player.isPitcher) return err('${i + 1} 番（DH）に投手は指定できません');
+          // DH は誰でも可（二刀流選手を登板しない日に DH 起用するケースを含む）。
           continue;
         }
         if (player.isPitcher) return err('${i + 1} 番に投手を野手位置で指定しています');
@@ -1466,6 +1472,9 @@ class _PlayerTile extends StatelessWidget {
   /// 理由を表示する。投手スロットで「中4日不足／体力不足」のケースで使う。
   final String? disabledReason;
 
+  /// DH スロット用。true のとき投手登録の選手でも打撃成績・打席の左右で表示する。
+  final bool asBatter;
+
   const _PlayerTile({
     required this.player,
     required this.lineupStatus,
@@ -1474,6 +1483,7 @@ class _PlayerTile extends StatelessWidget {
     this.compatible = false,
     this.slotPosition,
     this.disabledReason,
+    this.asBatter = false,
   });
 
   /// 打順絡みを示すタグ（この打順 / スタメン / 控え or 投手）。
@@ -1505,8 +1515,9 @@ class _PlayerTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final stats = player.isPitcher ? _pitcherStatsLine(controller, player) : _fielderStatsLine(controller, player);
-    final subtitle = '${_handednessLabel(player)}  $stats';
+    // DH スロット（asBatter）では投手登録の選手でも打撃成績・打席の左右を表示。
+    final stats = (player.isPitcher && !asBatter) ? _pitcherStatsLine(controller, player) : _fielderStatsLine(controller, player);
+    final subtitle = '${_handednessLabel(player, asBatter: asBatter)}  $stats';
     final disabled = disabledReason != null;
 
     // 適性ありの場合の trailing:
@@ -1577,9 +1588,10 @@ class _PlayerTile extends StatelessWidget {
 }
 
 /// 利き手の表示ラベル。
-/// 野手は打席（右 / 左 / 両）、投手は利き腕（右 / 左）。
-String _handednessLabel(Player p) {
-  if (p.isPitcher) {
+/// 打席に立つ選手（野手・DH）は打席（右 / 左 / 両）、投手として出る場合は利き腕（右 / 左）。
+/// [asBatter] true のとき、投手登録の選手でも打席の左右を返す（DH 起用時）。
+String _handednessLabel(Player p, {bool asBatter = false}) {
+  if (p.isPitcher && !asBatter) {
     return p.effectiveThrows == Handedness.left ? '左' : '右';
   }
   switch (p.effectiveBatsBase) {
@@ -1734,8 +1746,8 @@ class _PositionTile extends StatelessWidget {
 }
 
 /// DH（指名打者）を選ぶタイル。DH は打席だけ立ち守備には就かない。
-/// いま投手が入っているスロット（大谷型）で DH を選ぶと、その投手は
-/// 「打席に立たない先発投手」に回り、DH 枠には改めて野手を選ぶ流れになる。
+/// 誰でも DH に指名できる（投手登録の二刀流選手を登板しない日に DH 起用も可）。
+/// DH を使うときは、守備に就く先発投手を別途カードで指定する。
 class _DHPositionTile extends StatelessWidget {
   final Player player;
   final VoidCallback onTap;
@@ -1744,12 +1756,11 @@ class _DHPositionTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isPitcher = player.isPitcher;
     return ListTile(
       dense: true,
       leading: const Icon(Icons.sports_baseball_outlined, size: 18, color: Colors.teal),
       title: const Text('DH（指名打者）'),
-      trailing: Text(isPitcher ? '投手は先発に回す' : '打席のみ・守備なし', style: const TextStyle(fontSize: 11, color: Colors.grey)),
+      trailing: const Text('打席のみ・守備なし', style: TextStyle(fontSize: 11, color: Colors.grey)),
       onTap: onTap,
     );
   }

@@ -27,7 +27,8 @@ class TeamFieldingState {
   /// このスロットの選手は打席だけ立ち、守備には就かない
   /// （reconcileAlignmentBeforeDefense で守備配置の対象外にする）。
   /// 代打で選手が替わってもスロット自体は不変（PH がそのまま新しい DH になる）。
-  final int dhBattingSlot;
+  /// 大谷ルール（投手が降板後も DH として打線に残る）で試合途中に確定することもある。
+  int dhBattingSlot;
 
   TeamFieldingState._({
     required this.originalTeam,
@@ -46,11 +47,13 @@ class TeamFieldingState {
       if (fielder != null) alignment[pos] = fielder;
     }
     final lineup = List.of(team.players);
-    final pitcherSlot = team.pitcherBattingIndex;
-    // DH採用の合図は「打順に投手が居ない（pitcherSlot == -1）」。
-    // その場合の DH は「打順に居るが守備配置（投手以外）に居ない選手」。
+    // DH 採用は team.usesDH で明示する（「打順に投手が居ない」では、大谷型の
+    // 二刀流選手を DH 起用したときに投手が打順に入るため判定できない）。
+    // DH 試合では先発投手は打順に居ないので投手スロットは -1。
+    // DH は「打順に居て守備配置（投手以外）に居ない選手」。
+    final pitcherSlot = team.usesDH ? -1 : team.pitcherBattingIndex;
     int dhSlot = -1;
-    if (pitcherSlot < 0) {
+    if (team.usesDH) {
       final fielderIds = <String>{
         for (final e in alignment.entries)
           if (e.key != FieldPosition.pitcher) e.value.id,
@@ -100,17 +103,28 @@ class TeamFieldingState {
 
   /// 投手が交代した際の処理
   /// - 守備配置の投手位置を新投手で上書き
-  /// - DH非採用のため、投手スロットに居る選手（前任投手 or 投手代打の PH）を
+  /// - 通常（非DH / 大谷型）は投手スロットに居る選手（前任投手 or 投手代打の PH）を
   ///   新投手に差し替え（前任 / PH は退場扱い）
   /// - 新投手を出場済みに記録
-  void setPitcher(Player pitcher) {
+  ///
+  /// [keepOldAsDH] true（大谷ルール）のとき、投手スロットの旧投手をそのまま
+  /// 残して DH 化する。新投手は守備の投手としてのみ入り、打席には立たない。
+  /// → 投手スロットを DH スロットに転換（pitcherBattingSlot を -1 にし、
+  ///   dhBattingSlot へ移す）。ラインナップ（旧投手）は触らない。
+  void setPitcher(Player pitcher, {bool keepOldAsDH = false}) {
     currentAlignment[FieldPosition.pitcher] = pitcher;
 
-    // 投手スロットを直接 newPitcher に書き換え。
-    // - 通常: 旧投手 (currentLineup[pitcherBattingSlot] == oldPitcher) を上書き
-    // - 投手代打後: PH 選手が居るスロットを上書き（PH は試合から退場）
-    if (pitcherBattingSlot >= 0 &&
+    if (keepOldAsDH) {
+      // 旧投手は打席だけ立つ DH として残す。新投手は打順に入れない。
+      if (pitcherBattingSlot >= 0) {
+        dhBattingSlot = pitcherBattingSlot;
+        pitcherBattingSlot = -1;
+      }
+    } else if (pitcherBattingSlot >= 0 &&
         pitcherBattingSlot < currentLineup.length) {
+      // 投手スロットを直接 newPitcher に書き換え。
+      // - 通常: 旧投手 (currentLineup[pitcherBattingSlot] == oldPitcher) を上書き
+      // - 投手代打後: PH 選手が居るスロットを上書き（PH は試合から退場）
       currentLineup[pitcherBattingSlot] = pitcher;
     }
 

@@ -95,17 +95,13 @@ class NextGameStrategy {
     }
 
     if (useDH) {
-      // DH採用: 打順は全員野手、投手は打順に含まれない。
-      for (final p in lineup) {
-        if (p.isPitcher) {
-          throw ArgumentError(
-              'DH採用時の打順に投手 ${p.name} が含まれています'
-              '（投手は打席に立たないので守備配置のみに置いてください）');
-        }
-      }
+      // DH採用: 投手（守備の先発投手）は打順に含まれない。
+      // DH そのものは「打順に居て守備に就かない選手」で、誰でもよい
+      // （大谷型の二刀流選手を登板しない日に DH 起用するケースを許容するため、
+      // 投手登録の選手が DH に入ることもある）。
       if (lineupIds.contains(pitcherInAlignment.id)) {
         throw ArgumentError(
-            'DH採用時は投手 ${pitcherInAlignment.name} を打順に入れられません');
+            'DH採用時は先発投手 ${pitcherInAlignment.name} を打順に入れられません');
       }
       // 守備 8 野手はすべて打順に含まれる。残り 1 人が DH。
       final fielderIds = <String>{

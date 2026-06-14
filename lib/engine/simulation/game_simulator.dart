@@ -62,6 +62,20 @@ class GameSimulator {
     return FieldPosition.right;
   }
 
+  /// 投手 [pitcher] の打撃が、ベンチの控え野手 [bench] 全員より高いか。
+  /// 打撃力 = ミート + 長打 + 選球眼 の合計で判定する（大谷ルールの適用条件）。
+  /// 控え野手が一人も居ない場合も「全員より高い」とみなして true。
+  bool _outhitsAllBench(Player pitcher, List<Player> bench) {
+    int batScore(Player p) =>
+        (p.meet ?? 0) + (p.power ?? 0) + (p.eye ?? 0);
+    final ohScore = batScore(pitcher);
+    for (final b in bench) {
+      if (b.isPitcher) continue;
+      if (batScore(b) >= ohScore) return false; // 控え野手の方が上（同等含む）
+    }
+    return true;
+  }
+
   /// 規定イニング数（9回で決着がつかなければ延長）
   static const int regulationInnings = 9;
 
@@ -76,6 +90,7 @@ class GameSimulator {
     Team homeTeam,
     Team awayTeam, {
     Map<String, int> batterConditionModifiers = const {},
+    bool enableDH = false,
   }) {
     final inningScores = <InningScore>[];
     final halfInnings = <HalfInningResult>[];
@@ -114,6 +129,7 @@ class GameSimulator {
         myTeamScore: homeScore,
         opponentScoreAtStart: awayScore,
         batterConditionModifiers: batterConditionModifiers,
+        enableDH: enableDH,
       );
       halfInnings.add(topResult.halfInning);
       awayScore += topResult.halfInning.runs;
@@ -140,6 +156,7 @@ class GameSimulator {
         myTeamScore: awayScore,
         opponentScoreAtStart: homeScore,
         batterConditionModifiers: batterConditionModifiers,
+        enableDH: enableDH,
       );
       halfInnings.add(bottomResult.halfInning);
       homeScore += bottomResult.halfInning.runs;
@@ -181,6 +198,7 @@ class GameSimulator {
     required int myTeamScore, // 投手チームの現在得点
     required int opponentScoreAtStart, // 相手チームの現在得点（このハーフイニング開始時点）
     Map<String, int> batterConditionModifiers = const {},
+    bool enableDH = false, // リーグが DH 制か（大谷ルールの適用条件）
   }) {
     final atBats = <AtBatResult>[];
     final stealEvents = <StealEvent>[];
@@ -221,8 +239,13 @@ class GameSimulator {
       // attackingTeamPitchingState.plannedChange に予約として保存する。
       // 次の守備イニング頭の `PitcherChangeStrategy.decide` は予約を最優先で
       // 消費するので、再判定は行わずそのまま交代が実行される。
+      // 「投手の打席」用の先読み・代打判定は、いま打席にいる選手が攻撃側の
+      // 現在の投手本人（大谷型でマウンドにも立っている選手）のときだけ走らせる。
+      // DH（純粋なDH／投手登録のDH／大谷ルールで投手→DHに移った元投手）は
+      // 守備の投手ではないので対象外。
       bool willPullNext = false;
-      if (currentBatterBeforePH.isPitcher) {
+      if (currentBatterBeforePH.id ==
+          attackingTeamPitchingState.currentPitcher.id) {
         final lookahead = _previewNextInningPull(
           inning: inning,
           isTop: isTop,
@@ -270,10 +293,12 @@ class GameSimulator {
           reason: phDecision.reason,
         ));
 
-        // 投手に代打を送ったら、その投手は試合から退場するので、
-        // 次の守備イニング開始時に必ず投手交代する必要がある。
-        // 攻撃側チームの投手運用状態にフラグを立てる。
-        if (phDecision.outgoing.isPitcher) {
+        // マウンドに立っている投手本人に代打を送ったら、その投手は試合から
+        // 退場するので、次の守備イニング開始時に必ず投手交代する必要がある。
+        // DH（投手登録のDHや大谷ルールで移った元投手）に代打が出ても、その選手は
+        // 守備の投手ではないので投手交代は不要。
+        if (phDecision.outgoing.id ==
+            attackingTeamPitchingState.currentPitcher.id) {
           attackingTeamPitchingState.pendingMandatoryChangeReason = '代打降板';
         }
       }
@@ -321,20 +346,31 @@ class GameSimulator {
         // ラインナップを検索しても見つからない。pitcherBattingSlot は投手スロットを
         // ゲーム開始時から固定で保持しているのでそれを使う。
         final pitcherSlot = pitchingFieldingState.pitcherBattingSlot;
+        // 大谷ルール: DH制ありリーグで「投手が打席に立つ(大谷型)」編成のとき、
+        // 降板する投手の打撃が控え野手全員より高ければ、その投手を DH として
+        // 打線に残す（新投手はマウンドに立つが打席には立たない）。
+        final keepOldAsDH = enableDH &&
+            pitchingFieldingState.dhBattingSlot < 0 && // まだ DH 化していない
+            pitcherSlot >= 0 && // 投手が打順に立っている（大谷型）
+            _outhitsAllBench(oldPitcher, pitchingFieldingState.bench);
         pitchingState.changePitcher(
           decision.newPitcher,
           PitcherCondition.random(_random),
         );
-        // 守備配置の投手位置も同期（DH非採用なのでラインナップも更新される）
-        pitchingFieldingState.setPitcher(decision.newPitcher);
+        // 守備配置の投手位置を同期。通常はラインナップの投手スロットも新投手に
+        // 差し替わるが、大谷ルール適用時は旧投手を DH として残す。
+        pitchingFieldingState.setPitcher(decision.newPitcher,
+            keepOldAsDH: keepOldAsDH);
         pitcherChanges.add(PitcherChangeEvent(
           oldPitcher: oldPitcher,
           newPitcher: decision.newPitcher,
           inning: inning,
           isTop: isTop,
           atBatIndex: atBats.length,
-          battingOrder: pitcherSlot,
+          // 大谷ルールでは新投手は打席に立たないので打順表記は持たせない。
+          battingOrder: keepOldAsDH ? -1 : pitcherSlot,
           reason: decision.reason,
+          keptOldAsDH: keepOldAsDH,
         ));
       }
 

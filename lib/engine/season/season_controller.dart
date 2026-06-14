@@ -923,6 +923,7 @@ class SeasonController {
         awayForGame,
         batterConditionModifiers:
             _conditionMapForGame(homeForGame, awayForGame),
+        enableDH: _enableDH,
       );
       _results[sg.gameNumber] = result;
       _aggregator.recordGame(result);
@@ -992,10 +993,15 @@ class SeasonController {
   NextGameStrategy _withSPReplacedInStrategy(
       NextGameStrategy old, Player newSP) {
     if (old.startingPitcher.id == newSP.id) return old;
+    // DH採用時、先発投手は打順に居ない。打順内の選手（DH に起用した投手登録選手を
+    // 含む）を別途の先発投手にはできないので、その場合は差し替えない。
+    if (old.useDH && old.lineup.any((p) => p.id == newSP.id)) return old;
     // 非DHでは投手は打順に居るので打順内の投手を差し替える。
-    // DH採用時は投手が打順に居ないので打順は不変、守備配置の投手だけ差し替える。
-    final newLineup =
-        old.lineup.map((p) => p.isPitcher ? newSP : p).toList();
+    // DH採用時は投手が打順に居ない（DH の投手登録選手は別人）ので打順は不変、
+    // 守備配置の投手だけ差し替える。
+    final newLineup = old.useDH
+        ? old.lineup
+        : old.lineup.map((p) => p.isPitcher ? newSP : p).toList();
     final newAlignment = <FieldPosition, Player>{
       ...old.alignment,
       FieldPosition.pitcher: newSP,
@@ -1626,6 +1632,8 @@ class SeasonController {
       defenseAlignment: result.alignment,
       bench: newBench,
       bullpen: _availableBullpen(team),
+      // DH 採用かつ DH 編成が成立した（投手が打順に居ない）ときだけ DH 試合扱い。
+      usesDH: useDH && !result.lineup.any((p) => p.isPitcher),
     );
   }
 
@@ -1651,6 +1659,7 @@ class SeasonController {
       defenseAlignment: Map.of(strategy.alignment),
       bench: bench,
       bullpen: _availableBullpenFrom(bullpen),
+      usesDH: strategy.useDH,
     );
   }
 
